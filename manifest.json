@@ -1,0 +1,23 @@
+{
+  "name": "ポケリエ バトルファクトリー",
+  "short_name": "ポケモン バトルファクトリー",
+  "description": "ポケリエweb",
+  "start_url": "index.html",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1a1a1a",
+  "theme_color": "#1a1a1a",
+  "icons": [
+    {
+      "src": "pomicon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "pomicon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+
