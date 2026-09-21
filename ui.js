@@ -4494,9 +4494,6 @@ $('mp-team-scroller').addEventListener('click', async (e) => {
   renderReadyRoom();
 });
 
-/* ---- チーム戦：選出画面で見せる「相手の手持ち6匹」パネル用フラグ ---- */
-let opponentPoolReceived = false;
-
 /* ---- 選出 ---- */
 function startMultiplayerPick() {
   MenuBgm.start();
@@ -4508,88 +4505,185 @@ function startMultiplayerPick() {
   readyBattleStarting = false;
   readyRoomState = { mine: false, opponent: false };
   pickConfirmed = false;
-  opponentPoolReceived = false;
 
   if (state.mpBattleFormat === 'team') {
-    // チーム戦：ランダム生成ではなく、待機部屋で選んだ自分のチーム（6匹）を選出プールにする
-    state.megaEvolutionEnabled = true; // チーム戦は常にメガあり
-    const pt = sbState.parties[state.mpChosenTeamIdx];
-    const members = (pt && Array.isArray(pt.snapshot)) ? pt.snapshot.slice(0, 6) : [];
-    pickPool = members.map((d) => sbRestorePoke(sbSerializePoke(d))).filter(Boolean);
-    if (pickPool.length < 6) {
-      // 万一チームが壊れていた場合の保険：ランダムで埋める
-      const ids = buildPickPoolIds();
-      while (pickPool.length < 6) pickPool.push(createRandomPokemon(ids[pickPool.length % ids.length], 100));
-    }
-  } else {
-    // ホストが待機部屋で決めたメガシンカ設定を、この対戦の状態に反映する。
-    // ホスト・ゲストどちらも Net.megaEnabled を見て同じ値になる（あり/なしはお互い共通）。
-    state.megaEvolutionEnabled = !!Net.megaEnabled;
-    const ids = buildPickPoolIds();
-    pickPool = ids.map((id) => createRandomPokemon(id, 100));
-  }
-  pickedIds = [];
-  renderPickRow();
-  renderOppPoolPanel();
-  $('pick-title').textContent = state.mpBattleFormat === 'team'
-    ? '自分のチーム6匹の中から3匹えらんでください（えらんだ順に手持ちへ並びます）'
-    : '6匹の中から3匹えらんでください（えらんだ順に手持ちへ並びます）';
-  $('pick-overlay').classList.add('show');
-  startPickTimer(() => { confirmPick(); });
-
-  if (state.mpBattleFormat === 'team') {
-    // チーム戦のみ：選出中にお互いの持ち込んだ6匹（プール全体）を見られるようにする
-    Net.sendPickPool(pickPool).catch(() => {});
-    Net.onOpponentPickPool((oppPool) => {
-      opponentPoolReceived = true;
-      renderOppPoolPanel(oppPool);
-    });
-  }
-}
-
-/* ---- チーム戦：選出画面で見せる「相手の手持ち6匹」パネル ---- */
-function oppPoolCardHtml(p, idx) {
-  const t1 = p.species.type1, t2 = p.species.type2;
-  return `
-    <div class="trade-poke-card" data-opp-idx="${idx}">
-      <button class="tpc-info-btn" data-opp-info-idx="${idx}" type="button"><span>!</span></button>
-      <img src="${spritePath(p)}" alt="${p.species.name}" class="tpc-sprite"
-           onerror="this.replaceWith(makeTeamCardFallback(${p.speciesId}))">
-      <div class="tpc-name">${tpcNameHtml(p)}</div>
-      <div class="tpc-types">
-        ${typeChipHtml(t1)}
-        ${t2 ? typeChipHtml(t2) : ''}
-      </div>
-    </div>
-  `;
-}
-
-function renderOppPoolPanel(oppPool) {
-  const panel = $('opp-pool-panel');
-  if (state.mpBattleFormat !== 'team') {
-    panel.style.display = 'none';
+    startMpTeamPick();
     return;
   }
-  panel.style.display = '';
-  const row = $('opp-pool-row');
-  const waiting = $('opp-pool-waiting');
+
+  // ホストが待機部屋で決めたメガシンカ設定を、この対戦の状態に反映する。
+  // ホスト・ゲストどちらも Net.megaEnabled を見て同じ値になる（あり/なしはお互い共通）。
+  state.megaEvolutionEnabled = !!Net.megaEnabled;
+  const ids = buildPickPoolIds();
+  pickPool = ids.map((id) => createRandomPokemon(id, 100));
+  pickedIds = [];
+  renderPickRow();
+  $('pick-overlay').classList.add('show');
+  startPickTimer(() => { confirmPick(); });
+}
+
+/* =========================================================
+   対人戦チーム戦：選出画面（公式対戦の選出画面を再現）
+   左＝自分（6匹から3匹、タップした順に選出）／右＝相手（表示のみ）
+   選出プールそのもの（6匹の顔ぶれ）はお互いに見えるが、
+   相手が実際に何番目にどれを選んだかは見えない。
+   ========================================================= */
+const MP_PICK_COUNT = 3;
+const MP_PICK_TIME_LIMIT = 60;
+let mpPickTimerInterval = null;
+let mpPickedIds = [];
+let mpPickConfirmed = false;
+let mpOpponentPoolReceived = false;
+
+function clearMpPickTimer() {
+  if (mpPickTimerInterval) { clearInterval(mpPickTimerInterval); mpPickTimerInterval = null; }
+}
+
+function startMpPickTimer(onTimeout) {
+  clearMpPickTimer();
+  let remaining = MP_PICK_TIME_LIMIT;
+  const num = $('mp-pick-timer-num');
+  num.textContent = String(remaining);
+  mpPickTimerInterval = setInterval(() => {
+    remaining -= 1;
+    num.textContent = String(Math.max(0, remaining));
+    if (remaining <= 0) {
+      clearMpPickTimer();
+      onTimeout();
+    }
+  }, 1000);
+}
+
+function startMpTeamPick() {
+  state.megaEvolutionEnabled = true; // チーム戦は常にメガあり
+  mpPickConfirmed = false;
+  mpOpponentPoolReceived = false;
+
+  // 待機部屋で選んだ自分のチーム（6匹）を選出プールにする
+  const pt = sbState.parties[state.mpChosenTeamIdx];
+  const members = (pt && Array.isArray(pt.snapshot)) ? pt.snapshot.slice(0, 6) : [];
+  pickPool = members.map((d) => sbRestorePoke(sbSerializePoke(d))).filter(Boolean);
+  if (pickPool.length < 6) {
+    // 万一チームが壊れていた場合の保険：ランダムで埋める
+    const ids = buildPickPoolIds();
+    while (pickPool.length < 6) pickPool.push(createRandomPokemon(ids[pickPool.length % ids.length], 100));
+  }
+  mpPickedIds = [];
+
+  $('mp-pick-self-name').textContent = state.playerName || '';
+  $('mp-pick-opp-name').textContent = state.opponentName || Net.opponentName || '';
+
+  renderMpPickSelfList();
+  renderMpPickOppList(null); // まだ相手のプールは届いていない
+  showScreen('mp-pick');
+  startMpPickTimer(() => { confirmMpPick(); });
+
+  // 選出中にお互いの持ち込んだ6匹（プール全体）を見られるようにする
+  Net.sendPickPool(pickPool).catch(() => {});
+  Net.onOpponentPickPool((oppPool) => {
+    mpOpponentPoolReceived = true;
+    renderMpPickOppList(oppPool);
+  });
+}
+
+// ♂♀は表示せず、メガシンカ可能なら名前の右に mega.png（このバトルは常にメガあり）
+function mpPickMegaHtml(p) {
+  if (!canMegaEvolve(p)) return '';
+  return '<img class="mp-pick-card-mega" src="./mega.png" alt="メガ" onerror="this.style.display=\'none\'">';
+}
+
+function mpPickSpriteHtml(p) {
+  const id = p.speciesId;
+  return `<img class="mp-pick-card-sprite" src="${spritePath(p)}" alt="" onerror="this.outerHTML='<span class=&quot;mp-pick-card-sprite-fb&quot;>#${id}</span>'">`;
+}
+
+function mpPickSelfCardHtml(p, idx) {
+  const order = mpPickedIds.indexOf(idx);
+  const picked = order >= 0;
+  return `<div class="mp-pick-card${picked ? ' picked' : ''}" data-mp-idx="${idx}" role="button">
+    ${mpPickSpriteHtml(p)}
+    <div class="mp-pick-card-info">
+      <span class="mp-pick-card-name">${p.species.name}</span>
+      ${mpPickMegaHtml(p)}
+    </div>
+    ${picked ? `<span class="mp-pick-order">${order + 1}</span>` : ''}
+    <button class="mp-pick-card-info-btn" data-mp-info="${idx}" type="button" aria-label="くわしく見る"><span>!</span></button>
+  </div>`;
+}
+
+function mpPickOppCardHtml(p, idx) {
+  return `<div class="mp-pick-card" data-mp-opp-idx="${idx}" role="button">
+    ${mpPickSpriteHtml(p)}
+    <div class="mp-pick-card-info">
+      <span class="mp-pick-card-name">${p.species.name}</span>
+      ${mpPickMegaHtml(p)}
+    </div>
+    <button class="mp-pick-card-info-btn" data-mp-opp-info="${idx}" type="button" aria-label="くわしく見る"><span>!</span></button>
+  </div>`;
+}
+
+function renderMpPickSelfList() {
+  $('mp-pick-self-list').innerHTML = pickPool.map(mpPickSelfCardHtml).join('');
+  const n = mpPickedIds.length;
+  $('mp-pick-count').textContent = `${n}/${MP_PICK_COUNT}`;
+  $('mp-pick-btn-ok').classList.toggle('ready', n === MP_PICK_COUNT);
+}
+
+function renderMpPickOppList(oppPool) {
+  const list = $('mp-pick-opp-list');
   if (oppPool && oppPool.length) {
-    row.innerHTML = oppPool.map(oppPoolCardHtml).join('');
-    waiting.classList.add('is-hidden');
-    row._oppPool = oppPool;
+    list.innerHTML = oppPool.map(mpPickOppCardHtml).join('');
+    list._oppPool = oppPool;
   } else {
-    row.innerHTML = '';
-    waiting.classList.remove('is-hidden');
-    row._oppPool = null;
+    list.innerHTML = '<div class="mp-pick-waiting-row">相手の手持ちを読み込んでいます…</div>';
+    list._oppPool = null;
   }
 }
 
-$('opp-pool-row').addEventListener('click', (e) => {
-  const infoBtn = e.target.closest('[data-opp-info-idx]');
-  if (!infoBtn) return;
-  const idx = parseInt(infoBtn.dataset.oppInfoIdx, 10);
-  const pool = $('opp-pool-row')._oppPool;
+$('mp-pick-self-list').addEventListener('click', (e) => {
+  const info = e.target.closest('[data-mp-info]');
+  if (info) {
+    const idx = parseInt(info.dataset.mpInfo, 10);
+    if (pickPool[idx]) showTradeDetail(pickPool[idx]);
+    return;
+  }
+  const card = e.target.closest('[data-mp-idx]');
+  if (!card) return;
+  const idx = parseInt(card.dataset.mpIdx, 10);
+  const at = mpPickedIds.indexOf(idx);
+  if (at >= 0) {
+    mpPickedIds.splice(at, 1); // もう一度タップで外す（後ろの番号は繰り上がる）
+  } else if (mpPickedIds.length < MP_PICK_COUNT) {
+    mpPickedIds.push(idx); // タップした順が1番目・2番目・3番目
+  }
+  renderMpPickSelfList();
+});
+
+$('mp-pick-opp-list').addEventListener('click', (e) => {
+  const info = e.target.closest('[data-mp-opp-info]');
+  if (!info) return;
+  const idx = parseInt(info.dataset.mpOppInfo, 10);
+  const pool = $('mp-pick-opp-list')._oppPool;
   if (pool && pool[idx]) showTradeDetail(pool[idx]);
+});
+
+function confirmMpPick() {
+  if (mpPickConfirmed) return; // ボタン連打やタイマー競合による多重実行を防止
+  mpPickConfirmed = true;
+  clearMpPickTimer();
+  // 未選択が残っている場合は左（先頭）から自動補完
+  if (mpPickedIds.length < MP_PICK_COUNT) {
+    for (let i = 0; i < pickPool.length && mpPickedIds.length < MP_PICK_COUNT; i++) {
+      if (!mpPickedIds.includes(i)) mpPickedIds.push(i);
+    }
+  }
+  state.playerTeam = mpPickedIds.slice(0, MP_PICK_COUNT).map((idx) => pickPool[idx]);
+  onMultiplayerPickConfirm();
+}
+
+$('mp-pick-btn-ok').addEventListener('click', () => {
+  if (mpPickedIds.length !== MP_PICK_COUNT) return;
+  confirmMpPick();
 });
 
 /* =========================================================
