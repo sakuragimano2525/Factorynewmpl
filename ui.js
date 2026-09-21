@@ -2617,6 +2617,48 @@ function partyDetailHtml(p, showMegaPreview) {
       </button>`
     : '';
 
+  // 対人チーム戦の拡張UIでは「能力（わざ・ステータス実数値）」と「ステータス（状態異常・ランク変化）」を
+  // タブで切り替える。通常のCPU戦・ランダム戦では従来通り一括表示のまま。
+  if (isTeamBattleMode()) {
+    const badgeLabel = statusBadgeLabel(p);
+    const typeChgLabel = typeChangeLabel(p);
+    const statusTabHtml = `
+      <div class="pd-status-row"><span class="pd-status-name">状態</span><span class="pd-status-value">${badgeLabel || 'なし'}</span></div>
+      ${typeChgLabel ? `<div class="pd-status-row"><span class="pd-status-name">タイプ変化</span><span class="pd-status-value">${typeChgLabel}</span></div>` : ''}
+      <div class="pd-section-title" style="margin-top:4px;">のうりょくランク</div>
+      ${ranksHtml(p)}
+    `;
+    return `
+      <div class="pd-header">
+        <span class="pd-name">${p.species.name}</span>
+        ${shouldShowLevel() ? `<span class="pd-lv">Lv${p.level}</span>` : ''}
+        ${megaToggleBtn}
+        <div class="pd-types">
+          ${typeDisplay}
+        </div>
+      </div>
+      ${typeChangeInfo}
+      <div class="pd-ability-box">
+        <span class="pd-ability-label">特性</span>
+        <span class="pd-ability-name">${ability ? ability.name : '—'}</span>
+        ${ability && ability.desc ? `<div class="pd-ability-desc">${ability.desc}</div>` : ''}
+      </div>
+      <div class="pd-tabs">
+        <button class="pd-tab-btn ${pdActiveTab === 'moves' ? 'active' : ''}" id="pd-tab-btn-moves" type="button">わざ</button>
+        <button class="pd-tab-btn ${pdActiveTab === 'status' ? 'active' : ''}" id="pd-tab-btn-status" type="button">ステータス</button>
+      </div>
+      <div class="pd-tab-panel pd-body ${pdActiveTab === 'moves' ? 'active' : ''}">
+        <div class="pd-moves-col">
+          <div class="pd-moves">${movesHtml}</div>
+        </div>
+        <div class="pd-stats">${statsHtml}</div>
+      </div>
+      <div class="pd-tab-panel pd-tab-status ${pdActiveTab === 'status' ? 'active' : ''}">
+        ${statusTabHtml}
+      </div>
+    `;
+  }
+
   return `
     <div class="pd-header">
       <span class="pd-name">${p.species.name}</span>
@@ -2724,11 +2766,19 @@ let partyArmedIdx = null;
 let partyMode = 'switch';
 let forcedSwitchResolve = null;
 let partyDetailShowMega = false; // 「メガシンカ後を見る」トグルの状態（表示専用、poke本体には影響しない）
+let pdActiveTab = 'moves'; // パーティー詳細のタブ状態（'moves'|'status'）：対人チーム戦の拡張UIで使用
+
+// 対人チーム戦（お互い6匹から選出した固定パーティーで戦う形式）かどうか。
+// この形式の時だけ、交代画面に相手の選出パーティー一覧を並べた拡張UIを出す。
+function isTeamBattleMode() {
+  return !!state.multiplayer && state.mpBattleFormat === 'team';
+}
 
 function openPartyOverlay(mode) {
   partyMode = mode || 'switch';
   partyArmedIdx = null;
   partyDetailShowMega = false;
+  pdActiveTab = 'moves';
   if (partyMode === 'forced') {
     const firstAlive = state.playerTeam.findIndex((p) => !p.fainted);
     partySelectedIdx = firstAlive >= 0 ? firstAlive : 0;
@@ -2747,6 +2797,7 @@ function renderPartyOverlay() {
   const list = $('party-list');
   list.innerHTML = state.playerTeam.map((p, idx) => partyListItemHtml(p, idx)).join('');
   renderPartyDetail();
+  renderTeamBattleOppoList();
 }
 
 function renderPartyDetail() {
@@ -2760,6 +2811,44 @@ function renderPartyDetail() {
       renderPartyDetail();
     });
   }
+  const tabMoves = document.getElementById('pd-tab-btn-moves');
+  const tabStatus = document.getElementById('pd-tab-btn-status');
+  if (tabMoves && tabStatus) {
+    tabMoves.addEventListener('click', () => { pdActiveTab = 'moves'; renderPartyDetail(); });
+    tabStatus.addEventListener('click', () => { pdActiveTab = 'status'; renderPartyDetail(); });
+  }
+}
+
+// ---- 対人チーム戦：右側「相手の選出パーティー」一覧 ----
+function ttOppoItemHtml(p) {
+  const seen = !!p.seenInBattle;
+  const isActive = p === state.cpuActive;
+  const ratio = Math.max(0, p.currentHp / p.maxHp);
+  const nameLabel = seen ? p.species.name : p.species.name; // 名前・姿は常に見える仕様（未参戦は暗く表示のみ）
+  return `
+    <div class="tt-oppo-item ${seen ? '' : 'tt-unseen'} ${isActive ? 'tt-active' : ''} ${p.fainted ? 'tt-fainted' : ''}">
+      <img src="${spritePath(p)}" alt="" class="tt-oi-icon" onerror="this.replaceWith(makeTeamCardFallback(${p.speciesId}))">
+      <div class="tt-oi-info">
+        <div class="tt-oi-name">${nameLabel}${p.fainted ? '<span class="tt-oi-fainted-tag">きぜつ</span>' : ''}</div>
+        <div class="tt-oi-hpbar-outer"><div class="tt-oi-hpbar-inner" style="width:${ratio * 100}%; background:${p.fainted ? '#ff4d4d' : hpBarColor(ratio)};"></div></div>
+        <div class="tt-oi-hp-text">${seen ? `HP ${Math.ceil(ratio * 100)}%` : '???'}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderTeamBattleOppoList() {
+  const panel = document.getElementById('party-panel');
+  const oppoList = $('tt-oppo-list');
+  if (!isTeamBattleMode() || !state.cpuTeam || state.cpuTeam.length === 0) {
+    panel.classList.remove('tt-mode');
+    oppoList.style.display = 'none';
+    return;
+  }
+  panel.classList.add('tt-mode');
+  oppoList.style.display = '';
+  oppoList.innerHTML = `<div class="tt-oppo-title">あいてのパーティー</div>` +
+    state.cpuTeam.map((p) => ttOppoItemHtml(p)).join('');
 }
 
 $('party-close').addEventListener('click', () => closePartyOverlay());
@@ -3214,6 +3303,7 @@ async function doSwitch(newActive, side) {
   // 本家仕様：交代すると能力ランク変化は元に戻り、テラーバインド等の技封じも解除される
   newActive.ranks = { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, acc: 0, eva: 0 };
   if (newActive.moves) newActive.moves.forEach((m) => { if (m) m.locked = false; });
+  newActive.seenInBattle = true; // 対人チーム戦：場に出た瞬間に相手からも視認済みとして記録
   if (side === 'player') {
     state.playerActive = newActive;
     setSprite(newActive, 'self');
@@ -3674,6 +3764,7 @@ function runReplaceStep(incoming, doneResolve) {
 function resetPokeForBattle(poke) {
   poke.currentHp = poke.maxHp;
   poke.status = 0;
+  poke.seenInBattle = false; // 対人チーム戦：このバトルで一度でも場に出したかどうか（毎戦リセット）
   poke.badlyPoisonCounter = 0;
   poke.confuseTurns = 0;
   poke.sleepTurns = 0;
@@ -3864,6 +3955,8 @@ function startNextCpuBattle() {
   state.playerTeam.forEach(resetPokeForBattle);
   state.playerActive = state.playerTeam.find((p) => !p.fainted) || state.playerTeam[0];
   state.cpuActive = state.cpuTeam[0];
+  if (state.playerActive) state.playerActive.seenInBattle = true;
+  if (state.cpuActive) state.cpuActive.seenInBattle = true;
   Pokedex.registerTeam(state.playerTeam);
   if (bossBattle) {
     const el = $('battle-field-bg');
@@ -5078,6 +5171,8 @@ async function onMultiplayerPickConfirm() {
     state.cpuActive = state.cpuTeam[0];
     state.playerActive.side = 'player';
     state.cpuActive.side = 'cpu';
+    state.playerActive.seenInBattle = true;
+    state.cpuActive.seenInBattle = true;
 
     // 初期描画
     updateHud(state.playerActive, 'self');
