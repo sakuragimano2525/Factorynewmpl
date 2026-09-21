@@ -4574,6 +4574,175 @@ html,body{
   .tr-toast{ font-size:11px; padding:4px 12px; }
 }
 
+/* =========================================================
+   PC向けレイアウト調整（幅900px以上かつ高さ500px以上のときだけ有効）
+   スマホ横向き（高さ約390〜430px）にはこのブロックは一切効かない。
+   ・ボックス画面：左のパーティ帯を広げ、名前を1行で読めるようにし、
+     画像を大きく／mega.pngを画像の右下に重ねる（名前・画像・megaが縦に崩れないように）
+   ・トレーニング画面：能力ポイント／技の行を上に詰め、下に大きな空白を作らない
+   ========================================================= */
+@media (min-width: 900px) and (min-height: 500px){
+
+  /* ---------- ボックス画面 ---------- */
+  .sb-wrap{ gap:12px; padding-top:max(14px, env(safe-area-inset-top)); padding-bottom:max(14px, env(safe-area-inset-bottom)); }
+  .sb-topbar-title{ font-size:18px; padding:7px 34px; }
+  .sb-round-btn{ width:42px; height:42px; font-size:20px; }
+  .sb-megaview-btn{ width:40px; height:40px; border-radius:12px; }
+  .sb-megaview-btn img{ width:24px; height:24px; }
+  .sb-count{ font-size:14px; padding:6px 16px; }
+
+  /* 3カラムの幅：パーティ帯を広く、詳細パネルも少し広く */
+  .sb-body{ grid-template-columns: clamp(180px, 15vw, 240px) minmax(0,1fr) clamp(280px, 22vw, 340px); gap:12px; }
+
+  /* 左：パーティ帯 */
+  .sb-party-col{ padding:12px; gap:10px; }
+  .sb-party-name{ font-size:14px; padding:8px 10px; }
+  .sb-party-name .pn-edit{ font-size:13px; }
+  .sb-party{ gap:8px; }
+  /* 1行目：番号＋名前（1行で広く）／画像は右に大きく。名前が縦に1文字ずつ割れないようにする */
+  .sb-slot{
+    padding:4px 8px 4px 34px; gap:6px; border-radius:14px;
+    max-height:110px;
+  }
+  .sb-slot .sb-slot-idx{ left:9px; width:20px; height:20px; font-size:12px; line-height:20px; }
+  .sb-slot:not(.empty){ padding-left:34px; }
+  .sb-slot .sb-slot-name{
+    font-size:14px; line-height:1.2; letter-spacing:0;
+    /* 折り返しは単語（文字）の途中ではなく、収まらないときだけ2行 */
+    word-break:normal; overflow-wrap:anywhere;
+    -webkit-line-clamp:2;
+  }
+  /* 画像は枠の高さいっぱいまで使い、幅の上限も緩める */
+  .sb-slot .sb-slot-img{ height:86%; max-width:46%; }
+  .sb-slot.empty .sb-slot-no{ font-size:18px; }
+  /* mega.pngは画像の右下に重ねる（名前と横並びにならない）。大きめで見やすく */
+  .sb-slot .sb-mega{ right:6px; bottom:5px; width:26px; height:26px; }
+  .sb-clear-btn{ font-size:13px; padding:9px 6px; }
+
+  /* 中央：ボックス */
+  .sb-box{ padding:12px; gap:8px; }
+  .sb-box-title{ font-size:14px; padding:5px 20px; }
+  .sb-box-sub{ font-size:13px; }
+  /* ボックスの枠を「コンテナ」にして、その幅(cqw)から正方形セルの一辺を計算する。
+     セルの高さを幅で決めるので、行の高さが潰れたり循環したりしない。
+     一辺 = (枠の内側の幅 - 列間の隙間7つ - 左右の余白) / 8 */
+  .sb-box{ container-type:inline-size; }
+  .sb-box-grid{
+    grid-template-columns: repeat(8, minmax(0,1fr));
+    grid-auto-rows: calc((100cqw - 24px - 4px - 7 * 10px) / 8);   /* 24px=.sb-boxの左右padding、4px=gridのpadding */
+    gap:10px;
+    align-content:start;
+  }
+  .sb-cell{ min-height:0; }
+  .sb-cell{ border-radius:14px; }
+  .sb-cell img{ width:auto; height:auto; max-width:82%; max-height:82%; aspect-ratio:1/1; object-fit:contain; }
+  .sb-cell.in-party::after{ width:20px; height:20px; font-size:12px; right:6px; top:6px; }
+  .sb-cell .sb-mega{ right:5px; bottom:5px; width:24px; height:24px; }
+
+  /* 右：詳細パネル */
+  .sb-detail{ padding:14px 14px; gap:8px; }
+  .sb-d-img{ width:64px; height:64px; }
+  .sb-d-name{ font-size:20px; }
+  .sb-d-megaform{ font-size:14px; padding:1px 6px; }
+  .sb-shiny-btn{ width:36px; height:36px; font-size:19px; }
+  .sb-d-ability{ font-size:14px; padding:6px 12px; }
+  .sb-d-ability .lb{ font-size:12px; padding:2px 10px; }
+  .sb-stats{ gap:5px; }
+  .sb-stat{ font-size:13.5px; grid-template-columns: 88px 36px minmax(0,1fr) 28px; gap:7px; }
+  .sb-stat .sico{ width:17px; height:17px; }
+  .sb-stat .bar{ height:10px; border-radius:5px; }
+  .sb-moves{ gap:6px; }
+  .sb-move{ font-size:14px; min-height:34px; padding:4px 10px; gap:8px; }
+  .sb-move .mi{ width:24px; height:24px; }
+  .sb-move .pp{ font-size:13px; padding:2px 9px; }
+  .sb-train-btn{ font-size:15px; padding:10px 10px; }
+
+  /* ---------- トレーニング画面 ---------- */
+  .tr-wrap{ gap:12px; padding-top:max(14px, env(safe-area-inset-top)); padding-bottom:max(14px, env(safe-area-inset-bottom)); }
+  .tr-head{ padding:2px 10px; gap:14px; }
+  .tr-head-back{ width:42px; height:42px; font-size:20px; }
+  .tr-head-icon{ width:60px; height:60px; }
+  .tr-head-name{ font-size:28px; -webkit-text-stroke:6px #3a34a0; }
+  .tr-type-badge{ width:36px; height:36px; }
+  .tr-megaview-btn{ width:40px; height:40px; }
+  .tr-megaview-btn img{ width:24px; height:24px; }
+
+  /* ---- 2列グリッド：左=能力ポイント（縦に長い）／右=技→能力補正→特性 を縦に積む ----
+     .tr-mid と .tr-low は display:contents で「箱」を消し、中の各パネルを直接グリッドに置く。
+     こうすると右列は技パネルの直下に能力補正・特性が続き、右側に空白が出来ない。
+     （HTML・JSは変更なし。スマホ横向きにはこのブロックは効かない） */
+  .tr-wrap{
+    display:grid;
+    grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+    grid-template-rows: max-content max-content max-content max-content max-content max-content 1fr;   /* 1ヘッダー 2技 3補正 4特性 5メガ 6決定 7余白(下に集める)。max-contentで中身ぶんを必ず確保（縮めてクリップしない） */
+    column-gap:16px; row-gap:12px;
+    align-content:start;
+  }
+  .tr-head{ grid-column:1 / -1; grid-row:1; }
+  .tr-mid, .tr-low{ display:contents; }
+  .tr-mid > .tr-col:first-child{ grid-column:1; grid-row:2 / span 4; min-height:0; align-self:start; }
+  .tr-mid > .tr-col:last-child{ grid-column:2; grid-row:2; min-height:auto; }
+  .tr-low > .tr-panel:first-child{ grid-column:2; grid-row:3; }
+  .tr-low > .tr-panel:last-child{ grid-column:2; grid-row:4; }
+  .tr-megaform-row{ grid-column:2; grid-row:5; align-self:start; justify-content:flex-start; margin-top:0; gap:12px; }
+  .tr-megaform-label{ font-size:14px; }
+  .tr-megaform-btn{ width:48px; height:36px; font-size:16px; }
+  .tr-foot{ grid-column:1 / -1; grid-row:6; align-self:start; padding-top:8px; }
+  .tr-panel, .tr-panel.grow{ flex:0 0 auto; min-height:auto; overflow:visible; }   /* 中身より小さく縮めてクリップしない */
+  .tr-panel{ overflow:hidden; }                                                     /* 角丸の切り抜きは維持 */
+  .tr-panel-head{ padding:6px 16px; font-size:15px; }
+  .tr-panel-head .tr-total{ font-size:16px; }
+  /* 空白の元凶：space-evenly で行が縦に散らばっていたのを、上詰めに変更 */
+  .tr-panel-body{ flex:0 0 auto; justify-content:flex-start; gap:8px; padding:12px 14px 14px; }
+
+  .tr-stat{
+    flex:0 0 auto; height:66px; max-height:none;
+    grid-template-columns: 26px minmax(0,1fr) 26px 52px minmax(110px, 190px) 32px;
+    column-gap:10px; padding:0 16px 0 14px;
+  }
+  .tr-stat .ico{ width:22px; height:22px; }
+  .tr-stat .lb{ font-size:16px; }
+  .tr-stat .val{ font-size:20px; }
+  .tr-stat .ev{ font-size:16px; }
+  .tr-stat .bar{ height:14px; }
+
+  .tr-move{
+    flex:0 0 auto; height:76px; max-height:none;
+    grid-template-columns: 62px minmax(0,1fr);
+  }
+  .tr-move .tico img{ width:34px; height:34px; }
+  .tr-move .mbody{ gap:4px; padding:0 22px 0 14px; }
+  .tr-move .mn{ font-size:20px; }
+  .tr-move .pp{ font-size:18px; }
+  .tr-move .mdet{ font-size:14px; }
+
+  .tr-low .tr-panel-body{ padding:12px 30px 14px; min-height:auto; flex:0 0 auto; }
+  .tr-pill{ font-size:18px; padding:10px 14px; max-width:320px; }
+  .tr-pill.small{ font-size:15px; }
+
+  .tr-ok{ min-width:320px; padding:10px 40px; font-size:21px; }
+  .tr-ok .tr-ok-mark{ width:28px; height:28px; font-size:18px; }
+}
+
+/* PCでも縦が短い画面（例：1280x720）では、行を少し低くして1画面に収める */
+@media (min-width: 900px) and (min-height: 500px) and (max-height: 820px){
+  .tr-wrap{ row-gap:8px; padding-top:max(10px, env(safe-area-inset-top)); padding-bottom:max(10px, env(safe-area-inset-bottom)); }
+  .tr-head-icon{ width:48px; height:48px; }
+  .tr-head-name{ font-size:24px; }
+  .tr-type-badge{ width:30px; height:30px; }
+  .tr-panel-head{ padding:4px 14px; font-size:14px; }
+  .tr-panel-body{ gap:6px; padding:8px 12px 10px; }
+  .tr-stat{ height:54px; }
+  .tr-move{ height:60px; grid-template-columns:52px minmax(0,1fr); }
+  .tr-move .tico img{ width:28px; height:28px; }
+  .tr-move .mn{ font-size:18px; }
+  .tr-move .mdet{ font-size:13px; }
+  .tr-low .tr-panel-body{ padding:8px 30px 10px; }
+  .tr-pill{ font-size:16px; padding:7px 12px; }
+  .tr-ok{ padding:7px 36px; font-size:19px; min-width:280px; }
+  .tr-foot{ padding-top:2px; }
+}
+
 </style>
 </head>
 <body>
