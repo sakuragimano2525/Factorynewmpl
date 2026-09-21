@@ -3895,6 +3895,453 @@
   }
 
   // ============================================================
+  // りゅうせいぐん：満天の夜空を、無数の流星が左上から右下へ長い尾を引いて降り注ぐ演出
+  // 構成：①空が深い夜に暗転し、星が瞬く予兆 ②左上の空から右下へ、流星が次々に斜めに走り抜ける
+  //       ③一発ごとに着弾して火柱＋衝撃波＋岩片が弾け、地面が赤熱する
+  //       ④流星の密度が最高潮に達した後、特大の主星が左上の空から斜めに落ちる
+  //       ⑤主星の着弾で画面全体を焼き尽くす大爆発 ⑥余燼（残り火・火の粉）が漂う余韻
+  // 原作の「夜空を斜めに切り裂く流星の雨」の見え方を最優先する：
+  //   ・全流星の落下方向を左上→右下に統一する（一つの空から降っている統一感）
+  //   ・尾を長く、頭を小さく鋭くして「走っている」速度感を出す
+  //   ・後半ほど密度を上げ、最後に特大の主星で締める
+  // 配色は 深い夜空（濃紺〜藍）と 橙〜白金（流星・爆発）のコントラストで統一する。
+  // ============================================================
+  function spawnMeteorShowerSpecial(particles, w, h) {
+    const cx = w / 2, groundY = h * 0.88;
+    const R = Math.max(w, h);
+    // 全ての流星が落ちる共通の向き：左上 → 右下（画面上で約35°の緩い斜め）。
+    // ※canvasはy軸が下向きなので、右へ進みつつ下へ進む単位ベクトルが (cos, sin) の正の値になる。
+    //   角度を浅め(35°)にすると流星が横に長く流れて見え、原作の「夜空を走る流星」に近づく。
+    const FALL_ANG = Math.PI * 0.195;               // ≒ 35°
+    const fdx = Math.cos(FALL_ANG), fdy = Math.sin(FALL_ANG);
+
+    // ---- 幕0: 空が深い夜に暗転する（流星を際立たせる下地）----
+    particles.push({
+      maxLife: 3000,   // 演出の全体尺に合わせる（主星の落下〜大爆発の間も暗いまま保つ）
+      draw(ctx, t) {
+        // 素早く暗くなり、大爆発の余韻が引く終盤(約2000ms〜)にゆっくり明けていく
+        const a = t < 0.06 ? t / 0.06 : (t > 0.85 ? 1 - (t - 0.85) / 0.15 : 1);
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, rgba('#040414', a * 0.84));
+        grad.addColorStop(0.5, rgba('#0a0c2e', a * 0.66));
+        grad.addColorStop(1, rgba('#1a1236', a * 0.36));
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+      }
+    });
+    // 天の川のような淡い光の帯（夜空の奥行き。流星と同じ左上→右下の向きに流す）
+    particles.push({
+      maxLife: 3000,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const env = t < 0.08 ? t / 0.08 : (t > 0.85 ? (1 - t) / 0.15 : 1);
+        ctx.save();
+        ctx.translate(w * 0.5, h * 0.3);
+        ctx.rotate(FALL_ANG);
+        const g = ctx.createLinearGradient(0, -h * 0.16, 0, h * 0.16);
+        g.addColorStop(0, 'rgba(120,130,230,0)');
+        g.addColorStop(0.5, rgba('#8a96ff', env * 0.16));
+        g.addColorStop(1, 'rgba(120,130,230,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(-R, -h * 0.16, R * 2, h * 0.32);
+        ctx.restore();
+      }
+    });
+    // 空に瞬く星（暗転した空の奥行き。数を増やして満天の星空にする）
+    for (let i = 0; i < 70; i++) {
+      const sx = rand(0, w), sy = rand(0, h * 0.72);
+      const seed = rand(0, 100);
+      const sz = rand(0.7, 2.3);
+      particles.push({
+        delay: rand(0, 220),
+        maxLife: 2750,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const env = t < 0.06 ? t / 0.06 : (t > 0.85 ? (1 - t) / 0.15 : 1);
+          const tw = Math.abs(noise1(t * 14, seed)) * 0.7 + 0.3;
+          ctx.fillStyle = rgba(i % 5 === 0 ? '#ffe9c0' : '#dfe4ff', env * tw * 0.9);
+          ctx.beginPath();
+          ctx.arc(sx, sy, sz, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+
+    // ---- 流星を1本描くヘルパー（炎の尾を引く隕石）----
+    // 「頭（明るい核）」と「尾（後方に伸びる多層の炎）」で構成する。
+    // headX/Y は現在位置、tail は尾の長さ、size は頭の大きさ、a は不透明度。
+    function drawMeteor(ctx, headX, headY, tail, size, a) {
+      const tx = headX - fdx * tail, ty = headY - fdy * tail;
+      ctx.save();
+      ctx.lineCap = 'round';
+      // 外側の広い炎（橙〜赤）
+      const g1 = ctx.createLinearGradient(tx, ty, headX, headY);
+      g1.addColorStop(0, 'rgba(255,80,20,0)');
+      g1.addColorStop(0.6, rgba('#ff7a1a', a * 0.5));
+      g1.addColorStop(1, rgba('#ffb84a', a * 0.9));
+      ctx.strokeStyle = g1;
+      ctx.lineWidth = size * 2.4;
+      ctx.shadowColor = rgba('#ff6a1a', 0.9);
+      ctx.shadowBlur = 24;
+      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(headX, headY); ctx.stroke();
+      // 中間の明るい炎（黄）
+      const g2 = ctx.createLinearGradient(tx, ty, headX, headY);
+      g2.addColorStop(0, 'rgba(255,200,80,0)');
+      g2.addColorStop(1, rgba('#ffe08a', a));
+      ctx.strokeStyle = g2;
+      ctx.lineWidth = size * 1.3;
+      ctx.shadowBlur = 14;
+      ctx.beginPath(); ctx.moveTo(tx + fdx * tail * 0.25, ty + fdy * tail * 0.25); ctx.lineTo(headX, headY); ctx.stroke();
+      // 芯（白熱）
+      ctx.strokeStyle = rgba('#ffffff', a);
+      ctx.lineWidth = size * 0.55;
+      ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.moveTo(headX - fdx * tail * 0.4, headY - fdy * tail * 0.4); ctx.lineTo(headX, headY); ctx.stroke();
+      // 頭（燃える岩塊）：発光する核
+      const hg = ctx.createRadialGradient(headX, headY, 0, headX, headY, size * 1.6);
+      hg.addColorStop(0, rgba('#ffffff', a));
+      hg.addColorStop(0.35, rgba('#ffd98a', a * 0.95));
+      hg.addColorStop(1, 'rgba(255,90,20,0)');
+      ctx.fillStyle = hg;
+      ctx.beginPath(); ctx.arc(headX, headY, size * 1.6, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
+    // ---- 幕2: 流星群の雨（左上の夜空から右下へ次々に走り抜け、地面で着弾する）----
+    // 出発点は「着弾点から落下方向を逆に辿り、画面の外（左上）まで遡った点」にする。
+    // これにより流星は必ず画面外から現れて斜めに横切る。着弾点は画面中央〜右寄りに散らす。
+    const rainStart = 300;
+    const meteorCount = 34;
+    // 時刻の配り方：序盤はまばら → 後半ほど密に（本家の「降り注ぐ」クライマックス感）。
+    // i/(n-1) を 0..1 に取り、二乗で前半を間延びさせ後半を詰める。
+    const rainSpan = 1000;
+    for (let i = 0; i < meteorCount; i++) {
+      const k = i / (meteorCount - 1);
+      // 着弾点：画面の右寄り〜中央。落下方向が右下なので、右に寄せるほど軌跡が画面を長く横切る。
+      const landX = cx + rand(w * 0.02, w * 0.42);
+      const landY = groundY + rand(-h * 0.05, h * 0.03);
+      // 出発点は「画面の左上の外」。着弾点から落下方向を遡り、y が画面上端(-h*0.12)より上に
+      // 来るまで、かつ x が画面左端(-w*0.1)より外に出るまで遡る（＝必ず画面外から入ってくる）。
+      const backY = (landY + h * 0.12) / fdy;              // 上端の外まで遡る距離
+      const backX = (landX + w * 0.1) / fdx;               // 左端の外まで遡る距離
+      const back = Math.max(backY, backX);                 // 両方を満たす長い方
+      const startX = landX - fdx * back, startY = landY - fdy * back;
+      const delay = rainStart + Math.pow(k, 1.35) * rainSpan + rand(-14, 14);
+      const flight = rand(300, 420);           // 少し長く飛ばし、同時に夜空を走る本数を増やす（派手さ）
+      const size = rand(3.4, 6.6);
+      const tail = rand(h * 0.34, h * 0.62);   // 尾を長く（走っている速度感）
+      // 隕石本体の落下
+      particles.push({
+        delay,
+        maxLife: flight,
+        blend: 'lighter',
+        draw(ctx, t) {
+          // 着弾後(t>=1)はrunParticleSceneがpt=1のままdrawを呼び続けるため、ここで明示的に描画を止める
+          if (t >= 1) return;
+          const p = easeInCubic(t) * 0.4 + t * 0.6; // 加速しながら落ちる
+          const x = lerp(startX, landX, p), y = lerp(startY, landY, p);
+          const a = t < 0.08 ? t / 0.08 : 1;
+          drawMeteor(ctx, x, y, tail * (0.6 + 0.4 * p), size, a);
+        }
+      });
+      // 着弾：閃光＋火柱＋衝撃波
+      const hit = delay + flight;
+      particles.push({ // 着弾の閃光
+        delay: hit,
+        maxLife: 220,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const a = (1 - t) * 0.95;
+          const r = lerp(size * 2, size * 11, easeOutQuint(t));
+          const g = ctx.createRadialGradient(landX, landY, 0, landX, landY, r);
+          g.addColorStop(0, rgba('#ffffff', a));
+          g.addColorStop(0.3, rgba('#ffd98a', a * 0.9));
+          g.addColorStop(0.7, rgba('#ff6a1a', a * 0.5));
+          g.addColorStop(1, 'rgba(255,60,10,0)');
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(landX, landY, r, 0, Math.PI * 2); ctx.fill();
+        }
+      });
+      particles.push({ // 上に噴き上がる火柱
+        delay: hit,
+        maxLife: 380,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const rise = easeOutCubic(t);
+          const a = (1 - t) * 0.85;
+          const ph = size * 9 * rise;
+          const g = ctx.createLinearGradient(landX, landY, landX, landY - ph);
+          g.addColorStop(0, rgba('#ffe08a', a));
+          g.addColorStop(0.5, rgba('#ff8a2a', a * 0.75));
+          g.addColorStop(1, 'rgba(255,60,10,0)');
+          ctx.fillStyle = g;
+          const bw = size * (2.6 - t * 1.2);
+          ctx.beginPath();
+          ctx.moveTo(landX - bw, landY);
+          ctx.quadraticCurveTo(landX - bw * 0.3, landY - ph * 0.6, landX, landY - ph);
+          ctx.quadraticCurveTo(landX + bw * 0.3, landY - ph * 0.6, landX + bw, landY);
+          ctx.closePath();
+          ctx.fill();
+        }
+      });
+      particles.push({ // 地面を走る衝撃波リング（横に潰した楕円）
+        delay: hit,
+        maxLife: 340,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const r = lerp(size * 1.5, size * 15, easeOutQuint(t));
+          ctx.strokeStyle = rgba('#ffcf8a', (1 - t) * 0.7);
+          ctx.lineWidth = 3.4 * (1 - t * 0.6);
+          ctx.shadowColor = rgba('#ff8a2a', 0.9);
+          ctx.shadowBlur = 12;
+          ctx.beginPath();
+          ctx.ellipse(landX, landY, r, r * 0.3, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      });
+      // 弾け飛ぶ火の粉・岩片
+      for (let k = 0; k < 6; k++) {
+        const ang = rand(-Math.PI * 0.95, -Math.PI * 0.05); // 上半分へ放射
+        const sp = rand(size * 5, size * 13);
+        const g = rand(0.8, 1.5);
+        const rad = rand(1.6, 3);   // 半径は生成時に固定（フレームごとのrandはチラつきの原因）
+        particles.push({
+          delay: hit,
+          maxLife: rand(300, 520),
+          blend: 'lighter',
+          draw(ctx, t) {
+            const e = easeOutCubic(t);
+            const x = landX + Math.cos(ang) * sp * e;
+            const y = landY + Math.sin(ang) * sp * e + g * t * t * h * 0.16;
+            ctx.fillStyle = rgba(k % 2 ? '#ffd98a' : '#ff8a2a', (1 - t) * 0.9);
+            ctx.shadowColor = rgba('#ff6a1a', 0.9);
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(x, y, rad, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        });
+      }
+    }
+
+    // ---- 幕3: 静寂 → 左上の夜空から特大の主星が斜めに落ちる ----
+    // 流星の雨のあと一瞬だけ間を置き（静寂）、最後に他の流星より圧倒的に大きな主星を落とす。
+    const bigStart = rainStart + rainSpan + 200;   // 流星の雨が途切れた後の「間」
+    const bigFlight = 560;   // 迫ってくる姿を見せるため、小流星(230〜320ms)より明確に遅く大きく
+    const bigHit = bigStart + bigFlight;
+    // 主星本体：巨大な燃える隕石が左上の画面外から中心めがけて斜めに
+    const bigTailLen = R * 0.95;
+    const bigSize = w * 0.075;   // 小流星(3.4〜6.6px)の数倍：一目で「主星」とわかる大きさ
+    // 主星の着弾点は画面中央やや右。落下方向を遡り、画面の上端/左端のすぐ外を出発点にする
+    // （遡りすぎると画面外を飛んでいる時間が長く、肝心の「迫ってくる姿」が見えない）。
+    const bigLandX = cx + w * 0.06;
+    const bigBackY = (groundY + h * 0.14) / fdy;
+    const bigBackX = (bigLandX + w * 0.12) / fdx;
+    const bigBack = Math.max(bigBackY, bigBackX);
+    const bigStartX = bigLandX - fdx * bigBack, bigStartY = groundY - fdy * bigBack;
+    // 主星が近づくにつれ、空の左上が赤熱して明るくなる（接近の予感）
+    particles.push({
+      delay: bigStart,
+      maxLife: bigFlight,
+      blend: 'lighter',
+      draw(ctx, t) {
+        if (t >= 1) return;
+        const a = easeInCubic(t) * 0.55;
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, w * 0.75);
+        g.addColorStop(0, rgba('#ffd98a', a));
+        g.addColorStop(0.5, rgba('#ff7a2a', a * 0.5));
+        g.addColorStop(1, 'rgba(255,90,20,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h * 0.7);
+      }
+    });
+    particles.push({
+      delay: bigStart,
+      maxLife: bigFlight,
+      blend: 'lighter',
+      draw(ctx, t) {
+        if (t >= 1) return;   // 着弾後は描かない（爆発側の演出に引き継ぐ）
+        const p = easeInCubic(t) * 0.3 + t * 0.7;   // ほぼ等速：画面内を悠然と、しかし確実に迫ってくる
+        const x = lerp(bigStartX, bigLandX, p), y = lerp(bigStartY, groundY, p);
+        drawMeteor(ctx, x, y, bigTailLen * (0.5 + 0.5 * p), bigSize, 1);
+        // 主星の周囲を包む熱波のオーラ
+        const g = ctx.createRadialGradient(x, y, 0, x, y, bigSize * 5);
+        g.addColorStop(0, rgba('#ffe9b0', 0.55));
+        g.addColorStop(1, 'rgba(255,100,20,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(x, y, bigSize * 5, 0, Math.PI * 2); ctx.fill();
+      }
+    });
+
+    // ---- 幕4: 主星の着弾＝画面全体を焼き尽くす大爆発 ----
+    // 着弾の閃光：画面全体の白飛びはDOM側のscreenFlash(SPECIAL_IMPACT_FX)が担当するため、
+    // ここでは着弾点を中心にした放射状の光に留める（全面を白で塗ると二重で眩しくなり、
+    // 着弾の瞬間そのものが見えなくなる）。
+    particles.push({
+      delay: bigHit,
+      maxLife: 160,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const a = (1 - t) * 0.9;
+        const r = lerp(w * 0.1, R * 0.75, easeOutCubic(t));
+        const g = ctx.createRadialGradient(bigLandX, groundY, 0, bigLandX, groundY, r);
+        g.addColorStop(0, rgba('#ffffff', a));
+        g.addColorStop(0.45, rgba('#fff0c8', a * 0.55));
+        g.addColorStop(1, 'rgba(255,220,160,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+    });
+    // 巨大な火球（白→黄→橙→赤のグラデ）
+    particles.push({
+      delay: bigHit,
+      maxLife: 620,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const a = (1 - t) * 0.95;
+        const r = lerp(8, R * 0.62, easeOutQuint(t));
+        const g = ctx.createRadialGradient(bigLandX, groundY, 0, bigLandX, groundY, r);
+        g.addColorStop(0, rgba('#ffffff', a));
+        g.addColorStop(0.25, rgba('#ffe08a', a * 0.95));
+        g.addColorStop(0.55, rgba('#ff8a2a', a * 0.75));
+        g.addColorStop(0.85, rgba('#c8281a', a * 0.4));
+        g.addColorStop(1, 'rgba(120,20,10,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(bigLandX, groundY, r, 0, Math.PI * 2); ctx.fill();
+      }
+    });
+    // 多重の衝撃波（橙・白・紫が重なり竜の魔力を感じさせる）
+    for (let i = 0; i < 4; i++) {
+      const col = ['#ffffff', '#ffd98a', '#ff8a2a', '#b89aff'][i];
+      particles.push({
+        delay: bigHit + i * 55,
+        maxLife: 520 - i * 40,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const r = lerp(w * 0.04, R * (0.55 + i * 0.16), easeOutQuint(t));
+          ctx.strokeStyle = rgba(col, (1 - t) * (0.9 - i * 0.14));
+          ctx.lineWidth = (9 - i * 1.6) * (1 - t * 0.55);
+          ctx.shadowColor = rgba(col, 0.9);
+          ctx.shadowBlur = 20;
+          ctx.beginPath();
+          ctx.ellipse(bigLandX, groundY, r, r * 0.34, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      });
+    }
+    // 中心から立ち昇る巨大な火柱：太い根元から、揺らめきながら上へ広がり散っていく炎の柱。
+    // 内側（白熱）・中間（黄橙）・外側（赤）の3層を、それぞれ少しずつ違う揺らぎで重ねて炎の厚みを出す。
+    const pillarSeed = rand(0, 100);
+    const pillarLayers = [
+      { wMul: 1.00, col0: '#c8281a', col1: '#ff5a1a', aMul: 0.55, seedOff: 0 },
+      { wMul: 0.72, col0: '#ff8a2a', col1: '#ffc060', aMul: 0.75, seedOff: 7 },
+      { wMul: 0.42, col0: '#ffe9a0', col1: '#ffffff', aMul: 0.95, seedOff: 13 },
+    ];
+    pillarLayers.forEach((L) => {
+      particles.push({
+        delay: bigHit,
+        maxLife: 560,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const rise = easeOutCubic(clamp01(t / 0.55));
+          const fade = 1 - Math.max(0, (t - 0.25) / 0.75);
+          const a = fade * fade * L.aMul;   // 二乗で減衰させ、消え際に薄い残像が長く残らないようにする
+          if (a <= 0.02) return;
+          const ph = h * 0.92 * rise;
+          const baseW = w * 0.15 * L.wMul * (1 - t * 0.35);
+          const steps = 18;
+          // 高さ方向に18分割し、左右の縁を「太さ×揺らぎ」で結んで炎の輪郭にする
+          const left = [], right = [];
+          for (let i = 0; i <= steps; i++) {
+            const k = i / steps;                                    // 0=根元 1=先端
+            const taper = Math.pow(1 - k, 0.85) * (1 + 0.55 * Math.sin(k * Math.PI)); // 中ほどが膨らむ
+            const sway = noise1(k * 4 + t * 9, pillarSeed + L.seedOff) * baseW * 0.55 * k;
+            const bw = baseW * taper;
+            const y = groundY - ph * k;
+            left.push([bigLandX + sway - bw, y]);
+            right.push([bigLandX + sway + bw, y]);
+          }
+          const g = ctx.createLinearGradient(bigLandX, groundY, bigLandX, groundY - ph);
+          g.addColorStop(0, rgba(L.col1, a));
+          g.addColorStop(0.5, rgba(L.col0, a * 0.8));
+          g.addColorStop(1, 'rgba(255,60,10,0)');
+          ctx.fillStyle = g;
+          ctx.shadowColor = rgba('#ff6a1a', 0.8);
+          ctx.shadowBlur = 16;
+          ctx.beginPath();
+          ctx.moveTo(left[0][0], left[0][1]);
+          for (let i = 1; i < left.length; i++) ctx.lineTo(left[i][0], left[i][1]);
+          for (let i = right.length - 1; i >= 0; i--) ctx.lineTo(right[i][0], right[i][1]);
+          ctx.closePath();
+          ctx.fill();
+        }
+      });
+    });
+    // 四方に飛び散る燃える岩片（放物線を描いて降る）
+    for (let i = 0; i < 30; i++) {
+      const ang = rand(-Math.PI * 0.98, -Math.PI * 0.02);
+      const sp = rand(w * 0.22, w * 0.6);
+      const grav = rand(1.0, 1.9);
+      const sz = rand(2.4, 6);
+      particles.push({
+        delay: bigHit + rand(0, 40),
+        maxLife: rand(460, 740),   // 最長でも bigHit+40+740=2370ms < 全体尺2400ms（途中で切れない）
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const x = bigLandX + Math.cos(ang) * sp * e;
+          const y = groundY + Math.sin(ang) * sp * e + grav * t * t * h * 0.34;
+          ctx.fillStyle = rgba(i % 3 === 0 ? '#ffffff' : (i % 3 === 1 ? '#ffd98a' : '#ff8a2a'), (1 - t) * 0.92);
+          ctx.shadowColor = rgba('#ff6a1a', 0.95);
+          ctx.shadowBlur = 10;
+          ctx.beginPath();
+          ctx.arc(x, y, sz * (1 - t * 0.45), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+    // 地面の赤熱（焼け焦げた大地の残り火）
+    particles.push({
+      delay: bigHit + 60,
+      maxLife: 700,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const a = Math.sin(Math.PI * clamp01(t)) * 0.5;
+        const g = ctx.createLinearGradient(0, groundY - h * 0.12, 0, h);
+        g.addColorStop(0, 'rgba(255,90,20,0)');
+        g.addColorStop(0.5, rgba('#ff7a1a', a));
+        g.addColorStop(1, rgba('#c8281a', a * 0.7));
+        ctx.fillStyle = g;
+        ctx.fillRect(0, groundY - h * 0.12, w, h - (groundY - h * 0.12));
+      }
+    });
+
+    // ---- 幕5: 余燼（消えかけの残り火が漂う静かな余韻）----
+    for (let i = 0; i < 22; i++) {
+      const x0 = bigLandX + rand(-w * 0.4, w * 0.4);
+      const seed = rand(0, 100);
+      const riseSpeed = rand(0.1, 0.22);   // 上昇速度は生成時に固定
+      const yOff = rand(0, h * 0.06);
+      particles.push({
+        delay: bigHit + 100 + rand(0, 160),
+        maxLife: rand(380, 520),   // 最長でも bigHit+100+160+520=2370ms < 全体尺2400ms（途中で切れない）
+        blend: 'lighter',
+        draw(ctx, t) {
+          const x = x0 + noise1(t * 3, seed) * 14;
+          const y = groundY - t * h * riseSpeed - yOff;
+          const fl = Math.abs(noise1(t * 18, seed)) * 0.6 + 0.4;
+          ctx.fillStyle = rgba('#ffb060', (1 - t) * fl * 0.85);
+          ctx.shadowColor = rgba('#ff6a1a', 0.9);
+          ctx.shadowBlur = 7;
+          ctx.beginPath();
+          ctx.arc(x, y, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+  }
+
+  // ============================================================
   // ふぶき：極寒の吹雪が渦巻き、視界を白く塗り潰しながら凍てつく大結晶が突き刺さる演出
   // 構成：①冷気が噴き出し辺りが白く霞む予兆 ②横殴りの猛吹雪が画面を覆う
   //       ③巨大な氷結晶が中心に向かって突き刺さる ④氷結の瞬間の白い閃光と亀裂状の凍結波
@@ -4296,6 +4743,7 @@
     480: spawnInfernoSpecial,       // インフェルノ
     483: spawnMaelstromSpecial,     // メイルストローム
     484: spawnYggdrasillSpecial,    // イルミンスール
+    53: spawnMeteorShowerSpecial,   // りゅうせいぐん
     73: spawnThunderSpecial,        // かみなり
     79: spawnThunderSpecial,        // ルクスノヴァ（かみなりと共通演出）
     235: spawnBlizzardSpecial,      // ふぶき
@@ -4306,6 +4754,7 @@
     480: 1900,
     483: 1900,
     484: 1900,
+    53: 3000,
     73: 1700,
     79: 1700,
     235: 1800,
@@ -4342,6 +4791,18 @@
       shakes: [
         { ampPx: 3, durationMs: 180, freq: 18, delay: 0 },
         { ampPx: 18, durationMs: 600, freq: 16, delay: 215 },
+      ],
+    },
+    53: { // りゅうせいぐん：流星の雨の間は細かく揺れ続け、主星の着弾で白飛び＋最大級のシェイク
+      // 主星の着弾タイミング = rainStart(300) + rainSpan(1000) + 200 + bigFlight(560) = 2060ms
+      flashes: [
+        { color: '#ffe9b0', peakAlpha: 0.3, durationMs: 260, delay: 1800 },  // 主星の接近（空が赤熱する）
+        { color: '#ffffff', peakAlpha: 0.85, durationMs: 200, delay: 2060 }, // 着弾の白飛び（着弾の瞬間が見える強さに抑える）
+        { color: '#ff8a2a', peakAlpha: 0.4, durationMs: 520, delay: 2090 },  // 大爆発の熱（明るい背景で白く飛び過ぎない強さ）
+      ],
+      shakes: [
+        { ampPx: 4, durationMs: 1500, freq: 34, delay: 400 },   // 流星が降り注ぐ間の連続した細かい振動
+        { ampPx: 26, durationMs: 800, freq: 30, delay: 2060 },  // 主星の着弾
       ],
     },
     73: { // かみなり：落雷の瞬間に真っ白な閃光を複数回明滅＋鋭く短いシェイク（雷特有のビリビリ感）
