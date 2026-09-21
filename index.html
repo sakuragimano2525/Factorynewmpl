@@ -4657,90 +4657,82 @@ html,body{
   .sb-move .pp{ font-size:13px; padding:2px 9px; }
   .sb-train-btn{ font-size:15px; padding:10px 10px; }
 
-  /* ---------- トレーニング画面 ---------- */
-  .tr-wrap{ gap:12px; padding-top:max(14px, env(safe-area-inset-top)); padding-bottom:max(14px, env(safe-area-inset-bottom)); }
-  .tr-head{ padding:2px 10px; gap:14px; }
-  .tr-head-back{ width:42px; height:42px; font-size:20px; }
-  .tr-head-icon{ width:60px; height:60px; }
-  .tr-head-name{ font-size:28px; -webkit-text-stroke:6px #3a34a0; }
-  .tr-type-badge{ width:36px; height:36px; }
-  .tr-megaview-btn{ width:40px; height:40px; }
-  .tr-megaview-btn img{ width:24px; height:24px; }
-
-  /* ---- 2列グリッド：左=能力ポイント（縦に長い）／右=技→能力補正→特性 を縦に積む ----
-     .tr-mid と .tr-low は display:contents で「箱」を消し、中の各パネルを直接グリッドに置く。
-     こうすると右列は技パネルの直下に能力補正・特性が続き、右側に空白が出来ない。
+  /* ---------- トレーニング画面 ----------
+     方針：縦の合計を画面の高さ(vh)に比例させ、どのPCでも「1画面に全部収まる」ようにする。
+     並び順（上から）：ヘッダー → [能力ポイント | 技] → [能力補正 | 特性] → メガ進化(X/Yがあるときだけ) → 決定
      （HTML・JSは変更なし。スマホ横向きにはこのブロックは効かない） */
+  #screen-training{ --u: clamp(0.62, calc(100vh / 760px), 1.35); }   /* 高さ760pxを基準(=1)に、画面の高さへ比例して拡縮（縦を余らせず使い切る） */
   .tr-wrap{
-    display:grid;
-    grid-template-columns: minmax(0,1fr) minmax(0,1fr);
-    grid-template-rows: max-content max-content max-content max-content max-content max-content 1fr;   /* 1ヘッダー 2技 3補正 4特性 5メガ 6決定 7余白(下に集める)。max-contentで中身ぶんを必ず確保（縮めてクリップしない） */
-    column-gap:16px; row-gap:12px;
-    align-content:start;
+    display:flex; flex-direction:column;
+    gap:calc(10px * var(--u));
+    padding-top:max(calc(12px * var(--u)), env(safe-area-inset-top));
+    padding-bottom:max(calc(12px * var(--u)), env(safe-area-inset-bottom));
+    overflow:hidden;
   }
-  .tr-head{ grid-column:1 / -1; grid-row:1; }
-  .tr-mid, .tr-low{ display:contents; }
-  .tr-mid > .tr-col:first-child{ grid-column:1; grid-row:2 / span 4; min-height:0; align-self:start; }
-  .tr-mid > .tr-col:last-child{ grid-column:2; grid-row:2; min-height:auto; }
-  .tr-low > .tr-panel:first-child{ grid-column:2; grid-row:3; }
-  .tr-low > .tr-panel:last-child{ grid-column:2; grid-row:4; }
-  .tr-megaform-row{ grid-column:2; grid-row:5; align-self:start; justify-content:flex-start; margin-top:0; gap:12px; }
-  .tr-megaform-label{ font-size:14px; }
-  .tr-megaform-btn{ width:48px; height:36px; font-size:16px; }
-  .tr-foot{ grid-column:1 / -1; grid-row:6; align-self:start; padding-top:8px; }
-  .tr-panel, .tr-panel.grow{ flex:0 0 auto; min-height:auto; overflow:visible; }   /* 中身より小さく縮めてクリップしない */
-  .tr-panel{ overflow:hidden; }                                                     /* 角丸の切り抜きは維持 */
-  .tr-panel-head{ padding:6px 16px; font-size:15px; }
-  .tr-panel-head .tr-total{ font-size:16px; }
-  /* 空白の元凶：space-evenly で行が縦に散らばっていたのを、上詰めに変更 */
-  .tr-panel-body{ flex:0 0 auto; justify-content:flex-start; gap:8px; padding:12px 14px 14px; }
+  .tr-head{ flex:0 0 auto; padding:2px 10px; gap:14px; }
+  .tr-head-back{ width:calc(42px * var(--u)); height:calc(42px * var(--u)); font-size:calc(20px * var(--u)); }
+  .tr-head-icon{ width:calc(56px * var(--u)); height:calc(56px * var(--u)); }
+  .tr-head-name{ font-size:calc(28px * var(--u)); -webkit-text-stroke:calc(6px * var(--u)) #3a34a0; }
+  .tr-type-badge{ width:calc(34px * var(--u)); height:calc(34px * var(--u)); }
+  .tr-megaview-btn{ width:calc(38px * var(--u)); height:calc(38px * var(--u)); }
+  .tr-megaview-btn img{ width:calc(22px * var(--u)); height:calc(22px * var(--u)); }
+
+  /* 中段：左=能力ポイント／右=技。余った縦は伸ばさず、内容ぶんだけ（上詰め） */
+  .tr-mid{ flex:0 0 auto; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:calc(16px * var(--u)); align-items:start; }
+  .tr-panel, .tr-panel.grow{ flex:0 0 auto; min-height:auto; overflow:hidden; }
+  /* 能力ポイントの調整バー：パネルの高さを増やさず、選んだ行のすぐ下に「浮かせて」重ねる。
+     （高さを足すと決定ボタンが画面外へ押し出されるため） */
+  .tr-mid > .tr-col:first-child{ position:relative; z-index:50; }   /* 下の能力補正・特性より前面に出し、調整バーが隠れないようにする */
+  .tr-mid{ position:relative; z-index:50; }
+  .tr-low{ position:relative; z-index:1; }
+  .tr-mid > .tr-col:first-child .tr-panel{ overflow:visible; border-radius:6px; }
+  .tr-mid > .tr-col:first-child .tr-panel-head{ border-radius:6px 6px 0 0; }
+  .tr-adjust{
+    position:absolute; left:8px; right:8px; bottom:calc(-1 * (44px * var(--u)) - 6px);
+    margin:0; z-index:40;
+  }
+  .tr-panel-head{ padding:calc(5px * var(--u)) 16px; font-size:calc(15px * var(--u)); }
+  .tr-panel-head .tr-total{ font-size:calc(16px * var(--u)); }
+  .tr-panel-body{ flex:0 0 auto; justify-content:flex-start; gap:calc(7px * var(--u)); padding:calc(10px * var(--u)) 14px calc(12px * var(--u)); }
 
   .tr-stat{
-    flex:0 0 auto; height:66px; max-height:none;
+    flex:0 0 auto; height:calc(58px * var(--u)); max-height:none;
     grid-template-columns: 26px minmax(0,1fr) 26px 52px minmax(110px, 190px) 32px;
     column-gap:10px; padding:0 16px 0 14px;
   }
-  .tr-stat .ico{ width:22px; height:22px; }
-  .tr-stat .lb{ font-size:16px; }
-  .tr-stat .val{ font-size:20px; }
-  .tr-stat .ev{ font-size:16px; }
-  .tr-stat .bar{ height:14px; }
+  .tr-stat .ico{ width:calc(22px * var(--u)); height:calc(22px * var(--u)); }
+  .tr-stat .lb{ font-size:calc(16px * var(--u)); }
+  .tr-stat .val{ font-size:calc(20px * var(--u)); }
+  .tr-stat .ev{ font-size:calc(16px * var(--u)); }
+  .tr-stat .bar{ height:calc(14px * var(--u)); }
 
   .tr-move{
-    flex:0 0 auto; height:76px; max-height:none;
-    grid-template-columns: 62px minmax(0,1fr);
+    flex:0 0 auto; max-height:none;
+    /* 4技の合計が、左の能力ポイント6行の合計とほぼ同じ高さになるように揃える */
+    height:calc((58px * 6 + 7px * 5 - 7px * 3) / 4 * var(--u));
+    grid-template-columns: calc(56px * var(--u)) minmax(0,1fr);
   }
-  .tr-move .tico img{ width:34px; height:34px; }
-  .tr-move .mbody{ gap:4px; padding:0 22px 0 14px; }
-  .tr-move .mn{ font-size:20px; }
-  .tr-move .pp{ font-size:18px; }
-  .tr-move .mdet{ font-size:14px; }
+  .tr-move .tico img{ width:calc(30px * var(--u)); height:calc(30px * var(--u)); }
+  .tr-move .mbody{ gap:calc(3px * var(--u)); padding:0 22px 0 14px; }
+  .tr-move .mn{ font-size:calc(20px * var(--u)); }
+  .tr-move .pp{ font-size:calc(18px * var(--u)); }
+  .tr-move .mdet{ font-size:calc(14px * var(--u)); }
 
-  .tr-low .tr-panel-body{ padding:12px 30px 14px; min-height:auto; flex:0 0 auto; }
-  .tr-pill{ font-size:18px; padding:10px 14px; max-width:320px; }
-  .tr-pill.small{ font-size:15px; }
+  /* 下段：能力補正｜特性 を左右に並べた横長の1段（元のHTML順どおり：補正→特性） */
+  .tr-low{ flex:0 0 auto; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:calc(16px * var(--u)); }
+  .tr-low .tr-panel-body{ padding:calc(9px * var(--u)) 30px calc(11px * var(--u)); min-height:auto; flex:0 0 auto; }
+  .tr-pill{ font-size:calc(18px * var(--u)); padding:calc(8px * var(--u)) 14px; max-width:340px; }
+  .tr-pill.small{ font-size:calc(15px * var(--u)); }
 
-  .tr-ok{ min-width:320px; padding:10px 40px; font-size:21px; }
-  .tr-ok .tr-ok-mark{ width:28px; height:28px; font-size:18px; }
-}
+  /* メガ進化X/Y（該当ポケモンだけ表示）：決定ボタンの上、中央に1行 */
+  .tr-megaform-row{ margin-top:0; gap:12px; justify-content:center; }
+  .tr-megaform-label{ font-size:calc(14px * var(--u)); }
+  .tr-megaform-btn{ width:calc(48px * var(--u)); height:calc(34px * var(--u)); font-size:calc(16px * var(--u)); }
 
-/* PCでも縦が短い画面（例：1280x720）では、行を少し低くして1画面に収める */
-@media (min-width: 900px) and (min-height: 500px) and (max-height: 820px){
-  .tr-wrap{ row-gap:8px; padding-top:max(10px, env(safe-area-inset-top)); padding-bottom:max(10px, env(safe-area-inset-bottom)); }
-  .tr-head-icon{ width:48px; height:48px; }
-  .tr-head-name{ font-size:24px; }
-  .tr-type-badge{ width:30px; height:30px; }
-  .tr-panel-head{ padding:4px 14px; font-size:14px; }
-  .tr-panel-body{ gap:6px; padding:8px 12px 10px; }
-  .tr-stat{ height:54px; }
-  .tr-move{ height:60px; grid-template-columns:52px minmax(0,1fr); }
-  .tr-move .tico img{ width:28px; height:28px; }
-  .tr-move .mn{ font-size:18px; }
-  .tr-move .mdet{ font-size:13px; }
-  .tr-low .tr-panel-body{ padding:8px 30px 10px; }
-  .tr-pill{ font-size:16px; padding:7px 12px; }
-  .tr-ok{ padding:7px 36px; font-size:19px; min-width:280px; }
-  .tr-foot{ padding-top:2px; }
+  /* 決定ボタン：能力補正・特性のすぐ下（余った縦は決定ボタンの下に集める） */
+  .tr-foot{ flex:0 0 auto; padding-top:calc(4px * var(--u)); }
+  .tr-ok{ min-width:calc(320px * var(--u)); padding:calc(9px * var(--u)) 40px; font-size:calc(21px * var(--u)); }
+  .tr-ok .tr-ok-mark{ width:calc(28px * var(--u)); height:calc(28px * var(--u)); font-size:calc(18px * var(--u)); }
 }
 
 </style>
