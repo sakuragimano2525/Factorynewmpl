@@ -3689,8 +3689,8 @@ html,body{
   align-items:stretch; justify-content:stretch;
   overflow:hidden;
   background:
-    radial-gradient(ellipse at 50% 40%, rgba(255,140,60,0.18), transparent 60%),
-    linear-gradient(160deg, #17151f 0%, #0c0b12 60%, #060509 100%);
+    radial-gradient(ellipse at 50% 30%, rgba(255,170,90,0.22), transparent 62%),
+    linear-gradient(160deg, #4a4560 0%, #34314a 55%, #2a2740 100%);
   --mp-card-h: 8.6vh;
   --mp-gap: 1.1vh;
   --mp-font: 2.2vh;
@@ -3721,10 +3721,10 @@ html,body{
 .mp-pick-col{
   flex:0 0 auto;
   width: min(34vw, 420px);
-  display:flex; flex-direction:column; gap:1vh;
+  display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; gap:1vh;
   min-height:0;
 }
-.mp-pick-col-opp{ align-items:flex-end; margin-left:auto; }
+.mp-pick-col-opp{ align-items:stretch; margin-left:auto; }
 .mp-pick-name-band{
   align-self:flex-start;
   padding: .8vh 2.4vh;
@@ -3735,14 +3735,16 @@ html,body{
 .mp-pick-name-self{ background: linear-gradient(135deg, #7b6bd6, #5b4bb5); }
 .mp-pick-name-opp{ align-self:flex-end; background: linear-gradient(135deg, #e0608f, #c23e6e); }
 .mp-pick-list{
-  flex:1 1 auto; min-height:0;
+  flex:0 0 auto; min-height:0; width:100%;
   display:flex; flex-direction:column; gap:var(--mp-gap);
   overflow-y:auto; scrollbar-width:none;
   padding: .3vh .3vh;
+  max-height: calc(var(--mp-card-h) * 6 + var(--mp-gap) * 5 + .6vh);
+  box-sizing:border-box;
 }
 .mp-pick-list::-webkit-scrollbar{ display:none; }
 .mp-pick-card{
-  position:relative; flex:0 0 auto;
+  position:relative; flex:0 0 auto; width:100%; box-sizing:border-box;
   height:var(--mp-card-h); min-width:0;
   display:flex; align-items:center; gap:1vh;
   padding: 0 1.2vh;
@@ -3786,12 +3788,15 @@ html,body{
   display:flex; align-items:center; justify-content:center;
   font-size:1.5vh; font-weight:900;
 }
-/* 相手側カード：操作不可の見た目に（枠色をピンク系にして区別、影を控えめに） */
+/* 相手側カード：操作不可の見た目に（枠色をピンク系にして区別、影を控えめに）。
+   相手の努力値・技・特性等のステータスは対戦相手には分からない情報のため、
+   詳細（!）ボタンは出さず、種族の見た目だけが分かるようにする。 */
 .mp-pick-list-opp .mp-pick-card{
   cursor: default;
   background: rgba(255,255,255,0.88);
   box-shadow: 0 .2vh .5vh rgba(0,0,0,0.25);
 }
+.mp-pick-list-opp .mp-pick-card-info-btn{ display:none; }
 .mp-pick-card-info-btn{
   flex:none;
   width:3vh; height:3vh; min-width:16px; min-height:16px; border-radius:50%;
@@ -3808,7 +3813,7 @@ html,body{
   border-radius:999px; border:1.5px dashed rgba(255,255,255,0.28);
 }
 .mp-pick-foot{
-  flex:0 0 auto; display:flex; justify-content:flex-start; margin-top:.6vh;
+  flex:0 0 auto; display:flex; justify-content:flex-start; margin-top:1.4vh;
 }
 .mp-pick-ok{
   display:flex; align-items:center; gap:1vh;

@@ -4611,6 +4611,9 @@ function mpPickSelfCardHtml(p, idx) {
   </div>`;
 }
 
+// 相手のポケモンは「見た目（種族・メガシンカ可否）」だけが分かればよく、
+// 努力値・実数値・特性・技構成といった本来対戦相手には分からない情報を
+// showTradeDetail（自分用の詳細パネル）で見せてしまわないよう、詳細ボタン自体を設けない。
 function mpPickOppCardHtml(p, idx) {
   return `<div class="mp-pick-card" data-mp-opp-idx="${idx}" role="button">
     ${mpPickSpriteHtml(p)}
@@ -4618,7 +4621,6 @@ function mpPickOppCardHtml(p, idx) {
       <span class="mp-pick-card-name">${p.species.name}</span>
       ${mpPickMegaHtml(p)}
     </div>
-    <button class="mp-pick-card-info-btn" data-mp-opp-info="${idx}" type="button" aria-label="くわしく見る"><span>!</span></button>
   </div>`;
 }
 
@@ -4633,10 +4635,8 @@ function renderMpPickOppList(oppPool) {
   const list = $('mp-pick-opp-list');
   if (oppPool && oppPool.length) {
     list.innerHTML = oppPool.map(mpPickOppCardHtml).join('');
-    list._oppPool = oppPool;
   } else {
     list.innerHTML = '<div class="mp-pick-waiting-row">相手の手持ちを読み込んでいます…</div>';
-    list._oppPool = null;
   }
 }
 
@@ -4659,13 +4659,7 @@ $('mp-pick-self-list').addEventListener('click', (e) => {
   renderMpPickSelfList();
 });
 
-$('mp-pick-opp-list').addEventListener('click', (e) => {
-  const info = e.target.closest('[data-mp-opp-info]');
-  if (!info) return;
-  const idx = parseInt(info.dataset.mpOppInfo, 10);
-  const pool = $('mp-pick-opp-list')._oppPool;
-  if (pool && pool[idx]) showTradeDetail(pool[idx]);
-});
+// 相手側リストは表示専用（詳細ボタンなし）のため、クリックイベントは登録しない。
 
 function confirmMpPick() {
   if (mpPickConfirmed) return; // ボタン連打やタイマー競合による多重実行を防止
