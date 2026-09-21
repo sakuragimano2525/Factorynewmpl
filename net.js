@@ -726,6 +726,9 @@ function serializePokeForNet(p) {
     rk: p.ranks,
     es: p.energyStacks || 0,
     sh: !!p.shiny,
+    // 「このポケモンはメガシンカ不可」フラグ。乱入ボスのメガシンカ未解放ロックは
+    // 持ち主の端末（localStorage）にしか無い情報なので、相手側にも伝えるために送る。
+    nm: !!p.noMega,
   };
 }
 
@@ -751,6 +754,7 @@ function deserializePokeFromNet(d) {
     evs: d.evs, iv: d.iv, stats: d.stats, maxHp: d.mhp, currentHp: d.hp,
     moves,
     shiny: !!d.sh,
+    noMega: !!d.nm,
     status: d.st || 0, badlyPoisonCounter: 0, confuseTurns: 0, sleepTurns: 0,
     ranks: d.rk || { atk: 0, def: 0, spa: 0, spd: 0, spe: 0, acc: 0, eva: 0 },
     flinch: false, fainted: false,

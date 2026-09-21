@@ -4439,8 +4439,6 @@ function renderReadyRoom() {
     : 'チームを選ぶ';
   chooseBtn.disabled = readyRoomState.mine;
 
-  $('team-format-hint').style.display = (isTeamFormat && state.mpChosenTeamIdx < 0) ? '' : 'none';
-
   $('host-wait-hint').textContent = !opponentPresent
     ? '友達にこの4ケタの番号を伝えてください'
     : (readyRoomState.mine ? '相手の準備を待っています…' : (
@@ -4668,6 +4666,23 @@ $('mp-team-scroller').addEventListener('click', async (e) => {
   renderReadyRoom();
 });
 
+/* ---- 対人戦：未解放メガシンカの制限 ----
+   乱入ボス11体のメガシンカは、各プレイヤーの端末（localStorage）で「解放」しないと使えない。
+   対人戦は setMegaLockActive(false) でロック判定自体は無効にしているため（相手の解放状況は
+   こちらからは分からない）、代わりに「持ち主の解放状況」を各ポケモンの noMega フラグに焼き込み、
+   その値を通信で相手にも伝える（net.js の nm）。バトル本体（ホスト権威）は canMegaEvolve が
+   poke.noMega を最優先で見るので、ホスト側・ゲスト側どちらのポケモンでも、
+   持ち主が未解放のメガシンカは発動しなくなる。 */
+function applyMegaOwnerLock(team) {
+  (team || []).forEach((p) => {
+    if (!p) return;
+    // 乱入ボス以外は常に解放済み扱い（isMegaUnlocked が true を返す）ので noMega は立たない。
+    // 「自分の端末で解放済みか」だけで決める。交換で他人から受け取った個体も、
+    // 今の持ち主（自分）の解放状況で判定し直す。
+    p.noMega = !isMegaUnlocked(p.speciesId);
+  });
+}
+
 /* ---- 選出 ---- */
 function startMultiplayerPick() {
   MenuBgm.start();
@@ -4757,6 +4772,7 @@ function startMpTeamPick() {
   startMpPickTimer(() => { confirmMpPick(); });
 
   // 選出中にお互いの持ち込んだ6匹（プール全体）を見られるようにする
+  applyMegaOwnerLock(pickPool); // 未解放のメガシンカは「使えない」状態にしてから送る
   Net.sendPickPool(pickPool).catch(() => {});
   Net.onOpponentPickPool((oppPool) => {
     mpOpponentPoolReceived = true;
@@ -5226,6 +5242,7 @@ async function onMultiplayerPickConfirm() {
     Net.clearPickPool().catch(() => {});
   }
 
+  applyMegaOwnerLock(state.playerTeam); // 交換で受け取った個体も含め、自分の解放状況で確定してから送る
   await Net.sendTeam(state.playerTeam);
   Pokedex.registerTeam(state.playerTeam);
 
