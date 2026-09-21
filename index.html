@@ -612,6 +612,34 @@ html,body{
 .mega-setting-row.readonly .mega-setting-opt{
   cursor: default;
 }
+.opp-pool-panel{
+  width: 100%;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(120,110,160,0.35);
+}
+.opp-pool-title{
+  font-size: 11.5px;
+  font-weight: 900;
+  color: var(--ink-soft);
+  text-align: center;
+  margin: 0 0 8px;
+  letter-spacing: .04em;
+}
+.opp-pool-row{
+  opacity: 0.92;
+}
+.opp-pool-row .trade-poke-card{
+  cursor: pointer;
+}
+.opp-pool-waiting{
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--ink-soft);
+  text-align: center;
+  margin: 6px 0 0;
+}
+.opp-pool-waiting.is-hidden{ display: none; }
 .rr2-players-title{
   font-size: 11px;
   font-weight: 900;
@@ -4820,6 +4848,16 @@ html,body{
         </div>
         <p class="ready-room-hint" id="host-wait-hint">友達にこの4ケタの番号を伝えてください</p>
 
+        <div class="mega-setting-row" id="format-setting-row">
+          <span class="mega-setting-icon" aria-hidden="true">⚔️</span>
+          <span class="mega-setting-label">対戦方式</span>
+          <div class="mega-setting-switch" id="format-setting-switch">
+            <span class="mega-setting-thumb" id="format-setting-thumb"></span>
+            <button id="btn-format-setting-random" class="mega-setting-opt" type="button" data-value="random">ランダム</button>
+            <button id="btn-format-setting-team" class="mega-setting-opt" type="button" data-value="team">チーム</button>
+          </div>
+        </div>
+
         <div class="mega-setting-row" id="mega-setting-row">
           <img class="mega-setting-icon" src="./mega.png" alt="メガシンカ" onerror="this.style.display='none'">
           <span class="mega-setting-label">メガ</span>
@@ -4829,6 +4867,8 @@ html,body{
             <button id="btn-mega-setting-toggle" class="mega-setting-opt" type="button" data-value="on">あり</button>
           </div>
         </div>
+
+        <p class="ready-room-hint" id="team-format-hint" style="display:none;">チーム戦は自分のチームを選んでから準備完了してください</p>
       </div>
 
       <div class="rr2-col rr2-col-vs">
@@ -4855,9 +4895,22 @@ html,body{
 
         <div class="ready-room-btn-row">
           <button id="host-wait-cancel" class="neu-btn" type="button">キャンセル</button>
+          <button id="btn-choose-mp-team" class="neu-btn" type="button" style="display:none;">チームを選ぶ</button>
           <button id="btn-ready-toggle" class="neu-btn primary" type="button" disabled>準備完了</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- ================= MULTIPLAYER (TEAM) : TEAM SELECT (チーム1〜20) ================= -->
+  <div id="screen-mp-team" class="screen">
+    <div class="ps-wrap">
+      <div class="ps-topbar">
+        <button id="mp-team-btn-back" class="sb-round-btn" type="button" aria-label="もどる">↩</button>
+        <div class="ps-title">つかう チームを えらんでください</div>
+        <span class="ps-spacer"></span>
+      </div>
+      <div class="ps-scroller" id="mp-team-scroller"></div>
     </div>
   </div>
 
@@ -5127,10 +5180,17 @@ html,body{
       <div class="pick-timer-badge" id="pick-timer-badge" style="display:none;">
         <span id="pick-timer-num">30</span>
       </div>
-      <p class="trade-title">6匹の中から3匹えらんでください（えらんだ順に手持ちへ並びます）</p>
+      <p class="trade-title" id="pick-title">6匹の中から3匹えらんでください（えらんだ順に手持ちへ並びます）</p>
       <div class="trade-offer-row" id="pick-row"></div>
       <p class="pick-count" id="pick-count">0 / 3 選択中</p>
       <button id="btn-pick-confirm" class="neu-btn primary start-btn" disabled>けってい</button>
+
+      <!-- チーム戦のみ：相手の6匹（選出前の手持ち全体）を見られる -->
+      <div class="opp-pool-panel" id="opp-pool-panel" style="display:none;">
+        <p class="opp-pool-title">相手の手持ち</p>
+        <div class="trade-offer-row opp-pool-row" id="opp-pool-row"></div>
+        <p class="opp-pool-waiting" id="opp-pool-waiting">相手の手持ちを読み込んでいます…</p>
+      </div>
     </div>
   </div>
 

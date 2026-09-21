@@ -82,9 +82,11 @@ const Net = {
     this.opponentName = '';
     this.opponentFavorite = null;
     this.megaEnabled = false;
+    this.battleFormat = 'random';
+    this._opponentPickPoolUnsub = null;
   },
 
-  async createRoom(code, name, favorite, megaEnabled) {
+  async createRoom(code, name, favorite, megaEnabled, battleFormat) {
     if (!this.init()) return 'error';
     this.isHost = true;
     this.roomId = code;
@@ -92,6 +94,7 @@ const Net = {
     this.roomRef = this.db.ref('rooms/' + code);
     const snap = await this.roomRef.once('value');
     if (snap.exists()) return 'exists';
+    this.battleFormat = (battleFormat === 'team') ? 'team' : 'random';
     await this.roomRef.set({
       meta: {
         hostName: name,
@@ -100,6 +103,7 @@ const Net = {
         guestFavorite: null,
         status: 'waiting',
         megaEnabled: !!megaEnabled,
+        battleFormat: this.battleFormat,
         createdAt: firebase.database.ServerValue.TIMESTAMP,
         hostHeartbeat: firebase.database.ServerValue.TIMESTAMP,
         guestHeartbeat: 0,
@@ -126,6 +130,7 @@ const Net = {
     this.opponentName = data.meta.hostName || '';
     this.opponentFavorite = data.meta.hostFavorite || null;
     this.megaEnabled = !!data.meta.megaEnabled;
+    this.battleFormat = (data.meta.battleFormat === 'team') ? 'team' : 'random';
     await this.roomRef.child('meta').update({
       guestName: name,
       guestFavorite: favorite || null,
@@ -162,6 +167,76 @@ const Net = {
     };
     ref.on('value', handler);
     this._unsubs.push(() => ref.off('value', handler));
+  },
+
+  /* ---- 対戦方式（ランダム／チーム）設定（対人戦：ホストのみ変更可） ----
+     メガシンカ設定と同じ仕組み。ホストが待機部屋で切り替え、
+     ゲスト側は onBattleFormatChange で常に最新の値を受け取る。
+     format: 'random' | 'team' */
+  battleFormat: 'random',
+  async setBattleFormat(format) {
+    if (!this.roomRef || !this.isHost) return;
+    this.battleFormat = (format === 'team') ? 'team' : 'random';
+    try { await this.roomRef.child('meta/battleFormat').set(this.battleFormat); } catch (e) {}
+  },
+
+  onBattleFormatChange(cb) {
+    if (!this.roomRef) return;
+    const ref = this.roomRef.child('meta/battleFormat');
+    const handler = (snap) => {
+      this.battleFormat = (snap.val() === 'team') ? 'team' : 'random';
+      cb(this.battleFormat);
+    };
+    ref.on('value', handler);
+    this._unsubs.push(() => ref.off('value', handler));
+  },
+
+  /* ---- チーム戦：選出前に「6匹の手持ち全体」をお互い閲覧できるようにする ----
+     選出（3匹選ぶ）そのものは相手に見せないが、持ち込んだ6匹の顔ぶれは
+     見える必要があるため、選出プールを専用パスで共有する。 */
+  async sendPickPool(pool) {
+    if (!this.roomRef) return;
+    const path = this.isHost ? 'pickPool/hostPool' : 'pickPool/guestPool';
+    const payload = pool.map(serializePokeForNet);
+    let lastErr = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await this.roomRef.child(path).set(payload);
+        return;
+      } catch (e) {
+        lastErr = e;
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+    throw lastErr;
+  },
+
+  _opponentPickPoolUnsub: null,
+  onOpponentPickPool(cb) {
+    if (!this.roomRef) return;
+    if (this._opponentPickPoolUnsub) { this._opponentPickPoolUnsub(); this._opponentPickPoolUnsub = null; }
+    const path = this.isHost ? 'pickPool/guestPool' : 'pickPool/hostPool';
+    const ref = this.roomRef.child(path);
+    let done = false;
+    const handler = (snap) => {
+      if (done) return;
+      const data = snap.val();
+      if (data && Array.isArray(data) && data.length > 0) {
+        done = true;
+        ref.off('value', handler);
+        this._opponentPickPoolUnsub = null;
+        cb(data.map(deserializePokeFromNet));
+      }
+    };
+    ref.on('value', handler);
+    const unsub = () => ref.off('value', handler);
+    this._opponentPickPoolUnsub = unsub;
+    this._unsubs.push(unsub);
+  },
+
+  async clearPickPool() {
+    if (!this.roomRef) return;
+    await this.roomRef.child('pickPool').remove();
   },
 
   /* ---- 切断時に自動で部屋を閉じる設定 ----
@@ -606,6 +681,7 @@ const Net = {
     await this.roomRef.child('ready').remove();
     await this.roomRef.child('hostTeam').remove();
     await this.roomRef.child('guestTeam').remove();
+    await this.roomRef.child('pickPool').remove();
   },
 
   /* ---- 部屋を明示的に閉じる（相手に通知） ---- */
@@ -628,6 +704,7 @@ const Net = {
           await this.roomRef.child('nego').remove();
           await this.roomRef.child('rematch').remove();
           await this.roomRef.child('ready').remove();
+          await this.roomRef.child('pickPool').remove();
         }
       } catch (e) {}
     }

@@ -350,6 +350,9 @@ const state = {
   multiplayer: false,
   mpHostEvents: [],
   turnNumber: 1,
+  // ---- 対人戦：対戦方式（'random'|'team'）とチーム戦選択中のチーム ----
+  mpBattleFormat: 'random',
+  mpChosenTeamIdx: -1,
   // ---- メガシンカ（テスト機能） ----
   megaEvolutionEnabled: false, // このバトルでメガシンカ機能が有効かどうか
   // ---- 乱入（メガありNPC戦のみ） ----
@@ -944,7 +947,7 @@ function showScreen(name) {
   $('screen-' + name).classList.add('active');
   state.screen = name;
   checkOrientation();
-  if (name === 'title') { refreshTitleNameLabel(); setMegaLockActive(true); npcTeamEndRun(); } // タイトルに戻ったらロック有効に戻す／チーム戦のランも終了
+  if (name === 'title') { refreshTitleNameLabel(); setMegaLockActive(true); npcTeamEndRun(); state.mpChosenTeamIdx = -1; } // タイトルに戻ったらロック有効に戻す／チーム戦のランも終了
 }
 
 /* ---------------- Sprite helpers ---------------- */
@@ -4244,32 +4247,68 @@ function renderReadyRoom() {
   $('ready-slot-1-badge').textContent = slot1Ready ? '準備完了' : '未準備';
   $('ready-slot-2-badge').textContent = slot2Ready ? '準備完了' : '未準備';
 
+  const isTeamFormat = Net.battleFormat === 'team';
+  // チーム戦は6匹あるチームを1つ選ぶまで「準備完了」を押せないようにする
+  // （選んでいなければ chosen team を無効化して押させない）。
+  const teamChosen = !isTeamFormat || state.mpChosenTeamIdx >= 0;
+
   const btn = $('btn-ready-toggle');
   const opponentPresent = !!oppName;
-  btn.disabled = !opponentPresent;
+  btn.disabled = !opponentPresent || !teamChosen;
   btn.textContent = readyRoomState.mine ? '取り消す' : '準備完了';
   btn.classList.toggle('primary', !readyRoomState.mine);
 
+  const chooseBtn = $('btn-choose-mp-team');
+  chooseBtn.style.display = isTeamFormat ? '' : 'none';
+  chooseBtn.textContent = state.mpChosenTeamIdx >= 0
+    ? `チーム変更（${sbState.parties[state.mpChosenTeamIdx] ? sbState.parties[state.mpChosenTeamIdx].name : ''}）`
+    : 'チームを選ぶ';
+  chooseBtn.disabled = readyRoomState.mine;
+
+  $('team-format-hint').style.display = (isTeamFormat && state.mpChosenTeamIdx < 0) ? '' : 'none';
+
   $('host-wait-hint').textContent = !opponentPresent
     ? '友達にこの4ケタの番号を伝えてください'
-    : (readyRoomState.mine ? '相手の準備を待っています…' : 'じゅんびができたら「準備完了」を押してください');
+    : (readyRoomState.mine ? '相手の準備を待っています…' : (
+        isTeamFormat && state.mpChosenTeamIdx < 0
+          ? 'まずチームを選んでください'
+          : 'じゅんびができたら「準備完了」を押してください'
+      ));
 
   renderMegaSettingRow();
+  renderFormatSettingRow();
 }
 
 // メガシンカ設定の表示更新。
 // ホスト：タップして切り替えられる（見た目もボタンらしく）。
 // ゲスト：ホストが決めた設定を見るだけ（タップ不可）。
+// チーム戦は常にメガありで固定（NPCのチーム戦と同じ仕様）のため、タップ不可にする。
 function renderMegaSettingRow() {
   const row = $('mega-setting-row');
   const switchEl = $('mega-setting-switch');
   const offBtn = $('btn-mega-setting-off');
   const onBtn = $('btn-mega-setting-toggle');
-  const enabled = !!Net.megaEnabled;
+  const isTeamFormat = Net.battleFormat === 'team';
+  const enabled = isTeamFormat ? true : !!Net.megaEnabled;
   switchEl.classList.toggle('is-on', enabled);
+  const editable = state.isHost && !isTeamFormat;
+  row.classList.toggle('readonly', !editable);
+  offBtn.disabled = !editable;
+  onBtn.disabled = !editable;
+}
+
+// 対戦方式（ランダム／チーム）トグルの表示更新。
+// ホスト：タップして切り替えられる。ゲスト：見るだけ。
+function renderFormatSettingRow() {
+  const row = $('format-setting-row');
+  const switchEl = $('format-setting-switch');
+  const randomBtn = $('btn-format-setting-random');
+  const teamBtn = $('btn-format-setting-team');
+  const isTeamFormat = Net.battleFormat === 'team';
+  switchEl.classList.toggle('is-on', isTeamFormat);
   row.classList.toggle('readonly', !state.isHost);
-  offBtn.disabled = !state.isHost;
-  onBtn.disabled = !state.isHost;
+  randomBtn.disabled = !state.isHost;
+  teamBtn.disabled = !state.isHost;
 }
 
 function wireReadyRoomListeners() {
@@ -4294,6 +4333,12 @@ function wireReadyRoomListeners() {
   Net.onMegaEnabledChange(() => {
     renderMegaSettingRow();
   });
+
+  Net.onBattleFormatChange(() => {
+    // 対戦方式が変わったら、選んでいたチームの選択は無効化する（ランダム⇔チーム切替時の事故防止）
+    state.mpChosenTeamIdx = -1;
+    renderReadyRoom();
+  });
 }
 
 async function startHostRoom() {
@@ -4302,12 +4347,14 @@ async function startHostRoom() {
   readyListenersWired = false;
   readyRoomState = { mine: false, opponent: false };
   state.isHost = true;
+  state.mpChosenTeamIdx = -1;
   let code = null;
   const myFavorite = Pokedex.getFavorite();
   Net.megaEnabled = false; // ルームごとにデフォルトは「メガなし」。ホストが待機部屋で切り替え可能。
+  Net.battleFormat = 'random'; // ルームごとにデフォルトは「ランダム」。ホストが待機部屋で切り替え可能。
   for (let i = 0; i < 8; i++) {
     const candidate = generateRoomId();
-    const r = await Net.createRoom(candidate, state.playerName, myFavorite, Net.megaEnabled);
+    const r = await Net.createRoom(candidate, state.playerName, myFavorite, Net.megaEnabled, Net.battleFormat);
     if (r === 'ok') { code = candidate; break; }
   }
   if (!code) {
@@ -4336,6 +4383,7 @@ async function joinRoom(code) {
   readyListenersWired = false;
   readyRoomState = { mine: false, opponent: false };
   state.isHost = false;
+  state.mpChosenTeamIdx = -1;
   const r = await Net.joinRoom(code, state.playerName, Pokedex.getFavorite());
   if (r === 'not-found') { alert('そのルームは見つかりませんでした。'); return; }
   if (r === 'full') { alert('そのルームは満員、またはすでに対戦中です。'); return; }
@@ -4354,38 +4402,195 @@ function cancelHostRoom() {
   Net.leave();
   state.roomId = null;
   state.isHost = false;
+  state.mpChosenTeamIdx = -1;
   readyRoomState = { mine: false, opponent: false };
   readyListenersWired = false;
   showMultiplayerMenu();
 }
 
 function toggleReady() {
+  // チーム戦なのにチームが未選択の場合は準備完了させない（ボタン自体もdisabledだが念のため二重ガード）
+  if (Net.battleFormat === 'team' && state.mpChosenTeamIdx < 0) return;
   const next = !readyRoomState.mine;
   readyRoomState.mine = next;
   renderReadyRoom();
   Net.setReady(next);
 }
 
+/* ---- 対戦方式トグル（ホストのみ操作可） ---- */
+$('btn-format-setting-random').addEventListener('click', () => {
+  if (!state.isHost) return;
+  if (readyRoomState.mine) return; // 準備完了中は変更不可
+  Net.setBattleFormat('random');
+  state.mpChosenTeamIdx = -1;
+  renderReadyRoom();
+});
+$('btn-format-setting-team').addEventListener('click', () => {
+  if (!state.isHost) return;
+  if (readyRoomState.mine) return;
+  Net.setBattleFormat('team');
+  state.mpChosenTeamIdx = -1;
+  renderReadyRoom();
+});
+
+/* ---- 対人戦チーム戦：使うチームを選ぶ ---- */
+$('btn-choose-mp-team').addEventListener('click', () => {
+  openMpTeamSelect();
+});
+$('mp-team-btn-back').addEventListener('click', () => {
+  showScreen('host-waiting');
+  renderReadyRoom();
+});
+
+function mpTeamRender() {
+  const el = $('mp-team-scroller');
+  el.innerHTML = sbState.parties.map(sbPartyColHtml).join('');
+  el.querySelectorAll('.ps-col.current').forEach((c) => c.classList.remove('current'));
+  if (state.mpChosenTeamIdx >= 0) {
+    const chosen = el.querySelector(`[data-ps-idx="${state.mpChosenTeamIdx}"]`);
+    if (chosen) chosen.classList.add('current');
+  }
+}
+
+function openMpTeamSelect() {
+  // sbState.parties は本格バトル画面を開くまで復元されないため、必ずここで用意する
+  sbBuildBox();
+  mpTeamRender();
+  showScreen('mp-team');
+  $('mp-team-scroller').scrollLeft = 0;
+}
+
+let mpTeamToastTimer = null;
+function mpTeamToast(text) {
+  let el = $('mp-team-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'mp-team-toast';
+    el.className = 'pokedex-toast';
+    document.getElementById('app').appendChild(el);
+  }
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(mpTeamToastTimer);
+  mpTeamToastTimer = setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+$('mp-team-scroller').addEventListener('click', async (e) => {
+  const col = e.target.closest('[data-ps-idx]');
+  if (!col) return;
+  const i = parseInt(col.dataset.psIdx, 10);
+  if (!(i >= 0 && i < SB_PARTY_COUNT)) return;
+  const pt = sbState.parties[i];
+  const members = Array.isArray(pt.snapshot) ? pt.snapshot : [];
+  // 選出は「6匹の中から3匹」なので、6匹そろっていないパーティーは使えない
+  if (members.length < 6) {
+    mpTeamToast(members.length === 0 ? `${pt.name}は 保存されていません` : `${pt.name}は ${members.length}匹しかいません（6匹必要です）`);
+    return;
+  }
+  const ok = await askConfirm(`${pt.name}を つかいますか？`);
+  if (!ok) return;
+  state.mpChosenTeamIdx = i;
+  showScreen('host-waiting');
+  renderReadyRoom();
+});
+
+/* ---- チーム戦：選出画面で見せる「相手の手持ち6匹」パネル用フラグ ---- */
+let opponentPoolReceived = false;
+
 /* ---- 選出 ---- */
 function startMultiplayerPick() {
   MenuBgm.start();
   state.multiplayer = true;
+  state.mpBattleFormat = Net.battleFormat === 'team' ? 'team' : 'random';
   setMegaLockActive(false); // 対人戦：ロックなし（従来どおり）
   state.winStreak = 0;
   state.opponentName = Net.opponentName || '';
-  // ホストが待機部屋で決めたメガシンカ設定を、この対戦の状態に反映する。
-  // ホスト・ゲストどちらも Net.megaEnabled を見て同じ値になる（あり/なしはお互い共通）。
-  state.megaEvolutionEnabled = !!Net.megaEnabled;
   readyBattleStarting = false;
   readyRoomState = { mine: false, opponent: false };
   pickConfirmed = false;
-  const ids = buildPickPoolIds();
-  pickPool = ids.map((id) => createRandomPokemon(id, 100));
+  opponentPoolReceived = false;
+
+  if (state.mpBattleFormat === 'team') {
+    // チーム戦：ランダム生成ではなく、待機部屋で選んだ自分のチーム（6匹）を選出プールにする
+    state.megaEvolutionEnabled = true; // チーム戦は常にメガあり
+    const pt = sbState.parties[state.mpChosenTeamIdx];
+    const members = (pt && Array.isArray(pt.snapshot)) ? pt.snapshot.slice(0, 6) : [];
+    pickPool = members.map((d) => sbRestorePoke(sbSerializePoke(d))).filter(Boolean);
+    if (pickPool.length < 6) {
+      // 万一チームが壊れていた場合の保険：ランダムで埋める
+      const ids = buildPickPoolIds();
+      while (pickPool.length < 6) pickPool.push(createRandomPokemon(ids[pickPool.length % ids.length], 100));
+    }
+  } else {
+    // ホストが待機部屋で決めたメガシンカ設定を、この対戦の状態に反映する。
+    // ホスト・ゲストどちらも Net.megaEnabled を見て同じ値になる（あり/なしはお互い共通）。
+    state.megaEvolutionEnabled = !!Net.megaEnabled;
+    const ids = buildPickPoolIds();
+    pickPool = ids.map((id) => createRandomPokemon(id, 100));
+  }
   pickedIds = [];
   renderPickRow();
+  renderOppPoolPanel();
+  $('pick-title').textContent = state.mpBattleFormat === 'team'
+    ? '自分のチーム6匹の中から3匹えらんでください（えらんだ順に手持ちへ並びます）'
+    : '6匹の中から3匹えらんでください（えらんだ順に手持ちへ並びます）';
   $('pick-overlay').classList.add('show');
   startPickTimer(() => { confirmPick(); });
+
+  if (state.mpBattleFormat === 'team') {
+    // チーム戦のみ：選出中にお互いの持ち込んだ6匹（プール全体）を見られるようにする
+    Net.sendPickPool(pickPool).catch(() => {});
+    Net.onOpponentPickPool((oppPool) => {
+      opponentPoolReceived = true;
+      renderOppPoolPanel(oppPool);
+    });
+  }
 }
+
+/* ---- チーム戦：選出画面で見せる「相手の手持ち6匹」パネル ---- */
+function oppPoolCardHtml(p, idx) {
+  const t1 = p.species.type1, t2 = p.species.type2;
+  return `
+    <div class="trade-poke-card" data-opp-idx="${idx}">
+      <button class="tpc-info-btn" data-opp-info-idx="${idx}" type="button"><span>!</span></button>
+      <img src="${spritePath(p)}" alt="${p.species.name}" class="tpc-sprite"
+           onerror="this.replaceWith(makeTeamCardFallback(${p.speciesId}))">
+      <div class="tpc-name">${tpcNameHtml(p)}</div>
+      <div class="tpc-types">
+        ${typeChipHtml(t1)}
+        ${t2 ? typeChipHtml(t2) : ''}
+      </div>
+    </div>
+  `;
+}
+
+function renderOppPoolPanel(oppPool) {
+  const panel = $('opp-pool-panel');
+  if (state.mpBattleFormat !== 'team') {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+  const row = $('opp-pool-row');
+  const waiting = $('opp-pool-waiting');
+  if (oppPool && oppPool.length) {
+    row.innerHTML = oppPool.map(oppPoolCardHtml).join('');
+    waiting.classList.add('is-hidden');
+    row._oppPool = oppPool;
+  } else {
+    row.innerHTML = '';
+    waiting.classList.remove('is-hidden');
+    row._oppPool = null;
+  }
+}
+
+$('opp-pool-row').addEventListener('click', (e) => {
+  const infoBtn = e.target.closest('[data-opp-info-idx]');
+  if (!infoBtn) return;
+  const idx = parseInt(infoBtn.dataset.oppInfoIdx, 10);
+  const pool = $('opp-pool-row')._oppPool;
+  if (pool && pool[idx]) showTradeDetail(pool[idx]);
+});
 
 /* =========================================================
    選出後の交換フェーズ（対人戦のみ）
@@ -4744,7 +4949,15 @@ async function onMultiplayerPickConfirm() {
   state.playerTeam.forEach(resetPokeForBattle);
 
   // ---- 選出後の交換フェーズ ----
-  await runNegotiatePhase();
+  // チーム戦は「お互い自分のチームのまま」戦うため、交換フェーズは行わない。
+  if (state.mpBattleFormat !== 'team') {
+    await runNegotiatePhase();
+  }
+
+  // チーム戦で使った選出プール（6匹）の共有データはもう不要なので片付ける
+  if (state.mpBattleFormat === 'team' && state.isHost) {
+    Net.clearPickPool().catch(() => {});
+  }
 
   await Net.sendTeam(state.playerTeam);
   Pokedex.registerTeam(state.playerTeam);
