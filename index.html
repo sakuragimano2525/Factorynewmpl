@@ -2695,24 +2695,32 @@ html,body{
 .party-panel.tt-mode .party-detail{ flex: 1 1 auto; }
 .tt-oppo-list{
   flex: 0 0 26%;
-  display:flex; flex-direction:column; gap:8px;
-  padding: 14px;
-  overflow-y:auto;
+  display:flex; flex-direction:column; gap:3px;
+  padding: 7px 8px;
+  /* 6匹全員がスクロール無しで見えるようにする：はみ出しは許さず、
+     各カードは残りの高さを6等分して縮む（min-height:0 で中身に引きずられない）。 */
+  overflow:hidden;
+  min-height:0;
+  box-sizing:border-box;
   background: var(--surface-deep);
   border-left: 1px solid rgba(0,0,0,0.08);
 }
 .tt-oppo-title{
-  font-size:10.5px; font-weight:900; color:var(--ink-soft);
+  flex:0 0 auto;
+  font-size:9.5px; font-weight:900; color:var(--ink-soft);
   letter-spacing:0.05em;
-  margin-bottom: -2px;
+  margin-bottom: 0;
+  line-height:1.1;
 }
 .tt-oppo-item{
-  border-radius: var(--radius-sm);
-  padding: 9px 11px;
+  flex:1 1 0; min-height:0;
+  border-radius: 8px;
+  padding: 2px 7px;
   background: var(--surface);
   box-shadow: var(--shadow-light-sm);
-  display:flex; align-items:center; gap:9px;
+  display:flex; align-items:center; gap:6px;
   border: 2px solid transparent;
+  box-sizing:border-box;
   transition: filter .15s ease, opacity .15s ease;
 }
 .tt-oppo-item.tt-unseen{
@@ -2728,39 +2736,23 @@ html,body{
 }
 .tt-oppo-item.tt-fainted.tt-unseen{ filter:none; opacity:1; }
 .tt-oi-icon{
-  width:36px; height:36px; flex:none; border-radius:50%;
+  /* カードの高さに合わせて縮む（高さは親のflex按分で決まるので、正方形は height 基準で保つ） */
+  height:100%; max-height:30px; aspect-ratio:1/1; width:auto; flex:none; border-radius:50%;
   background: var(--surface-deep); box-shadow: var(--shadow-inset-sm);
   object-fit:contain; image-rendering:pixelated;
 }
-.tt-oi-info{ flex:1; min-width:0; }
-.tt-oi-name{ font-weight:800; font-size:12.5px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.tt-oi-name .tt-oi-fainted-tag{ font-size:9px; font-weight:900; color:#ff4d4d; margin-left:5px; }
+.tt-oi-info{ flex:1; min-width:0; display:flex; flex-direction:column; justify-content:center; }
+.tt-oi-name{ font-weight:800; font-size:10.5px; line-height:1.15; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tt-oi-name .tt-oi-fainted-tag{ font-size:8px; font-weight:900; color:#ff4d4d; margin-left:4px; }
 .tt-oppo-item.tt-unseen .tt-oi-name{ color: var(--ink-soft); }
-.tt-oi-hpbar-outer{ margin-top:4px; height:6px; border-radius:999px; background:var(--surface-deep); box-shadow:var(--shadow-inset-sm); overflow:hidden; }
+.tt-oi-hpbar-outer{ margin-top:2px; height:4px; border-radius:999px; background:var(--surface-deep); box-shadow:var(--shadow-inset-sm); overflow:hidden; }
 .tt-oi-hpbar-inner{ height:100%; border-radius:999px; background:var(--accent-hp); }
-.tt-oi-hp-text{ margin-top:3px; font-size:9px; font-weight:700; color:var(--ink-soft); }
-
-.pd-tabs{ display:flex; gap:6px; }
-.pd-tab-btn{
-  font-size:11px; font-weight:800;
-  padding:5px 14px;
-  border-radius:999px;
-  background: var(--surface-deep);
-  box-shadow: var(--shadow-inset-sm);
-  color: var(--ink-soft);
-  border:none;
+.tt-oi-hp-text{ margin-top:1px; font-size:8px; line-height:1.1; font-weight:700; color:var(--ink-soft); }
+/* 画面の高さが低い端末：6匹を切らずに収めるため、HP%の文字を省いて名前＋HPバーだけにする */
+@media (max-height: 320px){
+  .tt-oi-hp-text{ display:none; }
+  .tt-oi-name{ font-size:10px; }
 }
-.pd-tab-btn.active{
-  background: linear-gradient(135deg, var(--accent-a), var(--accent-b));
-  color:#fff;
-  box-shadow: var(--shadow-light-sm);
-}
-.pd-tab-panel{ display:none; }
-.pd-tab-panel.active{ display:flex; }
-.pd-tab-panel.pd-tab-status{ flex-direction:column; gap:6px; }
-.pd-status-row{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; font-size:12.5px; font-weight:700; color:var(--ink); padding:7px 12px; border-radius: var(--radius-sm); background: var(--surface-deep); box-shadow: var(--shadow-inset-sm); }
-.pd-status-name{ color:var(--ink-soft); }
-.pd-status-value{ color:var(--ink); }
 
 /* ================= 対戦中：わざ選択画面の「詳細」ボタンで開く技詳細パネル（画面左） ================= */
 .battle-move-info-overlay{

@@ -2672,48 +2672,6 @@ function partyDetailHtml(p, showMegaPreview) {
       </button>`
     : '';
 
-  // 対人チーム戦の拡張UIでは「能力（わざ・ステータス実数値）」と「ステータス（状態異常・ランク変化）」を
-  // タブで切り替える。通常のCPU戦・ランダム戦では従来通り一括表示のまま。
-  if (isTeamBattleMode()) {
-    const badgeLabel = statusBadgeLabel(p);
-    const typeChgLabel = typeChangeLabel(p);
-    const statusTabHtml = `
-      <div class="pd-status-row"><span class="pd-status-name">状態</span><span class="pd-status-value">${badgeLabel || 'なし'}</span></div>
-      ${typeChgLabel ? `<div class="pd-status-row"><span class="pd-status-name">タイプ変化</span><span class="pd-status-value">${typeChgLabel}</span></div>` : ''}
-      <div class="pd-section-title" style="margin-top:4px;">のうりょくランク</div>
-      ${ranksHtml(p)}
-    `;
-    return `
-      <div class="pd-header">
-        <span class="pd-name">${p.species.name}</span>
-        ${shouldShowLevel() ? `<span class="pd-lv">Lv${p.level}</span>` : ''}
-        ${megaToggleBtn}
-        <div class="pd-types">
-          ${typeDisplay}
-        </div>
-      </div>
-      ${typeChangeInfo}
-      <div class="pd-ability-box">
-        <span class="pd-ability-label">特性</span>
-        <span class="pd-ability-name">${ability ? ability.name : '—'}</span>
-        ${ability && ability.desc ? `<div class="pd-ability-desc">${ability.desc}</div>` : ''}
-      </div>
-      <div class="pd-tabs">
-        <button class="pd-tab-btn ${pdActiveTab === 'moves' ? 'active' : ''}" id="pd-tab-btn-moves" type="button">わざ</button>
-        <button class="pd-tab-btn ${pdActiveTab === 'status' ? 'active' : ''}" id="pd-tab-btn-status" type="button">ステータス</button>
-      </div>
-      <div class="pd-tab-panel pd-body ${pdActiveTab === 'moves' ? 'active' : ''}">
-        <div class="pd-moves-col">
-          <div class="pd-moves">${movesHtml}</div>
-        </div>
-        <div class="pd-stats">${statsHtml}</div>
-      </div>
-      <div class="pd-tab-panel pd-tab-status ${pdActiveTab === 'status' ? 'active' : ''}">
-        ${statusTabHtml}
-      </div>
-    `;
-  }
-
   return `
     <div class="pd-header">
       <span class="pd-name">${p.species.name}</span>
@@ -2821,7 +2779,6 @@ let partyArmedIdx = null;
 let partyMode = 'switch';
 let forcedSwitchResolve = null;
 let partyDetailShowMega = false; // 「メガシンカ後を見る」トグルの状態（表示専用、poke本体には影響しない）
-let pdActiveTab = 'moves'; // パーティー詳細のタブ状態（'moves'|'status'）：対人チーム戦の拡張UIで使用
 
 // 対人チーム戦（お互い6匹から選出した固定パーティーで戦う形式）かどうか。
 // この形式の時だけ、交代画面に相手の選出パーティー一覧を並べた拡張UIを出す。
@@ -2833,7 +2790,6 @@ function openPartyOverlay(mode) {
   partyMode = mode || 'switch';
   partyArmedIdx = null;
   partyDetailShowMega = false;
-  pdActiveTab = 'moves';
   if (partyMode === 'forced') {
     const firstAlive = state.playerTeam.findIndex((p) => !p.fainted);
     partySelectedIdx = firstAlive >= 0 ? firstAlive : 0;
@@ -2865,12 +2821,6 @@ function renderPartyDetail() {
       partyDetailShowMega = !partyDetailShowMega;
       renderPartyDetail();
     });
-  }
-  const tabMoves = document.getElementById('pd-tab-btn-moves');
-  const tabStatus = document.getElementById('pd-tab-btn-status');
-  if (tabMoves && tabStatus) {
-    tabMoves.addEventListener('click', () => { pdActiveTab = 'moves'; renderPartyDetail(); });
-    tabStatus.addEventListener('click', () => { pdActiveTab = 'status'; renderPartyDetail(); });
   }
 }
 
@@ -4761,6 +4711,10 @@ function startMpTeamPick() {
     const ids = buildPickPoolIds();
     while (pickPool.length < 6) pickPool.push(createRandomPokemon(ids[pickPool.length % ids.length], 100));
   }
+  // 未解放のメガシンカは「使えない」印を、最初の描画（mega.pngの表示判定）より前に付ける。
+  // 描画の後に付けると、最初の1回だけ未解放のメガアイコンが見えてしまう。
+  // この印は下の sendPickPool で相手にも伝わる。
+  applyMegaOwnerLock(pickPool);
   mpPickedIds = [];
 
   $('mp-pick-self-name').textContent = state.playerName || '';
@@ -4772,7 +4726,6 @@ function startMpTeamPick() {
   startMpPickTimer(() => { confirmMpPick(); });
 
   // 選出中にお互いの持ち込んだ6匹（プール全体）を見られるようにする
-  applyMegaOwnerLock(pickPool); // 未解放のメガシンカは「使えない」状態にしてから送る
   Net.sendPickPool(pickPool).catch(() => {});
   Net.onOpponentPickPool((oppPool) => {
     mpOpponentPoolReceived = true;
@@ -6970,9 +6923,17 @@ function sbSpriteHtml(poke, cls, lazy) {
   return `<img class="${cls}" src="${spritePath(poke)}" alt=""${lz} onerror="this.outerHTML='<span class=&quot;${cls}&quot; style=&quot;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#7a74a8;&quot;>#${id}</span>'">`;
 }
 
-// メガシンカできるポケモンは、マスの右下に mega.png を付ける（判定は選出カードの mega.png と同じ canMegaEvolve）。
+// ボックス／パーティ一覧／トレーニング画面で「メガシンカ関連の表示を出してよいか」の判定。
+// メガシンカできる種族で、かつ乱入ボス系なら解放済みのものだけ true。
+// canMegaEvolve は対人戦で megaLockActive=false になっている間ロックを無視してしまうため、
+// 対戦の種類に左右されず必ず解放状況を見る isMegaUnlocked を直接使う（ネタバレ防止）。
+function sbMegaVisible(p) {
+  return !!(p && MEGA_EVOLUTION_DATA[p.speciesId] && isMegaUnlocked(p.speciesId));
+}
+
+// メガシンカできるポケモンは、マスの右下に mega.png を付ける（未解放のメガはネタバレになるので出さない）。
 function sbMegaBadgeHtml(p) {
-  if (!canMegaEvolve(p)) return '';
+  if (!sbMegaVisible(p)) return '';
   return '<img class="sb-mega" src="./mega.png" alt="メガ" loading="lazy" onerror="this.style.display=\'none\'">';
 }
 
@@ -7321,7 +7282,7 @@ function sbRenderDetail() {
   const sp = p.species;
   // メガビューON かつ このポケモンがメガシンカ可能なら、タイプ・特性・実数値をメガ後基準で表示する
   // （表示専用：p自体・種族データ・画像は一切書き換えない）
-  const megaPreview = (sbState.megaView && MEGA_EVOLUTION_DATA[p.speciesId])
+  const megaPreview = (sbState.megaView && sbMegaVisible(p))
     ? getMegaPreviewStatsForBoxPokemon(p, p.megaForm)
     : null;
   const viewType1 = megaPreview ? megaPreview.type1 : sp.type1;
@@ -7349,7 +7310,7 @@ function sbRenderDetail() {
   // X/Y両方のメガシンカを持つポケモンは、選んである方を名前の頭に小さく添える（対戦中の表記と同じ「Xリザードン」形式）
   // メガビュー表示中は必ずX/Yのどちらかを見ているので、複数フォームがあれば常に表示する。
   // Y=赤背景／X=青背景（トレーニング画面のX/Y切替ボタンと同じ色分け）
-  const megaFormPrefix = hasMultiMegaForms(p) && (megaPreview || p.megaForm)
+  const megaFormPrefix = sbMegaVisible(p) && hasMultiMegaForms(p) && (megaPreview || p.megaForm)
     ? `<span class="sb-d-megaform ${p.megaForm === 'Y' ? 'y' : 'x'}">${p.megaForm === 'Y' ? 'Y' : 'X'}</span>` : '';
   // 色違いボタン：図鑑に色違いが登録済みの種族にだけ表示。押すと 通常⇔色違い を切り替える
   const canShiny = Pokedex.hasShiny(p.speciesId);
@@ -7436,7 +7397,7 @@ function sbPartyColHtml(pt, i) {
   for (let k = 0; k < SB_PARTY_MAX; k++) {
     const p = members[k];
     if (!p) { rows.push('<div class="ps-row empty"></div>'); continue; }
-    const item = canMegaEvolve(p)
+    const item = sbMegaVisible(p)
       ? '<img class="ps-item" src="./mega.png" alt="メガ" loading="lazy" onerror="this.style.display=\'none\'">'
       : '';
     rows.push(`<div class="ps-row"><span class="ps-name">${p.species.name}</span>${item}${sbSpriteHtml(p, 'ps-img', true)}</div>`);
@@ -7973,7 +7934,7 @@ function trRenderHeader(p) {
 function trRenderMegaViewBtn() {
   const btn = $('tr-btn-megaview');
   if (!btn) return;
-  const canMega = !!(trTarget && MEGA_EVOLUTION_DATA[trTarget.speciesId]);
+  const canMega = sbMegaVisible(trTarget);
   btn.classList.toggle('show', canMega);
   btn.classList.toggle('active', trMegaViewActive);
   btn.setAttribute('aria-pressed', trMegaViewActive ? 'true' : 'false');
@@ -8020,7 +7981,7 @@ function trRenderAbilityPill() {
 // ここで選んだ方に、対戦中このポケモンがメガシンカする時のフォームが固定される。
 function trRenderMegaFormRow() {
   const row = $('tr-megaform-row');
-  if (!trTarget || !hasMultiMegaForms(trTarget)) { row.classList.remove('show'); return; }
+  if (!trTarget || !sbMegaVisible(trTarget) || !hasMultiMegaForms(trTarget)) { row.classList.remove('show'); return; }
   row.classList.add('show');
   $('tr-megaform-x').classList.toggle('active', trMegaFormDraft === 'X');
   $('tr-megaform-y').classList.toggle('active', trMegaFormDraft === 'Y');
@@ -8305,7 +8266,7 @@ $('tr-megaform-y').addEventListener('click', () => {
   if (trMegaViewActive) { trRenderHeader(trTarget); trRenderStats(); }
 });
 $('tr-btn-megaview').addEventListener('click', () => {
-  if (!trTarget || !MEGA_EVOLUTION_DATA[trTarget.speciesId]) return;
+  if (!trTarget || !sbMegaVisible(trTarget)) return;
   trMegaViewActive = !trMegaViewActive;
   trRenderHeader(trTarget);   // タイプ表示とボタンの見た目を切り替える
   trRenderStats();            // 能力ポイント欄の実数値をメガ後基準に切り替える（画像・技・特性は変えない）
