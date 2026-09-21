@@ -1920,6 +1920,50 @@ function moveDetailLineHtml(m, attacker, defender) {
   return `<span class="move-row-detail"><span class="move-row-detail-main">威力:${power}　命中:${acc}　分類:${cat}</span>${effHtml}</span>`;
 }
 
+/* ---- 対戦中：わざ選択画面の「詳細」ボタンで開く技詳細パネル（画面左に表示） ----
+   トレーニング画面の技詳細（tr-msdt-*）と同じ内容（分類・威力・命中・優先度・効果説明）に加え、
+   対戦中ならではの情報として、今の相手に対する相性（こうかばつぐん等）も表示する。 */
+function battleMoveInfoHtml(m) {
+  if (!m) return '';
+  const power = (m.power === null || m.power === undefined) ? '-' : m.power;
+  const acc = (m.accuracy === null || m.accuracy === undefined || m.accuracy >= 999) ? '-' : m.accuracy;
+  const catIcon = trMoveCategoryIconHtml(m.category);
+  const catLabel = MOVE_CATEGORY_JP[m.category] || m.category;
+  const priority = m.priority || 0;
+  const priorityText = priority > 0 ? `優先度+${priority}` : (priority < 0 ? `優先度${priority}` : '優先度+0');
+  const desc = describeMoveEffect(m).replace(/\n/g, '<br>');
+  const eff = moveEffectivenessInfo(m, state.playerActive, state.cpuActive);
+  const effRow = eff
+    ? `<div class="bmi-range"><span class="k">相性</span><span class="v move-eff ${eff.cls}">${eff.mark}${eff.label}</span></div>`
+    : '';
+  return `
+    <div class="bmi-name"><span>${m.name}</span></div>
+    <div class="bmi-grid">
+      <div class="bmi-cell"><span class="k">技分類</span><span class="v">${catIcon}</span><span class="sub">${catLabel}</span></div>
+      <div class="bmi-cell"><span class="k">威力</span><span class="v">${power}</span></div>
+      <div class="bmi-cell"><span class="k">命中</span><span class="v">${acc}</span></div>
+    </div>
+    <div class="bmi-range"><span class="k">優先度</span><span class="v">${priorityText}</span></div>
+    ${effRow}
+    <div class="bmi-desc">${desc}</div>
+    <button class="neu-btn party-close-btn bmi-close-btn" id="battle-move-info-close">とじる</button>
+  `;
+}
+
+function openBattleMoveInfo(m) {
+  $('battle-move-info-panel').innerHTML = battleMoveInfoHtml(m);
+  $('battle-move-info-overlay').classList.add('show');
+  const closeBtn = document.getElementById('battle-move-info-close');
+  if (closeBtn) closeBtn.addEventListener('click', () => closeBattleMoveInfo());
+}
+function closeBattleMoveInfo() {
+  $('battle-move-info-overlay').classList.remove('show');
+}
+// オーバーレイの余白（パネル外）をタップしても閉じられるようにする
+$('battle-move-info-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'battle-move-info-overlay') closeBattleMoveInfo();
+});
+
 // スキン系特性（スカイスキン等）を持つポケモンは、場に出ている間ノーマル技を
 // 常にそのタイプの技として繰り出す。技メニューや詳細画面でのアイコン・タイプ枠の
 // 色を、実際に繰り出した時のタイプに合わせてプレビュー表示するための共通ヘルパー。
@@ -1940,6 +1984,7 @@ function renderMoveMenu() {
   const panel = $('cmd-panel');
   panel.style.cssText = '';
   panel.className = 'cmd-panel move-list with-side-buttons';
+  closeBattleMoveInfo(); // 技メニューを開き直す時は、前に開いていたかもしれない詳細パネルを必ず閉じておく
   const poke = state.playerActive;
   // スキン系特性（スカイスキン等）は、自分が場に出ている間ノーマル技を常にその
   // タイプの技として繰り出す特性。技メニューの時点でもアイコンやタイプ枠の色を
@@ -1957,24 +2002,34 @@ function renderMoveMenu() {
     const disabled = m.pp <= 0 || m.locked || deaiLocked || gekirinLocked || typeLocked;
     const dispType = displayTypeOf(m);
     return `
-    <button class="neu-btn cmd-btn move-row ${TYPE_CLASS(dispType)}-edge" data-idx="${idx}" ${disabled ? 'disabled' : ''}>
+    <div class="neu-btn cmd-btn move-row ${TYPE_CLASS(dispType)}-edge ${disabled ? 'move-row-disabled' : ''}" data-idx="${idx}" role="button" tabindex="0">
       <div class="move-row-top">
         ${typeIconHtml(dispType)}
         <span class="move-row-name">${m.name}</span>
+        <button class="move-row-info-btn" type="button" data-info-idx="${idx}" aria-label="わざの詳細">i</button>
         <span class="move-row-pp">PP ${m.pp}/${m.maxPp}</span>
         ${(m.locked || deaiLocked || typeLocked) ? '<span style="color:#ff5d5d;font-size:10px;font-weight:900;">🔒</span>' : ''}
       </div>
       ${moveDetailLineHtml(m, poke, state.cpuActive)}
-    </button>
+    </div>
   `;
   }).join('');
   panel.innerHTML = moveButtons + `
     <button class="neu-btn cmd-btn move-row-back" id="act-move-back">もどる</button>
   `;
-  panel.querySelectorAll('button[data-idx]').forEach((btn) => {
-    btn.addEventListener('click', () => {
+  panel.querySelectorAll('.move-row[data-idx]').forEach((btn) => {
+    if (btn.classList.contains('move-row-disabled')) return;
+    btn.addEventListener('click', (e) => {
+      if (e.target.closest('.move-row-info-btn')) return; // 詳細ボタンはここでは技を選ばせない
       const idx = parseInt(btn.dataset.idx, 10);
       playerChooseMove(poke.moves[idx]);
+    });
+  });
+  panel.querySelectorAll('.move-row-info-btn[data-info-idx]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.dataset.infoIdx, 10);
+      openBattleMoveInfo(poke.moves[idx]);
     });
   });
   $('act-move-back').addEventListener('click', () => renderActionMenu());
@@ -2820,18 +2875,42 @@ function renderPartyDetail() {
 }
 
 // ---- 対人チーム戦：右側「相手の選出パーティー」一覧 ----
-function ttOppoItemHtml(p) {
-  const seen = !!p.seenInBattle;
-  const isActive = p === state.cpuActive;
-  const ratio = Math.max(0, p.currentHp / p.maxHp);
-  const nameLabel = seen ? p.species.name : p.species.name; // 名前・姿は常に見える仕様（未参戦は暗く表示のみ）
+// 選出画面で見えていた6匹プール全員を常に表示する（3匹だけ出すと選出の駆け引きが
+// バトル開始時点でバレてしまうため）。実際に選出され、かつ一度でも場に出した個体だけを
+// cpuTeam側の生きたデータ（HP・状態異常など）と紐づけて明るく表示し、それ以外
+// （選出されなかった3匹／選出されたがまだ出していない個体）はすべて「未参戦」として暗く表示する。
+function buildTeamBattleOppoEntries() {
+  const pool = mpOpponentFullPool || [];
+  const cpuTeam = state.cpuTeam || [];
+  const usedCpuIdx = new Set();
+  return pool.map((poolMon) => {
+    // 同じ種族が複数いても取り違えないよう、未使用のcpuTeam要素から1つだけ対応づける
+    let matched = null;
+    for (let i = 0; i < cpuTeam.length; i++) {
+      if (usedCpuIdx.has(i)) continue;
+      if (cpuTeam[i].speciesId === poolMon.speciesId) {
+        matched = cpuTeam[i];
+        usedCpuIdx.add(i);
+        break;
+      }
+    }
+    const seen = !!(matched && matched.seenInBattle);
+    return { display: matched || poolMon, seen, isPicked: !!matched };
+  });
+}
+
+function ttOppoItemHtml(entry) {
+  const p = entry.display;
+  const seen = entry.seen;
+  const isActive = entry.isPicked && p === state.cpuActive;
+  const ratio = seen ? Math.max(0, p.currentHp / p.maxHp) : 1;
   return `
-    <div class="tt-oppo-item ${seen ? '' : 'tt-unseen'} ${isActive ? 'tt-active' : ''} ${p.fainted ? 'tt-fainted' : ''}">
+    <div class="tt-oppo-item ${seen ? '' : 'tt-unseen'} ${isActive ? 'tt-active' : ''} ${seen && p.fainted ? 'tt-fainted' : ''}">
       <img src="${spritePath(p)}" alt="" class="tt-oi-icon" onerror="this.replaceWith(makeTeamCardFallback(${p.speciesId}))">
       <div class="tt-oi-info">
-        <div class="tt-oi-name">${nameLabel}${p.fainted ? '<span class="tt-oi-fainted-tag">きぜつ</span>' : ''}</div>
-        <div class="tt-oi-hpbar-outer"><div class="tt-oi-hpbar-inner" style="width:${ratio * 100}%; background:${p.fainted ? '#ff4d4d' : hpBarColor(ratio)};"></div></div>
-        <div class="tt-oi-hp-text">${seen ? `HP ${Math.ceil(ratio * 100)}%` : '???'}</div>
+        <div class="tt-oi-name">${p.species.name}${seen && p.fainted ? '<span class="tt-oi-fainted-tag">きぜつ</span>' : ''}</div>
+        <div class="tt-oi-hpbar-outer"><div class="tt-oi-hpbar-inner" style="width:${seen ? ratio * 100 : 100}%; background:${seen && p.fainted ? '#ff4d4d' : hpBarColor(ratio)};"></div></div>
+        <div class="tt-oi-hp-text">${seen ? `HP ${Math.ceil(ratio * 100)}%` : '未参戦'}</div>
       </div>
     </div>
   `;
@@ -2840,15 +2919,16 @@ function ttOppoItemHtml(p) {
 function renderTeamBattleOppoList() {
   const panel = document.getElementById('party-panel');
   const oppoList = $('tt-oppo-list');
-  if (!isTeamBattleMode() || !state.cpuTeam || state.cpuTeam.length === 0) {
+  if (!isTeamBattleMode() || !mpOpponentFullPool || mpOpponentFullPool.length === 0) {
     panel.classList.remove('tt-mode');
     oppoList.style.display = 'none';
     return;
   }
   panel.classList.add('tt-mode');
   oppoList.style.display = '';
+  const entries = buildTeamBattleOppoEntries();
   oppoList.innerHTML = `<div class="tt-oppo-title">あいてのパーティー</div>` +
-    state.cpuTeam.map((p) => ttOppoItemHtml(p)).join('');
+    entries.map((e) => ttOppoItemHtml(e)).join('');
 }
 
 $('party-close').addEventListener('click', () => closePartyOverlay());
@@ -2965,6 +3045,7 @@ function playerChooseMove(move) {
   const action = { type: 'move', move, mega: !!(state.playerActive && state.playerActive.wantsMegaEvolve) };
   clearTurnTimer();
   clearCmdPanel();
+  closeBattleMoveInfo();
   $('cmd-dock').classList.remove('dock-wide');
   setWatchLogButtonsActive(false);
   if (turnResolve) { const r = turnResolve; turnResolve = null; r(action); }
@@ -4627,6 +4708,9 @@ let mpPickTimerInterval = null;
 let mpPickedIds = [];
 let mpPickConfirmed = false;
 let mpOpponentPoolReceived = false;
+// 対人チーム戦：選出フェーズで見えた相手の6匹プール全体。実際の選出（cpuTeam＝3匹）とは別に
+// バトル終了まで保持しておき、交代画面の「あいてのパーティー」に常に6匹全員を出すのに使う。
+let mpOpponentFullPool = [];
 
 function clearMpPickTimer() {
   if (mpPickTimerInterval) { clearInterval(mpPickTimerInterval); mpPickTimerInterval = null; }
@@ -4651,6 +4735,7 @@ function startMpTeamPick() {
   state.megaEvolutionEnabled = true; // チーム戦は常にメガあり
   mpPickConfirmed = false;
   mpOpponentPoolReceived = false;
+  mpOpponentFullPool = []; // 新しい選出フェーズの開始時に前回対戦分の古いプールを必ず捨てる
 
   // 待機部屋で選んだ自分のチーム（6匹）を選出プールにする
   const pt = sbState.parties[state.mpChosenTeamIdx];
@@ -4675,6 +4760,7 @@ function startMpTeamPick() {
   Net.sendPickPool(pickPool).catch(() => {});
   Net.onOpponentPickPool((oppPool) => {
     mpOpponentPoolReceived = true;
+    mpOpponentFullPool = oppPool;
     renderMpPickOppList(oppPool);
   });
 }

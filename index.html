@@ -2165,6 +2165,8 @@ html,body{
 }
 .cmd-btn .cb-sub{ font-size:9.5px; font-weight:700; color:var(--ink-soft); }
 .cmd-btn:disabled{ opacity:0.4; box-shadow: var(--shadow-inset-sm); cursor:not-allowed; }
+.move-row-disabled{ opacity:0.4; box-shadow: var(--shadow-inset-sm); cursor:not-allowed; }
+.move-row-disabled .move-row-info-btn{ opacity:1; pointer-events:auto; cursor:pointer; }
 
 .action-menu{
   grid-template-columns: 1fr 1fr;
@@ -2206,6 +2208,21 @@ html,body{
 }
 .move-row-name{ flex:1; text-align:left; }
 .move-row-pp{ flex:none; font-size:11px; font-weight:700; color:var(--ink-soft); }
+.move-row-info-btn{
+  flex: none;
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: var(--surface-deep);
+  box-shadow: var(--shadow-inset-sm);
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 900;
+  font-style: italic;
+  display:flex; align-items:center; justify-content:center;
+  padding: 0;
+}
+.move-row-info-btn:active{ filter:brightness(0.92); }
 .move-row-detail{
   display:flex;
   align-items:baseline;
@@ -2745,6 +2762,52 @@ html,body{
 .pd-status-name{ color:var(--ink-soft); }
 .pd-status-value{ color:var(--ink); }
 
+/* ================= 対戦中：わざ選択画面の「詳細」ボタンで開く技詳細パネル（画面左） ================= */
+.battle-move-info-overlay{
+  position:absolute; inset:0; z-index:250;
+  display:flex; align-items:center; justify-content:flex-start;
+  padding-left: 3%;
+  background: rgba(20,22,30,0.35);
+  opacity:0; pointer-events:none;
+  transition: opacity .15s ease;
+}
+.battle-move-info-overlay.show{ opacity:1; pointer-events:auto; }
+.battle-move-info-panel{
+  width: min(72%, 360px);
+  max-height: 82%;
+  overflow-y:auto;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-light);
+  padding: 16px 18px;
+  display:flex; flex-direction:column; gap:10px;
+}
+.bmi-name{ display:flex; align-items:center; gap:8px; font-size:16px; font-weight:900; color:var(--ink); }
+.bmi-name .slotnote{ font-size:9.5px; font-weight:900; color:#fff; background:#8a8a96; border-radius:999px; padding:2px 8px; }
+.bmi-grid{ display:flex; gap:8px; }
+.bmi-cell{
+  flex:1;
+  border-radius: var(--radius-sm);
+  background: var(--surface-deep);
+  box-shadow: var(--shadow-inset-sm);
+  padding:8px 6px;
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+  text-align:center;
+}
+.bmi-cell .k{ font-size:10px; font-weight:800; color:var(--ink-soft); letter-spacing:0.03em; }
+.bmi-cell .v{ font-size:17px; font-weight:900; color:var(--ink); line-height:1.1; }
+.bmi-cell .v img, .bmi-cell .v svg{ width:22px; height:22px; display:block; }
+.bmi-cell .sub{ font-size:10px; font-weight:800; color:var(--ink-soft); }
+.bmi-range{ display:flex; align-items:baseline; justify-content:space-between; font-size:12px; font-weight:800; color:var(--ink); padding:7px 12px; border-radius: var(--radius-sm); background: var(--surface-deep); box-shadow: var(--shadow-inset-sm); }
+.bmi-range .k{ color:var(--ink-soft); }
+.bmi-desc{ font-size:12px; line-height:1.5; color:var(--ink); white-space:pre-wrap; }
+.bmi-close-btn{
+  align-self:center;
+  padding: 8px 26px;
+  border-radius: 999px;
+  font-size: 12.5px;
+}
+
 .confirm-overlay{
   position:absolute; inset:0; z-index:300;
   background: rgba(20,22,30,0.45);
@@ -3155,6 +3218,7 @@ html,body{
   .move-list{ width:280px; gap:4px; }
   .move-row{ font-size:12.5px; padding:3px 12px 3px 10px; }
   .move-row-detail{ font-size:8.5px; padding-left:28px; }
+  .move-row-info-btn{ width:18px; height:18px; font-size:10px; }
   .move-eff{ padding-left:5px; font-size:8px; }
   .cmd-panel{ gap:4px; }
   .multi-menu-btn{ width: 180px; height: 150px; }
@@ -5595,6 +5659,11 @@ html,body{
           <div class="tt-oppo-list" id="tt-oppo-list" style="display:none;"></div>
         </div>
         <button class="neu-btn party-close-btn" id="party-close">もどる</button>
+      </div>
+
+      <!-- 対戦中：わざ選択画面の「詳細」ボタンで開く、技の詳細パネル（画面左側に表示） -->
+      <div class="battle-move-info-overlay" id="battle-move-info-overlay">
+        <div class="battle-move-info-panel" id="battle-move-info-panel"></div>
       </div>
     </div>
 
