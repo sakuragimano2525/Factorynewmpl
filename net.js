@@ -82,6 +82,7 @@ const Net = {
     this.opponentName = '';
     this.opponentFavorite = null;
     this.megaEnabled = false;
+    this.battleFormat = 'random';
   },
 
   async createRoom(code, name, favorite, megaEnabled) {
@@ -100,6 +101,7 @@ const Net = {
         guestFavorite: null,
         status: 'waiting',
         megaEnabled: !!megaEnabled,
+        battleFormat: 'random',
         createdAt: firebase.database.ServerValue.TIMESTAMP,
         hostHeartbeat: firebase.database.ServerValue.TIMESTAMP,
         guestHeartbeat: 0,
@@ -126,6 +128,7 @@ const Net = {
     this.opponentName = data.meta.hostName || '';
     this.opponentFavorite = data.meta.hostFavorite || null;
     this.megaEnabled = !!data.meta.megaEnabled;
+    this.battleFormat = data.meta.battleFormat === 'team' ? 'team' : 'random';
     await this.roomRef.child('meta').update({
       guestName: name,
       guestFavorite: favorite || null,
@@ -159,6 +162,28 @@ const Net = {
     const handler = (snap) => {
       this.megaEnabled = !!snap.val();
       cb(this.megaEnabled);
+    };
+    ref.on('value', handler);
+    this._unsubs.push(() => ref.off('value', handler));
+  },
+
+  /* ---- 対戦方式設定（'random'|'team'、対人戦：ホストのみ変更可） ----
+     ホストが待機部屋で切り替えると meta/battleFormat に反映され、
+     ゲスト側は onBattleFormatChange で常に最新の値を受け取る。
+     megaEnabledと同じパターン。未設定時は 'random' 扱い。 */
+  battleFormat: 'random',
+  async setBattleFormat(format) {
+    if (!this.roomRef || !this.isHost) return;
+    this.battleFormat = format === 'team' ? 'team' : 'random';
+    try { await this.roomRef.child('meta/battleFormat').set(this.battleFormat); } catch (e) {}
+  },
+
+  onBattleFormatChange(cb) {
+    if (!this.roomRef) return;
+    const ref = this.roomRef.child('meta/battleFormat');
+    const handler = (snap) => {
+      this.battleFormat = snap.val() === 'team' ? 'team' : 'random';
+      cb(this.battleFormat);
     };
     ref.on('value', handler);
     this._unsubs.push(() => ref.off('value', handler));
