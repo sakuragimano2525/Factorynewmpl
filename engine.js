@@ -159,7 +159,7 @@ function resetMegaUnlocks() {
 // 実績解除（intrusion_1032など）・メガ解放は INTRUSION_BOSS_IDS に入っているため
 // このオブジェクトへの追記状況に関わらず既に有効。
 const HIDDEN_SPECIES_ACHIEVEMENT = {
-  2000: 'win_streak_team_10', // アリアスカル：チーム戦10連勝目のボスを倒すと解放
+  2000: 'win_streak_team_11', // アリアスカル：チーム戦10連勝目のボスを倒すと解放
   1032: 'pokedex_150', 
   1033: 'type_streak_fire',
 1034: 'type_streak_normal',
@@ -1429,6 +1429,7 @@ function createRandomPokemon(speciesId, level = 100) {
     energyStacks: 0,
     tauntTurns: 0, // 挑発ターン
     bindTurns: 0,  // バインド状態残りターン
+    shadowTrappedBy: null, // かげぬい：縫い付けた相手への参照。その相手が場にいる限り逃げられない（交代不可）
     // ---- 新規追加 ----
     removedTypes: [],       // 消滅したタイプ（'dark', 'grass' など）
     changedType: null,      // ナナイロレーザーで変化したタイプ（'bug' など）
@@ -1835,12 +1836,14 @@ function applyRankChange(target, rankData, logFn, attackerAbility, opponent) {
     let delta = rankData[idx + 1];
     if (!delta) return;
 
-    if (battleField.chemicalGasActive && target.ability !== ABILITY.KAGAKUHENKAGASU) return;
-    if (target.ability === ABILITY.CLEAR_BODY && delta < 0) return;
+    // かがくへんかガス：無効になるのは「ランク変化に関わる特性の効果」だけで、
+    // ランク変化そのものは通常どおり発生する（ガス中の特性判定は abilityActive で行う）。
+    const targetAbilityOn = abilityActive(target);
+    if (targetAbilityOn && target.ability === ABILITY.CLEAR_BODY && delta < 0) return;
     // はっこう：自分の命中率ランクが下がらない
-    if (target.ability === ABILITY.HAKKOU && k === 'acc' && delta < 0) return;
-    if (target.ability === ABILITY.TANJUN) delta *= 2;
-    if (target.ability === ABILITY.AMANOJAKU) delta = -delta;
+    if (targetAbilityOn && target.ability === ABILITY.HAKKOU && k === 'acc' && delta < 0) return;
+    if (targetAbilityOn && target.ability === ABILITY.TANJUN) delta *= 2;
+    if (targetAbilityOn && target.ability === ABILITY.AMANOJAKU) delta = -delta;
 
     const before = target.ranks[k];
     target.ranks[k] = Math.max(-6, Math.min(6, target.ranks[k] + delta));
@@ -1860,7 +1863,7 @@ function applyRankChange(target, rankData, logFn, attackerAbility, opponent) {
       // 自分（opponent）が、上がったのと同じ項目・同じ段階だけランクが上がる。
       // 「上がったポケモン自身が全ステータス上昇する」という誤った効果になっていたため修正。
       // target自身はびんじょうの対象外（自分の上昇に自分で反応しない）。発動者が瀕死なら発動しない。
-      if (delta > 0 && opponent && opponent !== target && !opponent.fainted && opponent.ability === ABILITY.BINJOU) {
+      if (delta > 0 && opponent && opponent !== target && !opponent.fainted && opponent.ability === ABILITY.BINJOU && abilityActive(opponent)) {
         flushGroups();
         const binjouDelta = keys.map((kk) => (kk === k ? actualDelta : 0));
         const binjouData = [100, ...binjouDelta];
@@ -1869,13 +1872,13 @@ function applyRankChange(target, rankData, logFn, attackerAbility, opponent) {
       }
 
       if (delta < 0) {
-        if (k === 'atk' && target.ability === ABILITY.MAKENKI) {
+        if (k === 'atk' && target.ability === ABILITY.MAKENKI && targetAbilityOn) {
           flushGroups();
           const boostData = [100, 2, 0, 0, 0, 0, 0, 0];
           applyRankChange(target, boostData, logFn);
           logFn(`${target.species.name}のまけんきが発動！`);
         }
-        if (k === 'spa' && target.ability === ABILITY.KACHIKI) {
+        if (k === 'spa' && target.ability === ABILITY.KACHIKI && targetAbilityOn) {
           flushGroups();
           const boostData = [100, 0, 0, 2, 0, 0, 0, 0];
           applyRankChange(target, boostData, logFn);
@@ -1899,8 +1902,8 @@ function applyStatus(target, statusData, logFn, attackerAbility) {
   const statusId = statusData[1];
   if (!statusId) return false;
 
-  if (battleField.chemicalGasActive && target.ability !== ABILITY.KAGAKUHENKAGASU) return false;
-  if (target.ability === ABILITY.ARUKOBARENO) return false;
+  // かがくへんかガス：状態異常そのものは通常どおり入る。無効になるのは特性の効果のみ。
+  if (abilityActive(target) && target.ability === ABILITY.ARUKOBARENO) return false;
 
   if (statusId === STATUS.CONFUSE) {
     if (target.confuseTurns > 0) return false;
@@ -1919,8 +1922,8 @@ function applyStatus(target, statusData, logFn, attackerAbility) {
   if (statusId === STATUS.BURN && (t1 === 'fire' || t2 === 'fire')) return false;
   if (statusId === STATUS.FREEZE && (t1 === 'ice' || t2 === 'ice')) return false;
   if (statusId === STATUS.PARALYZE && (t1 === 'electric' || t2 === 'electric')) return false;
-  if (statusId === STATUS.PARALYZE && target.ability === ABILITY.JUUNAN) return false;
-  if (statusId === STATUS.SLEEP && target.ability === ABILITY.FUMIN) return false;
+  if (statusId === STATUS.PARALYZE && target.ability === ABILITY.JUUNAN && abilityActive(target)) return false;
+  if (statusId === STATUS.SLEEP && target.ability === ABILITY.FUMIN && abilityActive(target)) return false;
   if (statusId === STATUS.SLEEP && battleField.terrain === 'electric') return false;
   if (battleField.terrain === 'misty' &&
       [STATUS.PARALYZE, STATUS.BURN, STATUS.POISON, STATUS.BADLY_POISON, STATUS.SLEEP, STATUS.FREEZE].includes(statusId)) {
@@ -2045,6 +2048,8 @@ function applyWeatherTerrainAbilityOnSwitchIn(poke, logFn, opponent) {
   // へんげんじざい：場に出るたびに1回分の効果を復活させる
   poke.hengenjizaiUsed = false;
   poke.hengenjizaiType = null;
+  // かげぬい：場に出るたびに縫い止めをリセットする（控えから戻った時に持ち越さない）
+  poke.shadowTrappedBy = null;
   // ヨワシ：登場時、残りHPに応じて「むれたすがた」⇔「たんどくのすがた」を判定する。
   // 登場直後は直後のsetSpriteで既に正しい画像が出るため、演出（魚が集まる等）は再生しない。
   updateYowashiForm(poke, logFn, false);
@@ -2771,6 +2776,57 @@ function abilityActive(poke) {
   return !battleField.chemicalGasActive || poke.ability === ABILITY.KAGAKUHENKAGASU;
 }
 
+// applyStatus/applyRankChange に「攻撃側の特性」を渡すときに使う。
+// かがくへんかガスで特性が無効になっている場合は null を返し、てんのめぐみ・ふしょく等が
+// 発動しないようにする。（状態異常・ランク変化そのものはガスの影響を受けない）
+function effectiveAbilityId(poke) {
+  return poke && abilityActive(poke) ? poke.ability : null;
+}
+
+// ---- かげぬい：「相手は逃げられなくなる」 ----
+const KAGENUI_MOVE_ID = 507;
+
+// 指定ポケモンが「逃げられない（交代できない）」状態かどうか。
+// バインド中と、かげぬいで縫い止められている間は交代不可。
+// ui.js側の交代ボタン制御や、CPUの交代判断からはこの関数を参照すること。
+//
+// かげぬいは「縫い付けた本人（shadowTrappedBy）が場にいる間だけ」有効。
+// 縫い付けた本人が倒れた・交代で控えに下がった場合は自動的に解除される。
+// （本人が現在の場のポケモンかどうかは、fainted と、その本人自身が縫い付け状態の
+//   持ち主にとって「相手」であり続けているかで判断する。交代で下がった時は
+//   clearShadowTrapsBy() で明示的に解除する。）
+function isTrappedFromSwitching(poke) {
+  if (!poke || poke.fainted) return false;
+  if ((poke.bindTurns || 0) > 0) return true;
+  const by = poke.shadowTrappedBy;
+  if (by && !by.fainted) return true;
+  return false;
+}
+
+// かげぬいで縫い止める。ゴーストタイプには効かない（本家仕様）。
+// すでに縫い止められている場合は何もしない。付与できたら true を返す。
+function applyShadowTrap(target, logFn, user) {
+  if (!target || target.fainted) return false;
+  if (getEffectiveTypes(target).includes('ghost')) return false;
+  if (target.shadowTrappedBy && !target.shadowTrappedBy.fainted) return false;
+  // user が省略された場合でも「縫い止め状態」自体は成立させる（自分自身を目印にする）。
+  target.shadowTrappedBy = user || target;
+  logFn(`${target.species.name}は影を縫い付けられて逃げられなくなった！`);
+  return true;
+}
+
+// 縫い止め状態を解除する（縫い止められた本人側から呼ぶ）。
+function clearShadowTrap(poke) {
+  if (poke) poke.shadowTrappedBy = null;
+}
+
+// 縫い付けた本人（user）が場から離れた（交代した）時に呼ぶ。
+// 相手側(opponent)にかかっている縫い止めのうち、user によるものだけを解除する。
+// ui.js の交代処理から、下がる側のポケモンと、その時の相手を渡して呼び出すこと。
+function clearShadowTrapsBy(user, opponent) {
+  if (opponent && opponent.shadowTrappedBy === user) opponent.shadowTrappedBy = null;
+}
+
 // ターン終了時：自分の技が全てランダムに変化する。
 // 新しい技は毎回PP満タン・ロック解除の状態で生成する。
 function applyRandomActEndOfTurn(poke, logFn) {
@@ -2994,12 +3050,12 @@ function executeMultiHit(attacker, defender, move, logFn) {
     if (survivedByEndure) logFn(`${defender.species.name}はこらえた！`);
 
     let suppressSecondary = false;
-    if (attacker.ability === ABILITY.CHIKARAZUKU) suppressSecondary = true;
+    if (attacker.ability === ABILITY.CHIKARAZUKU && abilityActive(attacker)) suppressSecondary = true;
     if (!suppressSecondary) {
       if (move.flinchChance && rand(1, 100) <= move.flinchChance) {
         defender.flinch = true;
       }
-      applyStatus(defender, move.oppStatus, logFn, attacker.ability);
+      applyStatus(defender, move.oppStatus, logFn, effectiveAbilityId(attacker));
     }
 
     if (move.category === 'physical' && !defender.fainted) {
@@ -3030,7 +3086,7 @@ function executeMultiHit(attacker, defender, move, logFn) {
   // ランク変化（selfRank/oppRank）は連続ヒットの回数分ではなく、技を出した時に1回だけ適用する。
   // 相手を倒した一撃であっても技自体は命中しているため、selfRank（自分の能力変化）は発動する。
   if (anyHit && !attacker.fainted) {
-    const suppressSecondary = attacker.ability === ABILITY.CHIKARAZUKU;
+    const suppressSecondary = attacker.ability === ABILITY.CHIKARAZUKU && abilityActive(attacker);
     if (!suppressSecondary) {
       if (!defender.fainted) applyRankChange(defender, move.oppRank, logFn, null, attacker);
       applyRankChange(attacker, move.selfRank, logFn, null, defender);
@@ -3254,7 +3310,7 @@ function executeMove(attacker, defender, move, logFn, turnCtx) {
   }
 
   let suppressSecondary = false;
-  if (attacker.ability === ABILITY.CHIKARAZUKU) suppressSecondary = true;
+  if (attacker.ability === ABILITY.CHIKARAZUKU && abilityActive(attacker)) suppressSecondary = true;
 
   // プレッシャー
   if (defender.ability === ABILITY.PRESSURE && move.pp > 0) {
@@ -3719,7 +3775,7 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     if (!suppressSecondary) applyRankChange(attacker, move.selfRank, logFn, null, defender);
     if (!suppressSecondary) applyRankChange(defender, move.oppRank, logFn, null, attacker);
     if (!suppressSecondary) applyStatus(attacker, move.selfStatus, logFn);
-    if (!suppressSecondary) applyStatus(defender, move.oppStatus, logFn, attacker.ability);
+    if (!suppressSecondary) applyStatus(defender, move.oppStatus, logFn, effectiveAbilityId(attacker));
     // 技を使った本人（attacker）のlastUsedMoveIdを記録（アンコール・ひややかパンチ用）
     attacker.lastUsedMoveId = move.id;
     return;
@@ -3844,7 +3900,7 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     // とびだすハバネロ：攻撃技（物理・特殊問わず）を受けると、相手をやけど状態にする（各ヒットごとに判定）
     if (defender.ability === ABILITY.TOBIDASU_HABANERO && move.category !== 'status' && !attacker.fainted) {
       if (!battleField.chemicalGasActive || defender.ability === ABILITY.KAGAKUHENKAGASU) {
-        if (applyStatus(attacker, [100, STATUS.BURN], logFn, defender.ability)) {
+        if (applyStatus(attacker, [100, STATUS.BURN], logFn, effectiveAbilityId(defender))) {
           logFn(`${defender.species.name}の${abilityJp(defender.ability)}が発動！`);
         }
       }
@@ -3872,16 +3928,16 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     if (defender.currentHp > 0) {
       if (!suppressSecondary) {
         let flinchChance = move.flinchChance || 0;
-        if (attacker.ability === ABILITY.TEN_NO_MEGUMI) flinchChance = Math.min(100, flinchChance * 2);
+        if (attacker.ability === ABILITY.TEN_NO_MEGUMI && abilityActive(attacker)) flinchChance = Math.min(100, flinchChance * 2);
         if (flinchChance && rand(1, 100) <= flinchChance) defender.flinch = true;
         applyRankChange(defender, move.oppRank, logFn, null, attacker);
         applyRankChange(attacker, move.selfRank, logFn, null, defender);
-        applyStatus(defender, move.oppStatus, logFn, attacker.ability);
+        applyStatus(defender, move.oppStatus, logFn, effectiveAbilityId(attacker));
         // げきりん(43)は専用の連続技処理で混乱を扱うためここでは除外
         if (move.id !== 43) applyStatus(attacker, move.selfStatus, logFn);
         // 有刺鉄線：場に何かのフィールドが張られている時、相手を確定でもうどく状態にする
         if (move.id === 500 && battleField.terrain && battleField.terrain !== 'none' && defender.currentHp > 0) {
-          applyStatus(defender, [100, STATUS.BADLY_POISON], logFn, attacker.ability);
+          applyStatus(defender, [100, STATUS.BADLY_POISON], logFn, effectiveAbilityId(attacker));
         }
       }
       if (move.category === 'physical' && defender.currentHp > 0) {
@@ -3962,6 +4018,12 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     battleField.terrain = 'none';
     battleField.terrainTurns = 0;
     logFn(`フィールドが破壊された！`);
+  }
+
+  // ---- かげぬい：命中してもなお相手が場に残っていれば、逃げられなくする ----
+  // ちからずく持ちでは追加効果として扱い、発動しない（ガス中は特性が無効なので通常どおり発動）。
+  if (move.id === KAGENUI_MOVE_ID && !defender.fainted && !suppressSecondary) {
+    applyShadowTrap(defender, logFn, attacker);
   }
 
   // ---- くろしお：バインド付与 ----
@@ -4188,8 +4250,12 @@ async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onIm
     // まだ実行されていない後続の行動があれば、そのtargetを新しいポケモンに差し替える。
     if (action.poke.pendingSwitchOut && !action.poke.fainted && typeof onImmediateSwitch === 'function') {
       action.poke.pendingSwitchOut = false;
+      const leavingPoke = action.poke;
       const newActive = await onImmediateSwitch(action.side);
       if (newActive) {
+        // かげぬい：縫い付けた本人が交代で場を離れたので、相手の縫い止めを解除する。
+        // （action.target は、この技の対象＝相手側のポケモン）
+        clearShadowTrapsBy(leavingPoke, action.target);
         for (let j = i + 1; j < actions.length; j++) {
           if (actions[j].poke === action.poke) actions[j].poke = newActive;
           if (actions[j].target === action.poke) actions[j].target = newActive;
@@ -4392,7 +4458,7 @@ function chooseCpuAction(cpuPoke, playerPoke, cpuTeam, megaEvolutionEnabled, pla
   // 持ち技が全て「いまひとつ以下」の場合、ゆびをふるより優先して
   // プレイヤーの場のポケモンに弱点をつける（攻撃/特殊で効果抜群）控えがいれば交代する。
   // バインド中（交代不可）はこの判定自体をスキップし、従来通り技を選ぶ。
-  if (Array.isArray(cpuTeam) && !(cpuPoke.bindTurns > 0)) {
+  if (Array.isArray(cpuTeam) && !isTrappedFromSwitching(cpuPoke)) {
     const defTypesForCheck = getEffectiveTypes(playerPoke);
     const allIneffective = defTypesForCheck && defTypesForCheck.length > 0 &&
       usable.some((m) => isDamagingMoveAI(m)) &&

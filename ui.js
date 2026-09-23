@@ -2184,6 +2184,11 @@ function renderActionMenu() {
       drainMessages().then(() => {});
       return;
     }
+    if (isTrappedByShadowStitch(state.playerActive)) {
+      queueMessage(`${state.playerActive.species.name}は影を縫い付けられていて交代できない！`);
+      drainMessages().then(() => {});
+      return;
+    }
     if (isTrappedByKagefumi(state.playerActive, state.cpuActive)) {
       queueMessage(`${state.cpuActive.species.name}のかげふみで交代できない！`);
       drainMessages().then(() => {});
@@ -2191,6 +2196,17 @@ function renderActionMenu() {
     }
     renderSwitchMenu();
   });
+}
+
+// かげぬい：縫い付けた相手（shadowTrappedBy）が場にいる限り、自発的な交代（にげる操作）ができない。
+// CPU戦・対人戦の両方で有効（とんぼがえり等の強制交代や瀕死による交代は対象外）。
+// 実体は engine.js 側の isTrappedFromSwitching() を正として利用する。
+function isTrappedByShadowStitch(self) {
+  if (typeof isTrappedFromSwitching !== 'function') return false;
+  if (!self || self.fainted) return false;
+  // バインドは別途 bindTurns で表示済みなので、ここでは縫い付け由来のみを見る。
+  if (self.shadowTrappedBy && !self.shadowTrappedBy.fainted) return true;
+  return false;
 }
 
 // かげふみ：対人戦のみ、相手が交代できなくなる（とんぼがえり等の強制交代・瀕死時は対象外）
@@ -2562,6 +2578,10 @@ function renderWatchField() {
   const lightScreenTurns = watchSelectedSide === 'self' ? battleField.playerLightScreen : battleField.cpuLightScreen;
   if (reflectTurns > 0) chips.push(`リフレクター ${reflectTurns}ターン`);
   if (lightScreenTurns > 0) chips.push(`ひかりのかべ ${lightScreenTurns}ターン`);
+
+  if (poke && poke.shadowTrappedBy && !poke.shadowTrappedBy.fainted) {
+    chips.push(`にげられない`);
+  }
 
   if (poke && poke.bindTurns > 0) {
     chips.push(`バインド ${poke.bindTurns}ターン`);
@@ -3661,6 +3681,13 @@ async function doSwitch(newActive, side) {
   // タイプロック（インフェルノ／メイルストローム／イルミンスール由来）等が解除される。
   const outgoing = side === 'player' ? state.playerActive : state.cpuActive;
   if (outgoing && outgoing !== newActive) {
+    // かげぬい：縫い付けた本人（outgoing）が交代で場を離れる場合、相手にかかっている
+    // 「逃げられない」を解除する（とんぼがえり等の強制交代パスは runTurn 側で別途処理済みだが、
+    //  通常の自発交代・瀕死交代はすべてこの doSwitch を通るのでここで一括して解除する）。
+    if (typeof clearShadowTrapsBy === 'function') {
+      const oppActive = side === 'player' ? state.cpuActive : state.playerActive;
+      clearShadowTrapsBy(outgoing, oppActive);
+    }
     outgoing.typeLockTurns = 0;
     outgoing.typeLockType = null;
     // 場を離れる時点でメガシンカの予約が残っていても意味がないのでクリアする
