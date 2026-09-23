@@ -75,19 +75,19 @@
           dragon/dark/steel/fairy/fighting/poison/ghost/normal/sound）。 */
   const TYPE_STREAK_TARGET_TYPES = [
     { type: 'bug', label: 'むし' }, 
+      { type: 'dark', label: 'あく' }, 
+      { type: 'dragon', label: 'ドラゴン' }, 
     { type: 'fire', label: 'ほのお' }, 
-    { type: 'normal', label: 'ノーマル' }, 
     { type: 'flying', label: 'ひこう' }, 
-    { type: 'dark', label: 'あく' }, 
-    { type: 'psychic', label: 'エスパー' }, 
-    { type: 'grass', label: 'くさ' }, 
-    { type: 'rock', label: 'いわ' }, 
     { type: 'ghost', label: 'ゴースト' }, 
-    { type: 'dragon', label: 'ドラゴン' }, 
-    { type: 'shine', label: 'シャイン' }, 
-    { type: 'steel', label: 'はがね' }, 
+    { type: 'grass', label: 'くさ' }, 
     { type: 'ice', label: 'こおり' }, 
-    { type: 'poison', label: 'どく' }, 
+      { type: 'normal', label: 'ノーマル' }, 
+        { type: 'poison', label: 'どく' }, 
+      { type: 'psychic', label: 'エスパー' }, 
+          { type: 'rock', label: 'いわ' }, 
+    { type: 'steel', label: 'はがね' }, 
+    { type: 'shine', label: 'シャイン' }, 
   ];
   const TYPE_STREAK_GOAL = 5;
   function typeStreakAchievementId(type) { return 'type_streak_' + type; }
