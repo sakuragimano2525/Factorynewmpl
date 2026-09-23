@@ -39,7 +39,7 @@
      実績ID「intrusion_<種族ID>」＝そのポケモンを乱入戦で倒した記録。
      この実績が解除済みのポケモンは、二度と乱入ボスとして登場しない。
      IDリストは engine.js の INTRUSION_BOSS_IDS を使う（読み込めない場合の予備も持つ）。 */
-  const INTRUSION_FALLBACK_IDS = [171, 36, 91, 322, 347, 360, 1009, 1023, 1024, 1025, 1026];
+  const INTRUSION_FALLBACK_IDS = [1030,476,171, 36, 91, 322, 347, 360, 1009, 1023, 1024, 1025, 1026];
   const INTRUSION_IDS = (typeof INTRUSION_BOSS_IDS !== 'undefined' && Array.isArray(INTRUSION_BOSS_IDS))
     ? INTRUSION_BOSS_IDS : INTRUSION_FALLBACK_IDS;
   const ALL_CLEAR_INDEX = ACHIEVEMENTS.findIndex((a) => a.id === 'all_clear');
@@ -63,6 +63,41 @@
   }));
   // 「完全制覇」の直前に差し込む（完全制覇は常に最後）
   ACHIEVEMENTS.splice(ALL_CLEAR_INDEX >= 0 ? ALL_CLEAR_INDEX : ACHIEVEMENTS.length, 0, ...intrusionAchvs);
+
+  /* ---- タイプ縛り5連勝の実績（1タイプにつき1つ・自動生成） ----
+     NPCの「チームバトル」で、選出した6匹すべてが同じタイプ1体を持つ編成のまま
+     5連勝すると解除される（判定・カウントは engine.js の TypeStreak が行う）。
+     実績ID「type_streak_<タイプ英名>」。
+     新しいタイプを追加したい場合は、下の TYPE_STREAK_TARGET_TYPES に
+     { type: '英語タイプ名', label: '日本語表示名' } を1行追記するだけでよい
+     （英語タイプ名は GAME_DATA の species.type1/type2 に入っている値と同じもの。
+      例: bug/water/fire/grass/electric/psychic/rock/ground/flying/ice/
+          dragon/dark/steel/fairy/fighting/poison/ghost/normal/sound）。 */
+  const TYPE_STREAK_TARGET_TYPES = [
+    { type: 'bug', label: 'むし' }, 
+    { type: 'fire', label: 'ほのお' }, 
+    { type: 'normal', label: 'ノーマル' }, 
+    { type: 'flying', label: 'ひこう' }, 
+    { type: 'dark', label: 'あく' }, 
+    { type: 'psychic', label: 'エスパー' }, 
+    { type: 'grass', label: 'くさ' }, 
+    { type: 'rock', label: 'いわ' }, 
+    { type: 'ghost', label: 'ゴースト' }, 
+    { type: 'dragon', label: 'ドラゴン' }, 
+    { type: 'shine', label: 'シャイン' }, 
+    { type: 'steel', label: 'はがね' }, 
+    { type: 'ice', label: 'こおり' }, 
+    { type: 'poison', label: 'どく' }, 
+  ];
+  const TYPE_STREAK_GOAL = 5;
+  function typeStreakAchievementId(type) { return 'type_streak_' + type; }
+  const typeStreakAchvs = TYPE_STREAK_TARGET_TYPES.map(({ type, label }) => ({
+    id: typeStreakAchievementId(type),
+    title: label + 'タイプマスター',
+    desc: `NPCチームバトルで${label}タイプ6匹のパーティを組み${TYPE_STREAK_GOAL}連勝する`,
+    card: 'type_streak_' + type + '.png',
+  }));
+  ACHIEVEMENTS.splice(ALL_CLEAR_INDEX >= 0 ? ALL_CLEAR_INDEX + intrusionAchvs.length : ACHIEVEMENTS.length, 0, ...typeStreakAchvs);
 
   /* ---- 保存 ---- */
   let unlocked = new Set();
@@ -568,5 +603,6 @@ if (megaCount >= 80) unlock('mega_pokedex_80');
     unlock, unlockAll, resetAll,
     isUnlocked, count, total, list,
     checkAutoUnlocks,
+    typeStreakTargetTypes: () => TYPE_STREAK_TARGET_TYPES.map((t) => t.type),
   };
 })();

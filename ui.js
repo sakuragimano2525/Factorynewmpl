@@ -857,6 +857,41 @@ const MenuBgm = (() => {
   return { start, stop, resumeIfNeeded };
 })();
 
+/* ---------------- ショップBGM ---------------- */
+// ショップ画面にいる間だけ shop.mp3 に切り替え、閉じたら menu.mp3 に戻す。
+const ShopBgm = (() => {
+  let audio = null;
+  let playing = false;
+
+  function getAudio() {
+    if (audio) return audio;
+    audio = new Audio('./shop.mp3');
+    audio.loop = true;
+    audio.volume = 0.4;
+    return audio;
+  }
+
+  function start() {
+    if (playing) return;
+    playing = true;
+    const a = getAudio();
+    const p = a.play();
+    if (p && p.catch) p.catch(() => {});
+  }
+
+  function stop() {
+    playing = false;
+    if (audio) {
+      try {
+        audio.pause();
+        audio.currentTime = 0;
+      } catch (e) {}
+    }
+  }
+
+  return { start, stop };
+})();
+
 function $(id) { return document.getElementById(id); }
 
 /* ---------------- Fullscreen & orientation ---------------- */
@@ -959,7 +994,8 @@ function showScreen(name) {
 function spritePath(poke) {
   if (!poke) return '';
   const isYowashiSchool = poke.speciesId === 1012 && poke.formState === 'school';
-  const idPart = isYowashiSchool ? `A${poke.speciesId}` : `${poke.speciesId}`;
+  const isAineechuAwakened = poke.speciesId === 1990 && poke.formState === 'awakened';
+  const idPart = (isYowashiSchool || isAineechuAwakened) ? `A${poke.speciesId}` : `${poke.speciesId}`;
   const megaFormSuffix = poke.isMega && poke.megaForm ? poke.megaForm.toLowerCase() : '';
   const megaPart = poke.isMega ? `m${idPart}${megaFormSuffix}` : idPart;
   return `./${megaPart}${poke.shiny ? 's' : ''}.png`;
@@ -976,10 +1012,24 @@ window.makeFallback = function (speciesId, originalClass) {
   const div = document.createElement('div');
   div.className = 'sprite-fallback ' + originalClass;
   const isOpp = originalClass.includes('sprite-opp');
-  div.style.width = isOpp ? '90px' : '116px';
-  div.style.height = isOpp ? '90px' : '116px';
+  const isShop = originalClass.includes('shop-cell-sprite');
+  if (isShop) {
+    // ショップのカード枠（.shop-cell-imgwrap）にぴったり収まるよう、親要素いっぱいに広げる。
+    div.style.width = '100%';
+    div.style.height = '100%';
+    div.style.display = 'flex';
+    div.style.alignItems = 'center';
+    div.style.justifyContent = 'center';
+    div.style.borderRadius = 'inherit';
+    div.style.fontSize = '11px';
+  } else {
+    div.style.width = isOpp ? '90px' : '116px';
+    div.style.height = isOpp ? '90px' : '116px';
+    div.style.fontSize = isOpp ? '30px' : '38px';
+  }
   div.style.background = fallbackColor(speciesId);
-  div.style.fontSize = isOpp ? '30px' : '38px';
+  div.style.fontWeight = '800';
+  div.style.color = '#fff';
   div.textContent = '#' + speciesId;
   return div;
 };
@@ -1043,6 +1093,7 @@ function sendPrivateLogToGuestOnly(text) {
     k: 'msg', t: text,
     h: null, hp: null, f: null, mu: null, sid: null, sh: false, tm: null, rc: null, rs: null,
     mt: null, mi: null, turn: null, wfx: null, mp: null, yf: null, ys: null, yfx: false,
+    ac: false, as: null,
     mev: false, mrg: false, msd: null, mt1: null, mt2: null, mab: null, mfm: null,
     pSnap: null, cSnap: null,
   }).catch((e) => { console.warn('[Net.pushEvent] 非公開ログ送信失敗', e); });
@@ -1077,6 +1128,8 @@ function queueMessage(text, after, netMeta) {
       yf: netMeta && netMeta.yowashiForm ? netMeta.yowashiForm : null,
       ys: netMeta && netMeta.yowashiSide ? netMeta.yowashiSide : null,
       yfx: netMeta && netMeta.yowashiFx ? true : false,
+      ac: netMeta && netMeta.aineechuForm ? true : false,
+      as: netMeta && netMeta.aineechuSide ? netMeta.aineechuSide : null,
       mev: netMeta && netMeta.megaEvolve ? true : false,
       mrg: netMeta && netMeta.megaRing ? true : false,
       msd: netMeta && netMeta.megaSide ? netMeta.megaSide : null,
@@ -1520,6 +1573,272 @@ function playYowashiFormChangeEffect(side, poke, nextForm, withFx) {
   });
 }
 
+/* ---------------- アイニーチュのフォルムチェンジ（めざめすがた化）演出 ---------------- */
+// 演出仕様：画面の様々な方向から不気味なほど大量のID1990（アイニーチュ）の分身が
+// 中心に群がり寄ってきて、やがて真っ黒なヘドロの塊へと変わり果て、
+// そのヘドロが弾けるようにしてA1990.png（めざめすがた）へ変貌する、という
+// おぞましい雰囲気の一連の演出。CSSは初回呼び出し時に動的注入するため、
+// 既存のスタイルシートを編集しなくてもこの関数単体で完結する。
+const AINEECHU_FX_CLONE_COUNT = 14;
+const AINEECHU_FX_GATHER_MS = 1400;   // 分身が群がってくる時間
+const AINEECHU_FX_SLUDGE_MS = 900;    // ヘドロ化して蠢く時間
+const AINEECHU_FX_REVEAL_MS = 650;    // ヘドロが弾けてめざめすがたが現れる時間
+const AINEECHU_FX_TOTAL_MS = AINEECHU_FX_GATHER_MS + AINEECHU_FX_SLUDGE_MS + AINEECHU_FX_REVEAL_MS + 150;
+
+let _aineechuFxStyleInjected = false;
+function ensureAineechuFxStyle() {
+  if (_aineechuFxStyleInjected) return;
+  _aineechuFxStyleInjected = true;
+  const style = document.createElement('style');
+  style.id = 'aineechu-fx-style';
+  style.textContent = `
+.aineechu-fx-layer {
+  position: absolute;
+  inset: -60px;
+  pointer-events: none;
+  z-index: 60;
+  overflow: visible;
+}
+.aineechu-fx-clone {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  filter: saturate(1.4) brightness(0.85) drop-shadow(0 0 6px rgba(80,0,90,0.7));
+  opacity: 0;
+  transform: translate(var(--fx-sx), var(--fx-sy)) scale(0.6) rotate(var(--fx-srot));
+  animation: aineechu-fx-gather-anim ${AINEECHU_FX_GATHER_MS}ms cubic-bezier(.55,0,.85,.35) forwards;
+  animation-delay: var(--fx-delay, 0s);
+}
+@keyframes aineechu-fx-gather-anim {
+  0% {
+    opacity: 0;
+    transform: translate(var(--fx-sx), var(--fx-sy)) scale(0.55) rotate(var(--fx-srot));
+  }
+  12% { opacity: 0.95; }
+  60% {
+    opacity: 1;
+    transform: translate(calc(var(--fx-sx) * 0.28), calc(var(--fx-sy) * 0.28)) scale(0.85) rotate(calc(var(--fx-srot) * 0.4));
+  }
+  100% {
+    opacity: 0.9;
+    transform: translate(0, 0) scale(0.32) rotate(0deg);
+  }
+}
+.aineechu-fx-sludge-pool {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 46% 54% 61% 39% / 55% 42% 58% 45%;
+  background: radial-gradient(circle at 35% 30%, #3a1f3d 0%, #1c0e1f 38%, #060305 72%, #000 100%);
+  box-shadow: 0 0 18px 6px rgba(20, 0, 25, 0.85), inset 0 0 14px rgba(120, 0, 130, 0.4);
+  opacity: 0;
+  animation: aineechu-fx-sludge-grow ${AINEECHU_FX_SLUDGE_MS}ms ease-in-out forwards;
+  animation-delay: ${AINEECHU_FX_GATHER_MS}ms;
+}
+@keyframes aineechu-fx-sludge-grow {
+  0% { opacity: 0; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 46% 54% 61% 39% / 55% 42% 58% 45%; }
+  15% { opacity: 1; }
+  40% {
+    width: 96px; height: 78px; margin: -39px 0 0 -48px;
+    border-radius: 58% 42% 39% 61% / 48% 55% 45% 52%;
+  }
+  70% {
+    width: 108px; height: 88px; margin: -44px 0 0 -54px;
+    border-radius: 41% 59% 55% 45% / 60% 38% 62% 40%;
+  }
+  100% {
+    width: 100px; height: 84px; margin: -42px 0 0 -50px;
+    border-radius: 50% 50% 48% 52% / 52% 48% 55% 45%;
+    opacity: 1;
+  }
+}
+.aineechu-fx-sludge-pool::before, .aineechu-fx-sludge-pool::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(90,10,100,0.55) 0%, rgba(0,0,0,0) 70%);
+  animation: aineechu-fx-bubble 1.1s ease-in-out infinite;
+}
+.aineechu-fx-sludge-pool::before { width: 22px; height: 22px; left: 15%; top: 20%; animation-delay: 0.1s; }
+.aineechu-fx-sludge-pool::after { width: 16px; height: 16px; right: 18%; bottom: 15%; animation-delay: 0.5s; }
+@keyframes aineechu-fx-bubble {
+  0%, 100% { transform: scale(0.7); opacity: 0.5; }
+  50% { transform: scale(1.25); opacity: 0.95; }
+}
+.aineechu-fx-drip {
+  position: absolute;
+  bottom: -6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #0c0510;
+  box-shadow: 0 0 6px 2px rgba(60,0,70,0.7);
+  opacity: 0;
+  animation: aineechu-fx-drip-fall 1.3s ease-in forwards;
+}
+@keyframes aineechu-fx-drip-fall {
+  0% { opacity: 0; transform: translateY(0) scaleY(0.6); }
+  20% { opacity: 0.9; }
+  100% { opacity: 0; transform: translateY(28px) scaleY(1.4); }
+}
+.aineechu-fx-burst-particle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #7a0a86 0%, #1c0620 70%, transparent 100%);
+  opacity: 0.95;
+  animation: aineechu-fx-burst-fly 550ms ease-out forwards;
+}
+@keyframes aineechu-fx-burst-fly {
+  0% { opacity: 0.95; transform: translate(0,0) scale(1); }
+  100% { opacity: 0; transform: translate(var(--fx-bx), var(--fx-by)) scale(0.2); }
+}
+.aineechu-fx-flash {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(180,0,200,0.55) 0%, rgba(30,0,35,0.15) 55%, transparent 75%);
+  opacity: 0;
+  animation: aineechu-fx-flash-anim 550ms ease-out forwards;
+}
+@keyframes aineechu-fx-flash-anim {
+  0% { opacity: 0; transform: scale(0.3); }
+  30% { opacity: 1; transform: scale(1.1); }
+  100% { opacity: 0; transform: scale(1.6); }
+}
+.aineechu-form-reveal-flash {
+  animation: aineechu-fx-reveal-pop 500ms ease-out;
+}
+@keyframes aineechu-fx-reveal-pop {
+  0% { filter: brightness(0.2) saturate(1.6) drop-shadow(0 0 10px rgba(160,0,180,0.9)); transform: scale(0.85); }
+  55% { filter: brightness(1.6) saturate(1.2) drop-shadow(0 0 16px rgba(200,60,220,0.9)); transform: scale(1.08); }
+  100% { filter: none; transform: scale(1); }
+}
+`;
+  document.head.appendChild(style);
+}
+
+// アイニーチュ(ID1990)専用フォルムチェンジ演出：
+// 1) 画面の様々な方向から不気味な分身（弱っていく前の自分自身の姿=素の1990.png）が
+//    中心のスプライトめがけて群がり寄ってくる
+// 2) 群がった分身たちが溶け合い、蠢く黒いヘドロの塊に成り果てる
+// 3) ヘドロが弾け、その中からA1990.png（めざめすがた）が姿を現す
+// withFx=false の場合は演出をスキップし、画像だけ即座に差し替える。
+function playAineechuFormChangeEffect(side, poke, withFx) {
+  const wrap = $(side === 'opp' ? 'sprite-opp-wrap' : 'sprite-self-wrap');
+  if (!wrap || !poke) return Promise.resolve();
+
+  const applySpriteSwap = () => {
+    const img = wrap.querySelector('img, .sprite-fallback');
+    if (img && img.tagName === 'IMG') {
+      img.src = spritePath(poke);
+    } else {
+      const cls = side === 'opp' ? 'sprite sprite-opp' : 'sprite sprite-self';
+      wrap.innerHTML = spriteImgTag(poke, cls);
+    }
+  };
+
+  if (!withFx) {
+    applySpriteSwap();
+    return Promise.resolve();
+  }
+
+  ensureAineechuFxStyle();
+
+  // 分身の背景画像には、フォルムチェンジ前の素の姿（色違いなら色違い）を使う。
+  const beforeUrl = `./${poke.speciesId}${poke.shiny ? 's' : ''}.png`;
+
+  return new Promise((resolve) => {
+    const fxLayer = document.createElement('div');
+    fxLayer.className = 'aineechu-fx-layer';
+
+    // 1) 画面の様々な方向（360度・ばらばらな距離）から分身が群がってくる
+    const radius = side === 'opp' ? 130 : 170;
+    for (let i = 0; i < AINEECHU_FX_CLONE_COUNT; i++) {
+      const clone = document.createElement('div');
+      clone.className = 'aineechu-fx-clone';
+      clone.style.backgroundImage = `url("${beforeUrl}")`;
+      const angle = (Math.PI * 2 * i) / AINEECHU_FX_CLONE_COUNT + (Math.random() - 0.5) * 0.6;
+      const dist = radius * (0.7 + Math.random() * 0.6);
+      const sx = Math.cos(angle) * dist;
+      const sy = Math.sin(angle) * dist;
+      clone.style.setProperty('--fx-sx', sx.toFixed(1) + 'px');
+      clone.style.setProperty('--fx-sy', sy.toFixed(1) + 'px');
+      clone.style.setProperty('--fx-srot', ((Math.random() - 0.5) * 260).toFixed(0) + 'deg');
+      clone.style.setProperty('--fx-delay', (Math.random() * 0.35).toFixed(2) + 's');
+      fxLayer.appendChild(clone);
+    }
+    wrap.appendChild(fxLayer);
+
+    // 2) 分身が群がりきったタイミングで、本体スプライトを隠し、
+    //    代わりに蠢く黒いヘドロの塊を出現させる。
+    setTimeout(() => {
+      const img = wrap.querySelector('img, .sprite-fallback');
+      if (img) img.classList.add('mega-fx-hidden'); // 既存の非表示用クラスを流用
+      // 集まった分身の残骸は消し、ヘドロに置き換える
+      fxLayer.querySelectorAll('.aineechu-fx-clone').forEach((c) => c.remove());
+      const pool = document.createElement('div');
+      pool.className = 'aineechu-fx-sludge-pool';
+      fxLayer.appendChild(pool);
+      // 不気味に滴るヘドロの雫
+      const dripCount = 4;
+      for (let i = 0; i < dripCount; i++) {
+        const drip = document.createElement('div');
+        drip.className = 'aineechu-fx-drip';
+        drip.style.left = (38 + Math.random() * 24) + '%';
+        drip.style.animationDelay = (Math.random() * 0.6).toFixed(2) + 's';
+        fxLayer.appendChild(drip);
+      }
+    }, AINEECHU_FX_GATHER_MS);
+
+    // 3) ヘドロが弾けて、めざめすがた(A1990.png)が姿を現す
+    setTimeout(() => {
+      fxLayer.querySelectorAll('.aineechu-fx-sludge-pool, .aineechu-fx-drip').forEach((el) => el.remove());
+
+      // 弾け散る黒紫の粒子
+      const burstCount = 16;
+      for (let i = 0; i < burstCount; i++) {
+        const p = document.createElement('div');
+        p.className = 'aineechu-fx-burst-particle';
+        const angle = Math.random() * Math.PI * 2;
+        const dist = 40 + Math.random() * 60;
+        p.style.setProperty('--fx-bx', (Math.cos(angle) * dist).toFixed(1) + 'px');
+        p.style.setProperty('--fx-by', (Math.sin(angle) * dist).toFixed(1) + 'px');
+        fxLayer.appendChild(p);
+      }
+      const flash = document.createElement('div');
+      flash.className = 'aineechu-fx-flash';
+      fxLayer.appendChild(flash);
+
+      applySpriteSwap();
+      const img = wrap.querySelector('img, .sprite-fallback');
+      if (img) {
+        img.classList.remove('mega-fx-hidden');
+        img.classList.add('aineechu-form-reveal-flash');
+        setTimeout(() => img.classList.remove('aineechu-form-reveal-flash'), 550);
+      }
+    }, AINEECHU_FX_GATHER_MS + AINEECHU_FX_SLUDGE_MS);
+
+    setTimeout(() => {
+      fxLayer.remove();
+      resolve();
+    }, AINEECHU_FX_TOTAL_MS);
+  });
+}
+
 /* ---------------- 天候発動エフェクト ---------------- */
 // ダイヤモンド・パール・プラチナ風に、天候が発動した瞬間に背景演出を出してから
 // 次のメッセージ（--ターンN--等）に進む。はれ（sun）は原作同様に演出なし。
@@ -1792,11 +2111,13 @@ function playTypeEffect(side, moveType, big) {
 // インフェルノ(480)／メイルストローム(483)／イルミンスール(484)
 // ／りゅうせいぐん(53)／かみなり(73)・ルクスノヴァ(79)／ふぶき(235)・ブリザード(236)・ヘイルストーム(237)
 // 専用のフルスクリーン演出。スプライト枠に縛られず戦闘画面全体（battle-field）を使う。
-const SPECIAL_MOVE_FX_IDS = [480, 483, 484, 53, 73, 79, 235, 236, 237];
-function playSpecialMoveEffect(moveId) {
+// パワージェム(312)・ジェムレーザー(315)・グラベルブレス(317)・ステルスロック(318)は全画面ではなく「自分→相手」へ飛翔する演出のため、被弾側(defSide)を渡して
+// 攻撃側スプライト→防御側スプライトの座標をTypeFX側で実測する。
+const SPECIAL_MOVE_FX_IDS = [75,76,72,138,123,63,66,153,156,157,353,355,354,253,254,273,277,374,93,480, 483, 132,13,18,233,332,484, 53, 73, 79, 235, 236, 237, 312, 315, 317, 318];
+function playSpecialMoveEffect(moveId, defSide) {
   const wrap = $('special-fx-layer');
   if (!wrap || !window.TypeFX || !window.TypeFX.playSpecial) return Promise.resolve();
-  const p = window.TypeFX.playSpecial(wrap, moveId);
+  const p = window.TypeFX.playSpecial(wrap, moveId, defSide);
   return p || Promise.resolve();
 }
 
@@ -2392,7 +2713,7 @@ $('surrender-confirm').addEventListener('click', async () => {
     clearTurnTimer();
     $('cmd-dock').classList.remove('dock-wide');
     setWatchLogButtonsActive(false);
-    await endMultiplayerBattleHost(false);
+    await endMultiplayerBattleHost(false, true);
   } else {
     // ゲストが降参：ホストへ通知する。ホスト側が試合を終了させると通常の
     // k:'end' イベントが飛んでくるので、以降の自分の敗北UI表示はそちらに任せる。
@@ -2571,6 +2892,12 @@ function getAbilityInfo(poke) {
   }
   return null;
 }
+// ステータス名の左に付けるアイコン（トレーニング画面・ボックス画面と共通のSVG）。
+// cls: アイコンを包む span のクラス名（画面ごとにサイズ・色をCSSで変える）
+function statIconHtml(key, cls) {
+  const svg = (typeof TR_STAT_ICON !== 'undefined' && TR_STAT_ICON[key]) ? TR_STAT_ICON[key] : '';
+  return svg ? `<span class="${cls}" aria-hidden="true">${svg}</span>` : '';
+}
 function getStatBlock(poke, order) {
   const stats = poke.stats || (poke.species && poke.species.baseStats);
   const statOrder = order || ['hp', 'spe', 'atk', 'def', 'spa', 'spd'];
@@ -2647,7 +2974,7 @@ function partyDetailHtml(p, showMegaPreview) {
     : getStatBlock(p, ['hp', 'atk', 'def', 'spa', 'spd', 'spe']);
   const statsHtml = statBlock.map((s) => `
     <div class="pd-stat-row ${s.key === 'spe' ? 'pd-stat-spe' : ''}">
-      <span class="pd-stat-name">${s.label}</span>
+      <span class="pd-stat-name">${statIconHtml(s.key, 'pd-stat-ico')}${s.label}</span>
       <span class="pd-stat-values">
         <span class="pd-stat-value">${s.value != null ? s.value : '—'}</span>${s.ev != null ? `<span class="pd-stat-ev">${s.ev}</span>` : ''}
       </span>
@@ -2727,7 +3054,7 @@ function partyDetailHtmlWide(p, showMegaPreview) {
     : getStatBlock(p, ['hp', 'atk', 'def', 'spa', 'spd', 'spe']);
   const statsHtml = statBlock.map((s) => `
     <div class="pdw-stat-row">
-      <span class="pdw-stat-name">${s.label}</span>
+      <span class="pdw-stat-name">${statIconHtml(s.key, 'pdw-stat-ico')}${s.label}</span>
       <span class="pdw-stat-values">
         <span class="pdw-stat-value">${s.value != null ? s.value : '—'}</span>${s.ev != null ? `<span class="pdw-stat-ev">${s.ev}</span>` : ''}
       </span>
@@ -3134,6 +3461,12 @@ function makeLogFn() {
       yowashiUiSide = meta.side === 'player' ? 'self' : 'opp';
     }
 
+    // アイニーチュのフォルムチェンジ（HP半減で片道変化）がどちら側に起きたか。
+    let aineechuUiSide = null;
+    if (meta && meta.aineechuForm && meta.side) {
+      aineechuUiSide = meta.side === 'player' ? 'self' : 'opp';
+    }
+
     // 状態異常・こんらんの新規付与：ダメージを伴わない単独の付与メッセージ
     // （例：ブリザードでこおり、あくまのキッスでねむり等）が表示されるタイミングで、
     // 演出なしでHUDだけを更新する。この時点でのstatus/confuseTurnsをスナップショットして
@@ -3184,12 +3517,24 @@ function makeLogFn() {
     // インフェルノ／メイルストローム／イルミンスールは通常のbig版よりさらに特別な専用演出を使う。
     const isSpecialMove = SPECIAL_MOVE_FX_IDS.indexOf(moveId) !== -1;
 
+const isStatusSpecialMove = isSpecialMove
+  && meta && meta.moveUse
+  && meta.moveCategory === 'status';
+
     queueMessage(text, async () => {
+    	if (isStatusSpecialMove) {
+    // 変化技でも「攻撃側→相手」の飛翔演出が要る技（ステルスロック等）のため、
+    // 技を使った側(meta.moveUse)の反対側＝相手側 を被弾側として渡す。
+    // 他の変化技（ミキシング等）は第2引数を使わないので影響しない。
+    const statusDefSide = meta.moveUse === 'player' ? 'opp' : 'self';
+    await playSpecialMoveEffect(moveId, statusDefSide);
+  }
       if (uiSide) {
         const poke = meta.hit === 'player' ? state.playerActive : state.cpuActive;
         if (isSpecialMove) {
           // 専用の全画面エフェクト：スプライト枠に縛られない派手な演出。
-          await playSpecialMoveEffect(moveId);
+          // uiSide（被弾側）を渡す＝パワージェム等、攻撃側→防御側への飛翔演出で使う。
+          await playSpecialMoveEffect(moveId, uiSide);
           if (meta && meta.typeMult !== undefined) {
             playTypeEffectSound(meta.typeMult);
           }
@@ -3226,6 +3571,17 @@ function makeLogFn() {
       if (yowashiUiSide) {
         const poke = meta.side === 'player' ? state.playerActive : state.cpuActive;
         await playYowashiFormChangeEffect(yowashiUiSide, poke, meta.yowashiForm, !!meta.fx);
+      }
+      // アイニーチュのフォルムチェンジ：画面の様々な方向から不気味な分身が群がり寄って
+      // 黒いヘドロの塊となり、それが弾けてA1990.png（めざめすがた）へ変貌するという
+      // おぞましい専用演出を再生してから、HP増加・状態異常解除後の値でHUDを更新する。
+      if (aineechuUiSide) {
+        const poke = meta.side === 'player' ? state.playerActive : state.cpuActive;
+        await playAineechuFormChangeEffect(aineechuUiSide, poke, true);
+        if (poke) {
+          const snap = { status: meta.statusSnapshot, confuseTurns: meta.confuseSnapshot };
+          updateHud(poke, aineechuUiSide, meta.hpSnapshot, snap);
+        }
       }
       // 状態異常・こんらんの新規付与：ダメージを伴わない単独メッセージが表示されたタイミングで、
       // 演出なしでHUDだけ更新する（このメッセージが発行された瞬間のスナップショットを使う）。
@@ -3284,6 +3640,10 @@ function makeLogFn() {
       yowashiForm: meta && meta.yowashiForm ? meta.yowashiForm : null,
       yowashiSide: meta && meta.side ? meta.side : null,
       yowashiFx: meta && meta.fx ? true : false,
+      aineechuForm: meta && meta.aineechuForm ? true : false,
+      aineechuSide: meta && meta.aineechuForm && meta.side ? meta.side : null,
+      aineechuHp: meta && meta.aineechuForm ? meta.hpSnapshot : null,
+      aineechuMaxHp: meta && meta.aineechuForm ? meta.maxHpSnapshot : null,
       megaEvolve: meta && meta.megaEvolve ? true : false,
       megaSide: meta && (meta.megaEvolve || meta.megaRing) && meta.side ? meta.side : null,
       megaRing: meta && meta.megaRing ? true : false,
@@ -3327,6 +3687,8 @@ async function doSwitch(newActive, side) {
   newActive.gekirinMoveId = null;
   newActive.protecting = false; // 交代でまもる状態は解除
   newActive.protectStreak = 0;  // 交代でまもる連続使用カウントもリセット
+  newActive.enduring = false;   // 交代でこらえる状態は解除
+  newActive.endureStreak = 0;   // 交代でこらえる連続使用カウントもリセット
   // 本家仕様：交代するとアンコール（技固定）と混乱は解除される。
   newActive.encoreTurns = 0;
   newActive.encoreMoveId = null;
@@ -3602,10 +3964,16 @@ async function endBattle(playerWon) {
   clearCmdPanel();
   clearTurnTimer();
   $('cmd-dock').classList.remove('dock-wide');
+  let earnedDisc = 0;
   if (playerWon && !state.multiplayer) {
     state.winStreak++;
     MaxWinStreak.reportStreak(state.winStreak, npcTeamState.active ? 'team' : state.megaEvolutionEnabled);
     updateRecordBtnRank();
+    // ディスク報酬：メガあり/なしNPC戦・チームバトルいずれも、その戦い（winStreak）が
+    // 何戦目にあたるかでディスクを加算する（1〜5戦目+10、6〜9戦目+20、10戦目ごとのボス+50、
+    // それ以外の11戦目以降+25）。
+    earnedDisc = calcNpcDiscReward(state.winStreak);
+    if (earnedDisc > 0) Shop.addDisc(earnedDisc);
     // 乱入戦に勝った＝乱入ボスを倒した → 実績で記録（以後そのポケモンは乱入ボスに出てこない）
     if (state.isIntrusionBattle && state.pendingIntrusionId != null && window.Achievements) {
       window.Achievements.unlock(intrusionAchievementId(state.pendingIntrusionId));
@@ -3615,6 +3983,11 @@ async function endBattle(playerWon) {
       const newlyUnlocked = window.Achievements.unlock('win_streak_team_10');
       if (newlyUnlocked) announceHiddenSpeciesUnlock(2000);
     }
+  }
+  // タイプ縛り連勝の判定（NPCチームバトルのみ対象。対人戦・通常NPC戦は対象外で、
+  // チーム戦で負けた場合や縛りが崩れた場合はそのタイプの連勝が0にリセットされる）。
+  if (!state.multiplayer && typeof TypeStreak !== 'undefined') {
+    TypeStreak.reportResult(!!npcTeamState.active, playerWon, state.playerTeam);
   }
   // 乱入戦が終わったら、勝敗にかかわらず乱入状態は解除（負けた場合は連勝ごとリセットされる）
   if (state.isIntrusionBattle) {
@@ -3635,7 +4008,9 @@ async function endBattle(playerWon) {
   $('result-title').textContent = playerWon ? 'WIN' : 'LOSE';
   $('result-title').className = 'result-title ' + (playerWon ? 'win' : 'lose');
   $('result-desc').textContent = playerWon
-    ? `${state.winStreak}連勝中！つぎの相手が待っている。`
+    ? (state.multiplayer
+        ? '勝利！'
+        : `${state.winStreak}連勝中！ディスク+${earnedDisc}　つぎの相手が待っている。`)
     : `連勝は${state.winStreak}でストップ。またチャレンジしよう！`;
   overlay.classList.add('show');
 
@@ -5377,9 +5752,9 @@ async function runMultiplayerBattleHost() {
   state.turnNumber = 1;
 
   while (true) {
-    if (surrenderedByOpponent) { if (unsubSurrender) unsubSurrender(); await endMultiplayerBattleHost(true); return; }
-    if (state.playerTeam.every((p) => p.fainted)) { if (unsubSurrender) unsubSurrender(); await endMultiplayerBattleHost(false); return; }
-    if (state.cpuTeam.every((p) => p.fainted)) { if (unsubSurrender) unsubSurrender(); await endMultiplayerBattleHost(true); return; }
+    if (surrenderedByOpponent) { if (unsubSurrender) unsubSurrender(); await endMultiplayerBattleHost(true, true); return; }
+    if (state.playerTeam.every((p) => p.fainted)) { if (unsubSurrender) unsubSurrender(); await endMultiplayerBattleHost(false, false); return; }
+    if (state.cpuTeam.every((p) => p.fainted)) { if (unsubSurrender) unsubSurrender(); await endMultiplayerBattleHost(true, false); return; }
 
     queueTurnDivider(state.turnNumber);
     await drainMessages();
@@ -5400,7 +5775,7 @@ async function runMultiplayerBattleHost() {
     hideOpponentWaitingBadge();
     if (guestRaw === '__surrender__') {
       if (unsubSurrender) unsubSurrender();
-      await endMultiplayerBattleHost(true);
+      await endMultiplayerBattleHost(true, true);
       return;
     }
     const guestAction = resolveRemoteAction(guestRaw, state.cpuActive);
@@ -5523,7 +5898,10 @@ async function postTurnCleanupMultiplayerHost() {
   updateFieldDisplay();
 }
 
-async function endMultiplayerBattleHost(hostWon) {
+// bySurrender: どちらかが降参ボタンを押して終わった試合かどうか。
+// 降参なし（＝両者フェイントでの通常決着）の時だけ、勝敗にかかわらずホスト・ゲスト双方に
+// ディスク+10を付与する（対人戦は「降参ボタンを押さずに試合が終わった時のみお互いに+10」）。
+async function endMultiplayerBattleHost(hostWon, bySurrender) {
   state.battleBusy = false;
   clearTurnTimer();
   hideOpponentWaitingBadge();
@@ -5534,12 +5912,16 @@ async function endMultiplayerBattleHost(hostWon) {
   $('cmd-dock').classList.remove('dock-wide');
   if (currentSurrenderUnsub) { currentSurrenderUnsub(); currentSurrenderUnsub = null; }
   await Net.clearSurrenderFlags();
+  const noSurrenderWin = !bySurrender;
+  if (noSurrenderWin) Shop.addDisc(PVP_DISC_REWARD);
   const overlay = $('result-overlay');
   $('result-title').textContent = hostWon ? 'WIN' : 'LOSE';
   $('result-title').className = 'result-title ' + (hostWon ? 'win' : 'lose');
-  $('result-desc').textContent = hostWon ? '勝利！' : '敗北…';
+  $('result-desc').textContent = hostWon
+    ? (noSurrenderWin ? `勝利！ディスク+${PVP_DISC_REWARD}` : '勝利！')
+    : (noSurrenderWin ? `敗北…ディスク+${PVP_DISC_REWARD}` : '敗北…');
   overlay.classList.add('show');
-  Net.pushEvent({ k: 'end', win: hostWon });
+  Net.pushEvent({ k: 'end', win: hostWon, bySurrender: !!bySurrender });
   await runMultiplayerRematchFlow();
 }
 
@@ -5679,6 +6061,11 @@ async function handleGuestEvent(ev) {
     const yowashiUiSide = ev.yf && ev.ys ? (ev.ys === 'player' ? 'opp' : 'self') : null;
     const yowashiPoke = ev.ys === 'player' ? state.cpuActive : ev.ys === 'cpu' ? state.playerActive : null;
 
+    // アイニーチュのフォルムチェンジがどちら側に起きたか（pSnap/cSnapのmhp・formは
+    // 既に上で反映済みなので、ここではエフェクト再生とHUD再描画だけ行えばよい）
+    const aineechuUiSide = ev.ac && ev.as ? (ev.as === 'player' ? 'opp' : 'self') : null;
+    const aineechuPoke = ev.as === 'player' ? state.cpuActive : ev.as === 'cpu' ? state.playerActive : null;
+
     // ---- メガシンカ関連の判定（ゲスト側：自分・相手どちらも対応） ----
     // ev.mev だけに依存すると非X/Y個体で発火しないことがあるため、複数の手がかりで判定する。
     const _megaTextHit = typeof ev.t === 'string' && ev.t.indexOf('メガシンカした') !== -1;
@@ -5736,12 +6123,19 @@ async function handleGuestEvent(ev) {
     const isBigMove = !!(ev.mp !== null && ev.mp !== undefined && ev.mp > BIG_MOVE_POWER_THRESHOLD);
     const isSpecialMove = SPECIAL_MOVE_FX_IDS.indexOf(ev.mi !== undefined ? ev.mi : null) !== -1;
 
+    // 設置技(ステルスロック=318)：技使用ログ(ev.mu)の時点で演出を再生する（ダメージログではない）。
+    const isGuestHazardMove = ev.mi === 318 && !!ev.mu && !ev.h;
+    const guestHazardDefSide = ev.mu === 'player' ? 'self' : 'opp';
+
     msgQueue.push({
       text: ev.t,
       after: async () => {
+        if (isGuestHazardMove) {
+          await playSpecialMoveEffect(ev.mi, guestHazardDefSide);
+        }
         if (uiSide && poke) {
           if (isSpecialMove) {
-            await playSpecialMoveEffect(ev.mi);
+            await playSpecialMoveEffect(ev.mi, uiSide);
             if (ev.tm !== null && ev.tm !== undefined) {
               playTypeEffectSound(ev.tm);
             }
@@ -5771,6 +6165,11 @@ async function handleGuestEvent(ev) {
         // ヨワシのフォルムチェンジ
         if (yowashiUiSide && yowashiPoke) {
           await playYowashiFormChangeEffect(yowashiUiSide, yowashiPoke, ev.yf, !!ev.yfx);
+        }
+        // アイニーチュのフォルムチェンジ（HP・maxHpはpSnap/cSnapで既に反映済み）
+        if (aineechuUiSide && aineechuPoke) {
+          await playYowashiFormChangeEffect(aineechuUiSide, aineechuPoke, 'school', true);
+          updateHud(aineechuPoke, aineechuUiSide, aineechuPoke.currentHp);
         }
         // 天候発動エフェクト
         if (ev.wfx) {
@@ -5842,6 +6241,8 @@ async function handleGuestEvent(ev) {
       poke.gekirinMoveId = null;
       poke.protecting = false;
       poke.protectStreak = 0;
+      poke.enduring = false;
+      poke.endureStreak = 0;
       poke.encoreTurns = 0;
       poke.encoreMoveId = null;
     }
@@ -6017,10 +6418,14 @@ async function handleGuestEvent(ev) {
     clearCmdPanel();
     $('cmd-dock').classList.remove('dock-wide');
     const guestWon = !ev.win;
+    const noSurrenderWin = !ev.bySurrender;
+    if (noSurrenderWin) Shop.addDisc(PVP_DISC_REWARD);
     const overlay = $('result-overlay');
     $('result-title').textContent = guestWon ? 'WIN' : 'LOSE';
     $('result-title').className = 'result-title ' + (guestWon ? 'win' : 'lose');
-    $('result-desc').textContent = guestWon ? '勝利！' : '敗北…';
+    $('result-desc').textContent = guestWon
+      ? (noSurrenderWin ? `勝利！ディスク+${PVP_DISC_REWARD}` : '勝利！')
+      : (noSurrenderWin ? `敗北…ディスク+${PVP_DISC_REWARD}` : '敗北…');
     overlay.classList.add('show');
     await runMultiplayerRematchFlow();
     return;
@@ -6516,6 +6921,236 @@ $('pokedex-close-btn').addEventListener('click', () => {
   $('pokedex-overlay').classList.remove('show');
 });
 
+// 対人戦（マルチプレイ）：降参ボタンを使わず試合が終わった時のみ、お互いに+10。
+const PVP_DISC_REWARD = 10;
+
+/* ---- ディスク報酬（NPC戦：メガあり/なし・チームバトル共通） ----
+   winStreak（勝利後の連勝数＝何戦目に勝ったか）に応じて加算量を決める。
+   1〜5戦目            : +10
+   6〜9戦目            : +20
+   10戦目・20戦目…(ボス): +50 （10の倍数）
+   11〜19戦目、21〜29戦目…: +25 （10の倍数を除く、11戦目以降）
+   このルールは11戦目以降、10戦目区切りで無限に繰り返す
+   （31〜39→+25、40(ボス)→+50、…）。 */
+function calcNpcDiscReward(battleNo) {
+  const n = Math.floor(Number(battleNo) || 0);
+  if (n <= 0) return 0;
+  if (n <= 5) return 10;
+  if (n <= 9) return 20;
+  if (n % 10 === 0) return 50; // 10戦目区切りのボス（10, 20, 30, ...）
+  return 25; // 11戦目以降のボス以外（11〜19, 21〜29, 31〜39, ...）
+}
+
+/* ---- ショップ（購入・所持ディスク管理） ----
+   speciesId: 価格(disc) のオブジェクトで、ポケモンごとに個別の値段を設定する。
+   所持ディスク数・購入済みポケモンはlocalStorageに永続化する。
+   ディスクはNPC戦・対人戦の勝利で加算される（DiscReward参照）。 */
+const SHOP_ITEMS = {
+	17:100,
+  410: 50,
+  411: 50,
+  486: 50,
+  489: 50,
+  557: 50,
+  595: 50,
+596: 50,
+598: 50,
+600: 50,
+601: 50,
+602: 50,
+603: 50,
+604: 50,
+1000: 50,
+1001: 50,
+1002: 50,
+1003: 50,
+1004: 50,
+1005: 50,
+1006: 50,
+1007: 50,
+1008: 50,
+1009: 50,
+1010: 50,
+1012: 100,
+1013: 50,
+  1032: 50,
+};
+
+const SHOP_DISC_STORAGE_KEY = 'pokeriere_shop_disc_v1';
+const SHOP_OWNED_STORAGE_KEY = 'pokeriere_shop_owned_v1';
+const SHOP_DISC_INITIAL = 0;
+
+const Shop = (() => {
+  let disc = SHOP_DISC_INITIAL;
+  let owned = new Set();
+
+  function load() {
+    try {
+      const rawDisc = localStorage.getItem(SHOP_DISC_STORAGE_KEY);
+      disc = rawDisc !== null ? Math.max(0, Number(rawDisc) || 0) : SHOP_DISC_INITIAL;
+    } catch (e) { disc = SHOP_DISC_INITIAL; }
+    try {
+      const rawOwned = localStorage.getItem(SHOP_OWNED_STORAGE_KEY);
+      owned = rawOwned ? new Set(JSON.parse(rawOwned).map((n) => Number(n))) : new Set();
+    } catch (e) { owned = new Set(); }
+  }
+
+  function saveDisc() {
+    try { localStorage.setItem(SHOP_DISC_STORAGE_KEY, String(disc)); } catch (e) {}
+  }
+  function saveOwned() {
+    try { localStorage.setItem(SHOP_OWNED_STORAGE_KEY, JSON.stringify([...owned])); } catch (e) {}
+  }
+
+  function getDisc() { return disc; }
+
+  // ディスクを加算する（バトル勝利報酬など）。amountは正の整数を想定。
+  function addDisc(amount) {
+    const n = Math.floor(Number(amount) || 0);
+    if (n <= 0) return disc;
+    disc += n;
+    saveDisc();
+    return disc;
+  }
+
+  // ショップに並んでいないポケモンは、そもそもロック対象ではない＝常に所持扱い。
+  function isOwned(speciesId) {
+    if (!(speciesId in SHOP_ITEMS)) return true;
+    return owned.has(speciesId);
+  }
+
+  // 購入処理：ディスクが足りなければ何もせず false を返す。
+  function buy(speciesId, price) {
+    if (isOwned(speciesId)) return false; // 既に持っている
+    if (disc < price) return false;
+    disc -= price;
+    owned.add(speciesId);
+    saveDisc();
+    saveOwned();
+    return true;
+  }
+
+  load();
+  return { getDisc, addDisc, isOwned, buy };
+})();
+
+// ショップカードの縁取り・グローに使う代表タイプ色を1つ返す（第1タイプ優先）。
+function shopSpeciesAccentColor(sp) {
+  if (!sp) return '#6b7a9e';
+  const primaryType = sp.type1 || sp.type2;
+  return TR_TYPE_COLOR[primaryType] || '#6b7a9e';
+}
+
+// ショップ用の画像パス：通常は"{id}.png"だが、ヨワシ（むれたすがた）のように
+// フォーム違いで画像ファイル名が変わる種族はspritePath()と同じ規則に合わせる。
+function shopSpritePath(speciesId) {
+  const isYowashiSchool = speciesId === 1012; // ショップに並ぶヨワシは「むれたすがた」の見た目で統一
+  const idPart = isYowashiSchool ? `A${speciesId}` : `${speciesId}`;
+  return `./${idPart}.png`;
+}
+// 画像が読み込めなかった場合、非表示にせず種族番号入りの色付きプレースホルダーに差し替える。
+function shopImgTag(speciesId) {
+  return `<img src="${shopSpritePath(speciesId)}" alt="" onerror="this.replaceWith(makeFallback(${speciesId}, 'shop-cell-sprite'))">`;
+}
+
+function shopCellHtml(speciesId) {
+  const sp = GAME_DATA.species[speciesId];
+  const name = sp ? sp.name : `？？？(${speciesId})`;
+  const owned = Shop.isOwned(speciesId);
+  const price = SHOP_ITEMS[speciesId];
+  const accent = shopSpeciesAccentColor(sp);
+  return `<div class="shop-cell${owned ? ' owned' : ''}" data-species-id="${speciesId}" style="--cell-type-color:${accent}">
+    <div class="shop-cell-imgwrap">
+      ${shopImgTag(speciesId)}
+    </div>
+    <div class="shop-cell-name">${name}</div>
+    <div class="shop-cell-price">
+      ${owned
+        ? '<span class="shop-cell-owned-label">こうにゅうずみ</span>'
+        : `<img src="./disc.png" alt="" onerror="this.style.display='none'"><span>${price}</span>`}
+    </div>
+  </div>`;
+}
+
+function renderShop() {
+  $('shop-grid').innerHTML = Object.keys(SHOP_ITEMS).map(Number).map(shopCellHtml).join('');
+  $('shop-currency-count').textContent = String(Shop.getDisc());
+}
+
+function openShopDetail(speciesId) {
+  const sp = GAME_DATA.species[speciesId];
+  const name = sp ? sp.name : `？？？(${speciesId})`;
+  const owned = Shop.isOwned(speciesId);
+  const price = SHOP_ITEMS[speciesId];
+  const accent = shopSpeciesAccentColor(sp);
+  const types = sp ? [sp.type1, sp.type2].filter(Boolean) : [];
+  $('shop-detail-card').style.setProperty('--cell-type-color', accent);
+  $('shop-detail-card').innerHTML = `
+    <div class="shop-detail-imgwrap">
+      ${shopImgTag(speciesId)}
+    </div>
+    <div class="shop-detail-name">${name}</div>
+    <div class="shop-detail-types">${types.map((t) => typeChipHtml(t)).join('')}</div>
+    <div class="shop-detail-price" id="shop-detail-price">
+      ${owned
+        ? '<span class="shop-cell-owned-label">こうにゅうずみ</span>'
+        : `<img src="./disc.png" alt="" onerror="this.style.display='none'"><span>${price}</span>`}
+    </div>
+    <div class="shop-detail-btn-row">
+      <button class="neu-btn shop-detail-btn" id="shop-detail-cancel" type="button">とじる</button>
+      ${owned ? '' : '<button class="shop-detail-btn primary" id="shop-detail-buy" type="button">こうにゅう</button>'}
+    </div>
+  `;
+  $('shop-detail-overlay').classList.add('show');
+  $('shop-detail-cancel').addEventListener('click', closeShopDetail);
+  const buyBtn = $('shop-detail-buy');
+  if (buyBtn) {
+    buyBtn.addEventListener('click', () => {
+      const ok = Shop.buy(speciesId, price);
+      if (ok) {
+        // ボックスにポケモンが既に存在していればロック表示だけ解除、
+        // まだ無ければ通常のボックス構築時と同じ生成処理で1匹追加する。
+        if (typeof sbEnsureSpeciesInBox === 'function') sbEnsureSpeciesInBox(speciesId);
+        if (typeof sbRefreshLockState === 'function') sbRefreshLockState();
+        renderShop();
+        closeShopDetail();
+      } else {
+        // ディスク不足：金額表示をゆらして知らせつつ、最新の所持ディスク数を反映する
+        const priceEl = $('shop-detail-price');
+        if (priceEl) {
+          priceEl.classList.remove('insufficient');
+          void priceEl.offsetWidth;
+          priceEl.classList.add('insufficient');
+        }
+      }
+    });
+  }
+}
+
+function closeShopDetail() {
+  $('shop-detail-overlay').classList.remove('show');
+}
+
+$('btn-title-shop').addEventListener('click', () => {
+  renderShop();
+  $('shop-overlay').classList.add('show');
+  MenuBgm.stop();
+  ShopBgm.start();
+});
+$('shop-close-btn').addEventListener('click', () => {
+  $('shop-overlay').classList.remove('show');
+  ShopBgm.stop();
+  MenuBgm.start();
+});
+$('shop-grid').addEventListener('click', (e) => {
+  const cell = e.target.closest('.shop-cell');
+  if (!cell) return;
+  openShopDetail(Number(cell.dataset.speciesId));
+});
+$('shop-detail-overlay').addEventListener('click', (e) => {
+  if (e.target === $('shop-detail-overlay')) closeShopDetail();
+});
+
 /* ---- おまけ：夏空のやくそく カードゲーム（ba-cardgame.js） ---- */
 if ($('btn-ba-cardgame')) {
   $('btn-ba-cardgame').addEventListener('click', () => {
@@ -6573,7 +7208,7 @@ function pokedexStatsHtml(species) {
     const value = base[key];
     const rank = baseStatRank(value);
     return `<div class="pdx-stat-row">
-      <span>${label}</span>
+      <span class="pdx-stat-label">${statIconHtml(key, 'pdx-stat-ico')}${label}</span>
       <span class="pdx-stat-rank pdx-rank-${rank}">${rank}</span>
     </div>`;
   }).join('');
@@ -6743,6 +7378,29 @@ const SB_STAT_KEYS = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
 const SB_STORAGE_KEY = 'pokeriere_serious_party_v1';
 const SB_FIXED_NATURE = 25;   // まじめ（NATURE_TABLE に無い＝上昇・下降なし）
 const SB_PARTY_NAME_MAX = 10;
+// ボックスの並び替え（表示専用）。sbState.box 自体（保存・パーティ復元の基準＝図鑑番号順）は並び替えず、
+// 表示する順番だけを変える。選んだ並び方は別キーで保存し、ゲームを閉じても覚えている。
+const SB_SORT_STORAGE_KEY = 'pokeriere_serious_box_sort_v1';
+const SB_SORT_OPTIONS = [
+  ['no',   '番号順'],
+  ['type', 'タイプ順'],
+  ['hp',   'HP順'],
+  ['atk',  '攻撃順'],
+  ['def',  '防御順'],
+  ['spa',  '特攻順'],
+  ['spd',  '特防順'],
+  ['spe',  '素早さ順'],
+];
+function sbLoadSortKey() {
+  try {
+    const k = localStorage.getItem(SB_SORT_STORAGE_KEY);
+    if (SB_SORT_OPTIONS.some(([key]) => key === k)) return k;
+  } catch (e) { /* プライベートモード等は無視 */ }
+  return 'no';   // 初期値：番号順
+}
+function sbSaveSortKey(k) {
+  try { localStorage.setItem(SB_SORT_STORAGE_KEY, k); } catch (e) { /* 保存できなくても動作は続ける */ }
+}
 const SB_PARTY_COUNT = 20;   // 保存できるパーティ数（パーティ1〜20）
 const sbDefaultPartyName = (n) => `パーティ${n}`;   // n は 1 始まりの番号
 const SB_DEFAULT_PARTY_NAME = sbDefaultPartyName(1);
@@ -6752,10 +7410,11 @@ const sbState = {
   parties: [],      // 20個分：{ name, snapshot:[保存された個体の控え, 最大6] または null（未保存） }
   current: -1,      // いま「セット」で読み込んだ元のパーティ番号（-1＝どのチームにも属さない）。
                      // 手持ちの中身そのものは常に workingMembers にあり、current はあくまで目印。
-  workingMembers: [],   // ボックス画面左の「今の手持ち」（ボックス内の個体への参照、最大6）
+  workingMembers: [],   // ボックス画面左の「今の手持ち」（ボックス内の個体への参照。長さは最大6で、途中に null＝空き枠を許す。外しても詰めない）
   workingName: SB_WORKING_NAME,
   selected: null,   // 詳細パネルに表示中の個体
   built: false,
+  sortKey: sbLoadSortKey(),   // 【表示専用】ボックスの並び方（no/type/hp/atk/def/spa/spd/spe）。保存される
   megaView: false,  // 【表示専用】trueならメガシンカ可能なポケモンのステータスをメガ後の種族値で表示する（画像やデータそのものは変えない）
   // 以下は「今の手持ち」への窓口。既存の描画・並び替え・追加/外すの処理はこれまで通り
   // sbState.party / sbState.partyName を読み書きするだけでよい（実体は常に working 側）。
@@ -6802,7 +7461,8 @@ function sbSave() {
       v: 3,
       current: sbState.current,         // -1＝どのチームにも属さない作業中の手持ち
       box: sbState.box.map(sbSerializePoke),
-      workingIdx: sbState.workingMembers.map((p) => sbState.box.indexOf(p)).filter((i) => i >= 0),
+      // 空き枠は -1 で保存して位置を保つ（「2を外したら2が空白」のまま復元するため）。旧データ（詰めた配列）もそのまま読める。
+      workingIdx: sbState.workingMembers.map((p) => (p ? sbState.box.indexOf(p) : -1)),
       workingName: sbState.workingName,
       // 各パーティ：名前と、そこへ「保存」した時点の技・努力値等の控え（チームごとに独立して保持する）
       parties: sbState.parties.map((pt) => ({
@@ -6867,6 +7527,18 @@ function sbLoad() {
       .filter((p) => p && sbState.box.includes(p))
       .filter((p, i, a) => a.indexOf(p) === i)
       .slice(0, SB_PARTY_MAX);
+    // 手持ち用：保存位置を保ったまま復元する（-1・壊れた個体・重複は空き枠 null に。末尾の空きは切り詰める）
+    const toSlots = (idxList) => {
+      const seen = new Set();
+      const arr = (Array.isArray(idxList) ? idxList : []).slice(0, SB_PARTY_MAX).map((i) => {
+        const p = (i >= 0) ? restored[i] : null;
+        if (!p || !sbState.box.includes(p) || seen.has(p)) return null;
+        seen.add(p);
+        return p;
+      });
+      while (arr.length && !arr[arr.length - 1]) arr.pop();
+      return arr;
+    };
     const cleanName = (nm, n) => {
       const t = typeof nm === 'string' ? nm.trim().slice(0, SB_PARTY_NAME_MAX) : '';
       return t || sbDefaultPartyName(n);
@@ -6884,7 +7556,7 @@ function sbLoad() {
         if (!pt) return;
         sbState.parties[i] = { name: cleanName(pt.name, i + 1), snapshot: toSnapshot(pt.snap) };
       });
-      sbState.workingMembers = toMembers(data.workingIdx);
+      sbState.workingMembers = toSlots(data.workingIdx);
       sbState.workingName = (typeof data.workingName === 'string' && data.workingName.trim().slice(0, SB_PARTY_NAME_MAX)) || SB_WORKING_NAME;
       const cur = parseInt(data.current, 10);
       sbState.current = (cur >= 0 && cur < SB_PARTY_COUNT) ? cur : -1;
@@ -6935,6 +7607,15 @@ function sbMegaVisible(p) {
 function sbMegaBadgeHtml(p) {
   if (!sbMegaVisible(p)) return '';
   return '<img class="sb-mega" src="./mega.png" alt="メガ" loading="lazy" onerror="this.style.display=\'none\'">';
+}
+
+// ショップ購入制のポケモンかどうか、購入済みかどうか（Shop側の判定をそのまま使う）。
+function sbIsLocked(p) {
+  return !!(p && typeof Shop !== 'undefined' && !Shop.isOwned(p.speciesId));
+}
+// ロック中のマスに重ねる鍵アイコン（画像が無ければCSSの疑似要素（🔒）だけで見せる）。
+function sbLockOverlayHtml() {
+  return '<div class="sb-lock-overlay"><img class="sb-lock-icon" src="./lock.png" alt="" onerror="this.style.display=\'none\';this.parentElement.classList.add(\'no-icon\')"></div>';
 }
 
 // ボックスの中身を用意する。5行×N列に収まる数（列数は画面幅に依存するので余裕を持って生成）
@@ -7000,13 +7681,28 @@ function sbResetAll() {
   sbBuildBox();   // その場でボックスを種族データから作り直しておく（次に開いた時も迷わないように）
 }
 
+// 手持ちの実際の匹数（空き枠 null は数えない）
+function sbPartyCount() { return sbState.party.filter(Boolean).length; }
+// 手持ちの最初の空き枠の位置（全部埋まっていれば -1）。追加はここへ入れる。
+function sbFirstEmptySlot() {
+  const arr = sbState.party;
+  for (let i = 0; i < SB_PARTY_MAX; i++) { if (!arr[i]) return i; }
+  return -1;
+}
+// 手持ちから外す：詰めずにその枠だけ空きにする（末尾の空きは切り詰めて配列を短く保つ）
+function sbRemoveFromParty(idx) {
+  if (idx < 0 || idx >= sbState.party.length) return;
+  sbState.party[idx] = null;
+  while (sbState.party.length && !sbState.party[sbState.party.length - 1]) sbState.party.pop();
+}
+
 function sbRenderParty() {
   const el = $('sb-party');
   const slots = [];
   for (let i = 0; i < SB_PARTY_MAX; i++) {
     const p = sbState.party[i];
     if (!p) {
-      slots.push(`<div class="sb-slot empty"><span class="sb-slot-no">${i + 1}</span></div>`);
+      slots.push(`<div class="sb-slot empty" data-empty-idx="${i}"><span class="sb-slot-no">${i + 1}</span></div>`);
     } else {
       const sel = sbState.selected === p ? ' selected' : '';
       // 名前は左上、画像は右、mega.pngは右下（小さめ）。左上の番号は並び順の目印。
@@ -7020,10 +7716,34 @@ function sbRenderParty() {
   }
   el.innerHTML = slots.join('');
   // タップ（詳細表示）と長押し並び替えは sbSetupPartyReorder() のイベント委譲で処理する
-  $('sb-count').textContent = `${sbState.party.length}/${SB_PARTY_MAX}`;
+  $('sb-count').textContent = `${sbPartyCount()}/${SB_PARTY_MAX}`;
   $('sb-party-name-text').textContent = sbState.partyName;
   $('sb-title-text').textContent = sbState.partyName;   // 今の手持ちの名前（どのチームにも属さない作業スペース）
-  $('sb-btn-clear').disabled = sbState.party.length === 0; // 空なら押せない
+  $('sb-btn-clear').disabled = sbPartyCount() === 0; // 空なら押せない
+}
+
+// 現在の並び方での「ボックス番号(sbState.box の添字)」の並び。
+// 同じ値のときは番号(図鑑順)の小さい方を先にする＝どの並び方でも結果が毎回同じになる。
+// HP〜素早さは、努力値ポイントを含めた実数値（p.stats）で、値の大きい順。
+// タイプ順は type1 のID（TYPE_ID：bug=1 … shine=20）の小さい順。
+function sbBoxOrder() {
+  const box = sbState.box;
+  const order = box.map((_, i) => i);
+  const key = sbState.sortKey;
+  if (key === 'no') return order;   // 番号順（sbState.box そのものの並び）
+  const val = (i) => {
+    const p = box[i];
+    if (key === 'type') {
+      const id = TYPE_ID[p.species.type1];
+      return id === undefined ? 999 : id;
+    }
+    return (p.stats && p.stats[key]) || 0;
+  };
+  return order.sort((a, b) => {
+    const va = val(a), vb = val(b);
+    if (va !== vb) return key === 'type' ? va - vb : vb - va;   // タイプ=小さい順／能力=大きい順
+    return a - b;
+  });
 }
 
 function sbRenderBox() {
@@ -7031,49 +7751,108 @@ function sbRenderBox() {
   // マスの生成は最初の1回だけ（300匹を毎タップ作り直さない）
   if (grid.dataset.built !== String(sbState.box.length)) {
     grid.innerHTML = sbState.box.map((p, i) =>
-      `<div class="sb-cell" data-box-idx="${i}">${sbSpriteHtml(p, 'sb-cell-img', true)}${sbMegaBadgeHtml(p)}</div>`
+      `<div class="sb-cell${sbIsLocked(p) ? ' locked' : ''}" data-box-idx="${i}">${sbSpriteHtml(p, 'sb-cell-img', true)}${sbMegaBadgeHtml(p)}${sbLockOverlayHtml()}</div>`
     ).join('');
     grid.dataset.built = String(sbState.box.length);
   }
-  // 選択中の枠・パーティ入りの✔だけを更新する
+  // 並び方に合わせて、マスの表示順だけを入れ替える（マスは作り直さない）。
+  // 並びが前回と同じなら何もしない（努力値を変えた直後などは stats が変わるので、並びの署名で判定する）。
+  {
+    const order = sbBoxOrder();
+    const sig = sbState.sortKey + ':' + order.join(',');
+    if (grid.dataset.orderSig !== sig) {
+      const byIdx = new Map();
+      Array.from(grid.children).forEach((c) => byIdx.set(parseInt(c.dataset.boxIdx, 10), c));
+      const frag = document.createDocumentFragment();
+      order.forEach((i) => { const c = byIdx.get(i); if (c) frag.appendChild(c); });
+      grid.appendChild(frag);
+      grid.dataset.orderSig = sig;
+      if (grid.dataset.orderSigPrev !== undefined) grid.scrollTop = 0;   // 並び替えたら先頭へ戻す
+      grid.dataset.orderSigPrev = '1';
+    }
+  }
+  // 選択中の枠・パーティ入りの✔だけを更新する（マスは data-box-idx で個体を引く。DOM順ではなく番号で対応）
   const cells = grid.children;
-  for (let i = 0; i < cells.length; i++) {
+  for (let ci = 0; ci < cells.length; ci++) {
+    const i = parseInt(cells[ci].dataset.boxIdx, 10);
     const p = sbState.box[i];
-    cells[i].classList.toggle('selected', sbState.selected === p);
-    cells[i].classList.toggle('in-party', sbState.party.includes(p));
+    cells[ci].classList.toggle('selected', sbState.selected === p);
+    cells[ci].classList.toggle('in-party', sbState.party.includes(p));
+    cells[ci].classList.toggle('locked', sbIsLocked(p));
     // 色違いが切り替わったマスだけ画像を差し替える（300匹ぶんを作り直さない）。
     // 画像パスはマスに覚えさせておき、現在の姿と違うときだけ更新する。
     const want = spritePath(p);
-    if (cells[i].dataset.sprite !== want) {
-      const img = cells[i].querySelector('img.sb-cell-img, span.sb-cell-img');
+    if (cells[ci].dataset.sprite !== want) {
+      const img = cells[ci].querySelector('img.sb-cell-img, span.sb-cell-img');
       if (img) {
-        if (cells[i].dataset.sprite !== undefined) {   // 初回生成時は作成済みなので何もしない
+        if (cells[ci].dataset.sprite !== undefined) {   // 初回生成時は作成済みなので何もしない
           const tmp = document.createElement('div');
           tmp.innerHTML = sbSpriteHtml(p, 'sb-cell-img', true);
           img.replaceWith(tmp.firstElementChild);
         }
       }
-      cells[i].dataset.sprite = want;
+      cells[ci].dataset.sprite = want;
     }
   }
-  $('sb-box-sub').textContent = `${sbState.box.length}匹`;
+  // 「300匹」の表示は廃止。ヘッダーには並び替えセレクトを出す。
+  const sel = $('sb-sort-select');
+  if (sel && sel.value !== sbState.sortKey) sel.value = sbState.sortKey;
 }
+// ショップで購入した直後など、ボックスを開き直さなくてもロック表示だけ即座に更新するための関数。
+function sbRefreshLockState() {
+  const grid = $('sb-box-grid');
+  if (!grid || grid.dataset.built === undefined) return; // まだボックス自体が描画されていない
+  const cells = grid.children;
+  for (let ci = 0; ci < cells.length; ci++) {
+    const i = parseInt(cells[ci].dataset.boxIdx, 10);
+    const p = sbState.box[i];
+    cells[ci].classList.toggle('locked', sbIsLocked(p));
+  }
+}
+
+// 並び替えセレクト：選択肢を作り、変更されたら並び方を保存して再描画する
+(function sbSetupSortSelect() {
+  const sel = $('sb-sort-select');
+  if (!sel) return;
+  sel.innerHTML = SB_SORT_OPTIONS.map(([k, label]) => `<option value="${k}">${label}</option>`).join('');
+  sel.value = sbState.sortKey;
+  sel.addEventListener('change', () => {
+    const k = sel.value;
+    if (!SB_SORT_OPTIONS.some(([key]) => key === k)) return;
+    sbState.sortKey = k;
+    sbSaveSortKey(k);
+    sbRenderBox();
+  });
+})();
+
 // タップはグリッドに1つだけ付ける（イベント委譲）
 $('sb-box-grid').addEventListener('click', (e) => {
   const cell = e.target.closest('[data-box-idx]');
   if (!cell) return;
-  sbOnBoxTap(sbState.box[parseInt(cell.dataset.boxIdx, 10)]);
+  const p = sbState.box[parseInt(cell.dataset.boxIdx, 10)];
+  if (sbIsLocked(p)) return; // 未購入：触れても何も起きない
+  sbOnBoxTap(p);
 });
 
-// ボックスをタップ：未選択→詳細表示＋パーティに追加 / パーティ内の個体→パーティから外す
+// ボックスをタップ：
+// ・未選択の個体を1回目にタップ → 選択（詳細表示）のみ。パーティにはまだ入れない。
+// ・選択済み（＝直前にタップ済み）の個体をもう一度タップ → パーティに追加。
+// ・パーティ内の個体を（選択済みの状態で）タップ → パーティから外す。
 function sbOnBoxTap(p) {
   const idx = sbState.party.indexOf(p);
   if (idx >= 0) {
-    if (sbState.selected === p) sbState.party.splice(idx, 1); // 選択中をもう一度タップで外す
+    if (sbState.selected === p) sbRemoveFromParty(idx); // 選択中をもう一度タップで外す（枠は詰めない）
     sbState.selected = p;
+  } else if (sbState.selected === p) {
+    // 2回目のタップ：パーティに追加
+    const empty = sbFirstEmptySlot();   // 空いている最初の枠へ入れる（途中に空きがあればそこ）
+    if (empty >= 0) {
+      while (sbState.party.length < empty) sbState.party.push(null);   // 穴あき配列にならないよう null で埋める
+      sbState.party[empty] = p;
+    }
   } else {
+    // 1回目のタップ：選択（詳細表示）だけ行い、パーティにはまだ入れない
     sbState.selected = p;
-    if (sbState.party.length < SB_PARTY_MAX) sbState.party.push(p);
   }
   sbSave();
   sbRenderAll();
@@ -7139,16 +7918,16 @@ function sbDragLift(slotEl, clientY) {
   try { if (navigator.vibrate) navigator.vibrate(18); } catch (e) {}
 }
 
-// ドラッグ中の見た目更新：持ち上げ枠を指に追従、他の枠を詰める
+// ドラッグ中の見た目更新：持ち上げ枠を指に追従、落とし先の枠と入れ替わる（他の枠は詰めない）
 function sbDragMove(clientY) {
   const box = $('sb-party');
   const boxRect = box.getBoundingClientRect();
-  const filled = sbState.party.length;               // 空き枠には入れない
+  const filled = SB_PARTY_MAX;                        // 空き枠にも置ける（詰めない仕様なので6枠すべてが対象）
   const slots = Array.from(box.querySelectorAll('.sb-slot'));
   const lift = sbDrag.el;
   if (!lift) return;
 
-  // 持ち上げ枠：元の位置からの差分で指に追従（範囲は埋まっている枠の中に制限）
+  // 持ち上げ枠：元の位置からの差分で指に追従（範囲は6枠の中に制限）
   const wantTop = clientY - boxRect.top - sbDrag.offsetY;
   const minTop = sbDrag.baseTops[0];
   const maxTop = sbDrag.baseTops[Math.max(0, filled - 1)];
@@ -7162,13 +7941,12 @@ function sbDragMove(clientY) {
   over = Math.max(0, Math.min(filled - 1, over));
   sbDrag.overIdx = over;
 
-  // 他の枠：from<->over の間にある枠を1つぶんずらして空きを作る
+  // 他の枠：詰めない（入れ替え）仕様なので、落とし先の枠だけが持ち上げ枠の元の位置へ移る
   const from = sbDrag.fromIdx;
   slots.forEach((n, i) => {
     if (i === from || i >= filled) return;
     let shift = 0;
-    if (from < over && i > from && i <= over) shift = -sbDrag.slotH;   // 下へ持って行く→間の枠は上へ
-    if (from > over && i < from && i >= over) shift = sbDrag.slotH;    // 上へ持って行く→間の枠は下へ
+    if (i === over && over !== from) shift = sbDrag.baseTops[from] - sbDrag.baseTops[i];   // 入れ替わる相手（空き枠でも同じ）
     n.style.transform = shift ? `translateY(${shift}px)` : '';
   });
 }
@@ -7184,8 +7962,12 @@ function sbDragDrop() {
     const targetDy = sbDrag.baseTops[to] - sbDrag.baseTops[from];
     lift.style.transition = 'transform .16s cubic-bezier(.2,.8,.3,1), box-shadow .16s ease';
     lift.style.transform = `translateY(${targetDy}px) scale(1)`;
-    const moved = sbState.party.splice(from, 1)[0];
-    sbState.party.splice(to, 0, moved);
+    // 詰めない仕様：ドロップ先と「入れ替え」る（空き枠に落とせばそこへ移動＝元の枠が空きになる）
+    while (sbState.party.length < SB_PARTY_MAX) sbState.party.push(null);
+    const moved = sbState.party[from];
+    sbState.party[from] = sbState.party[to] || null;
+    sbState.party[to] = moved;
+    while (sbState.party.length && !sbState.party[sbState.party.length - 1]) sbState.party.pop();
     sbDrag.justDragged = true;
     setTimeout(() => { sbDrag.justDragged = false; }, 250);
     sbSave();   // 並び替えを確定した時点で保存
@@ -7257,12 +8039,30 @@ function sbSetupPartyReorder() {
   // 長押しでコンテキストメニュー（画像保存など）が出るのを防ぐ
   box.addEventListener('contextmenu', (e) => e.preventDefault());
 
-  // タップ：詳細表示（ドラッグ直後のclickは無視）
+  // タップ：1回タップ＝詳細表示／同じ枠を素早く2回タップ＝手持ちから外す（ドラッグ直後のclickは無視）
+  // 外しても枠は詰めない（2を外したら2が空白のまま）。
+  // ※ 時間で判定する。ボックスから追加した直後は「選択中」になっているため、選択状態だけで判定すると
+  //    1回タップで外れてしまう。
+  const SB_DBL_TAP_MS = 350;
+  let lastTapIdx = -1, lastTapAt = 0;
   box.addEventListener('click', (e) => {
     if (sbDrag.justDragged) { e.preventDefault(); return; }
     const slotEl = e.target.closest('.sb-slot[data-party-idx]');
     if (!slotEl) return;
-    sbState.selected = sbState.party[parseInt(slotEl.dataset.partyIdx, 10)];
+    const idx = parseInt(slotEl.dataset.partyIdx, 10);
+    const p = sbState.party[idx];
+    if (!p) return;
+    const now = Date.now();
+    if (idx === lastTapIdx && now - lastTapAt <= SB_DBL_TAP_MS) {
+      // 2回目のタップ → 外す（この枠だけ空きにする）
+      lastTapIdx = -1; lastTapAt = 0;
+      sbRemoveFromParty(idx);
+      if (sbState.selected === p) sbState.selected = null;
+      sbSave();
+    } else {
+      lastTapIdx = idx; lastTapAt = now;
+      sbState.selected = p;
+    }
     sbRenderAll();
   });
 }
@@ -7376,7 +8176,7 @@ $('sb-btn-megaview').addEventListener('click', () => {
   sbRenderDetail();   // 実数値の表示だけ切り替える（並び替え・画像・図鑑データには影響しない）
 });
 $('sb-btn-clear').addEventListener('click', async () => {
-  if (sbState.party.length === 0) return;
+  if (sbPartyCount() === 0) return;
   const ok = await askConfirm('パーティのポケモンを ぜんぶ はずしますか？');
   if (!ok) return;
   sbState.party = [];
@@ -7400,7 +8200,7 @@ function sbPartyColHtml(pt, i) {
     const item = sbMegaVisible(p)
       ? '<img class="ps-item" src="./mega.png" alt="メガ" loading="lazy" onerror="this.style.display=\'none\'">'
       : '';
-    rows.push(`<div class="ps-row"><span class="ps-name">${p.species.name}</span>${item}${sbSpriteHtml(p, 'ps-img', true)}</div>`);
+    rows.push(`<div class="ps-row"><span class="ps-name">${p.species.name}</span>${item}<span class="ps-img-wrap">${sbSpriteHtml(p, 'ps-img', true)}</span></div>`);
   }
   const cur = i === sbState.current ? ' current' : '';
   return `<div class="ps-col${cur}" data-ps-idx="${i}">
@@ -7672,7 +8472,7 @@ async function sbSaveCurrentToSlot(i) {
   const pt = sbState.parties[i];
   const hasSnapshot = Array.isArray(pt.snapshot) && pt.snapshot.length > 0;
   sbClosePartyActionSheet();   // 確認ダイアログが裏に隠れないよう、先にシートを閉じる
-  if (sbState.party.length === 0) {
+  if (sbPartyCount() === 0) {
     const okEmpty = await askConfirm('0匹のまま保存しますか？');
     if (!okEmpty) return;
   }
@@ -7680,7 +8480,7 @@ async function sbSaveCurrentToSlot(i) {
   const ok = await askConfirm(msg);
   if (!ok) return;
   // 個体を丸ごと複製して保持する（ボックスの個体と参照を共有しない、独立した控え）
-  pt.snapshot = sbState.party.map((p) => sbRestorePoke(sbSerializePoke(p))).filter(Boolean);
+  pt.snapshot = sbState.party.filter(Boolean).map((p) => sbRestorePoke(sbSerializePoke(p))).filter(Boolean);   // 空き枠は控えに含めない
   sbState.current = i;   // 「このチームに保存した」目印（一覧のハイライト用）
   sbSave();
   sbRenderPartySelect();
@@ -7694,6 +8494,137 @@ $('ps-action-write').addEventListener('click', () => {
   if (psActionTargetIdx == null) return;
   sbSaveCurrentToSlot(psActionTargetIdx);
 });
+$('ps-action-detail').addEventListener('click', () => {
+  if (psActionTargetIdx == null) return;
+  const idx = psActionTargetIdx;
+  sbClosePartyActionSheet();
+  sbOpenPartyDetail(idx);
+});
+
+/* ---------------------------------------------------------
+   パーティ詳細：1画面でパーティ6匹（名前・特性・技4つ）をまとめて見る
+   ・「詳細」ボタンから開く。もちもの／性別は表示しない（もちもの欄はメガのみ mega.png を名前の右に添える）
+   --------------------------------------------------------- */
+function pdtCardHtml(p, no) {
+  const noHtml = `<span class="pdt-card-no">${no}</span>`;
+  if (!p) return `<div class="pdt-card empty">${noHtml}</div>`;
+  const megaIcon = sbMegaVisible(p)
+    ? '<img class="pdt-card-mega" src="./mega.png" alt="メガ" loading="lazy" onerror="this.style.display=\'none\'">'
+    : '';
+  const abilityName = (typeof abilityNameById === 'function') ? (abilityNameById(p.ability) || '') : '';
+  // タイプアイコン（種族のタイプ。重複は除く）を名前の右に並べる
+  const types = [p.species.type1, p.species.type2].filter((t, i, arr) => t && arr.indexOf(t) === i);
+  const typesHtml = types.map((t) => {
+    const id = TYPE_ID[t];
+    if (id === undefined) return '';
+    return `<span class="pdt-type-chip"><img src="./type${id}.png" alt="" onerror="this.style.display='none'"></span>`;
+  }).join('');
+  const moves = p.moves.slice(0, 4).map((m) => `
+      <div class="pdt-move">
+        ${typeIconHtml(m.type).replace('move-row-type-icon', 'pdt-move-icon')}
+        <span class="pdt-move-name">${m.name}</span>
+      </div>`).join('');
+  return `<div class="pdt-card">
+    ${noHtml}
+    <div class="pdt-card-head">
+      ${sbSpriteHtml(p, 'pdt-card-img', true)}
+      <span class="pdt-card-name">${p.species.name}</span>
+      ${megaIcon}
+      <span class="pdt-card-types">${typesHtml}</span>
+    </div>
+    <div class="pdt-card-body">
+      <div class="pdt-card-side">
+        <p class="pdt-card-ability">${abilityName}</p>
+      </div>
+      <div class="pdt-card-moves">${moves}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ステータスタブ：能力タブと同じヘッダー（画像・名前・タイプ）のまま、本文だけ
+// 実数値＋努力値バーの6行（左＝HP/こうげき/ぼうぎょ、右＝とくこう/とくぼう/すばやさ）に差し替える。
+function pdtStatCardHtml(p, no) {
+  const noHtml = `<span class="pdt-card-no">${no}</span>`;
+  if (!p) return `<div class="pdt-card empty">${noHtml}</div>`;
+  const megaIcon = sbMegaVisible(p)
+    ? '<img class="pdt-card-mega" src="./mega.png" alt="メガ" loading="lazy" onerror="this.style.display=\'none\'">'
+    : '';
+  const types = [p.species.type1, p.species.type2].filter((t, i, arr) => t && arr.indexOf(t) === i);
+  const typesHtml = types.map((t) => {
+    const id = TYPE_ID[t];
+    if (id === undefined) return '';
+    return `<span class="pdt-type-chip"><img src="./type${id}.png" alt="" onerror="this.style.display='none'"></span>`;
+  }).join('');
+  const rowHtml = ([label, key]) => {
+    const v = (p.stats && p.stats[key] !== undefined) ? p.stats[key] : '-';
+    const ev = Math.max(0, Math.min(SB_EV_MAX, (p.evPoints && p.evPoints[key]) || 0));
+    const pct = (ev / SB_EV_MAX) * 100;
+    return `<div class="pdt-stat-half">
+      <span class="pdt-stat-label">${label}</span>
+      <span class="pdt-stat-val">${v}</span>
+      <span class="pdt-stat-bar"><i style="width:${pct}%"></i></span>
+      <span class="pdt-stat-ev">${ev}</span>
+    </div>`;
+  };
+  const left = [SB_STAT_ROWS[0], SB_STAT_ROWS[1], SB_STAT_ROWS[2]];
+  const right = [SB_STAT_ROWS[3], SB_STAT_ROWS[4], SB_STAT_ROWS[5]];
+  const rows = left.map((l, idx) => `<div class="pdt-stat-row">${rowHtml(l)}${rowHtml(right[idx])}</div>`).join('');
+  return `<div class="pdt-card">
+    ${noHtml}
+    <div class="pdt-card-head">
+      ${sbSpriteHtml(p, 'pdt-card-img', true)}
+      <span class="pdt-card-name">${p.species.name}</span>
+      ${megaIcon}
+      <span class="pdt-card-types">${typesHtml}</span>
+    </div>
+    <div class="pdt-card-body pdt-stat-body">${rows}</div>
+  </div>`;
+}
+
+let pdtActiveTab = 'ability';
+function pdtRenderMembers(members) {
+  const cards = [];
+  const statCards = [];
+  for (let k = 0; k < SB_PARTY_MAX; k++) {
+    cards.push(pdtCardHtml(members[k], k + 1));
+    statCards.push(pdtStatCardHtml(members[k], k + 1));
+  }
+  $('pdt-grid').innerHTML = cards.join('');
+  $('pdt-grid-stats').innerHTML = statCards.join('');
+}
+function pdtSetTab(tab) {
+  pdtActiveTab = tab;
+  $('pdt-tab-ability').classList.toggle('active', tab === 'ability');
+  $('pdt-tab-stats').classList.toggle('active', tab === 'stats');
+  $('pdt-grid').style.display = tab === 'ability' ? '' : 'none';
+  $('pdt-grid-stats').style.display = tab === 'stats' ? '' : 'none';
+}
+$('pdt-tab-ability').addEventListener('click', () => pdtSetTab('ability'));
+$('pdt-tab-stats').addEventListener('click', () => pdtSetTab('stats'));
+
+function sbOpenPartyDetail(i) {
+  const pt = sbState.parties[i];
+  const members = Array.isArray(pt.snapshot) ? pt.snapshot : [];
+  $('pdt-topbar-name').textContent = pt.name;
+  const fav = (typeof Pokedex !== 'undefined') ? Pokedex.getFavorite() : null;
+  const favImg = $('pdt-topbar-fav');
+  if (fav && fav.speciesId !== undefined && fav.speciesId !== null) {
+    favImg.src = `./${fav.speciesId}${fav.shiny ? 's' : ''}.png`;
+    favImg.classList.remove('empty');
+  } else {
+    favImg.src = '';
+    favImg.classList.add('empty');
+  }
+  $('pdt-topbar-playername').textContent = (typeof PlayerProfile !== 'undefined' ? PlayerProfile.get() : '') || '';
+  pdtRenderMembers(members);
+  pdtSetTab('ability');
+  $('pdt-overlay').classList.add('show');
+}
+function sbClosePartyDetail() {
+  $('pdt-overlay').classList.remove('show');
+}
+$('pdt-back-btn').addEventListener('click', sbClosePartyDetail);
 
 /* ---- パーティ名の変更 ---- */
 function openPartyNameModal() {
@@ -8404,10 +9335,182 @@ function trConfirmMove() {
   closeMoveSelect();
 }
 
+// タップ：技の変更画面を開く（長押し並び替えの直後のclickは無視）
 $('tr-moves').addEventListener('click', (e) => {
+  if (trMoveDrag.justDragged) { e.preventDefault(); return; }
   const btn = e.target.closest('.tr-move');
   if (btn) openMoveSelect(parseInt(btn.dataset.slot, 10));
 });
+
+/* ---------------------------------------------------------
+   技スロット：長押しで持ち上げて並び替え（左の手持ちと同じ操作）
+   ・タップ            → 技の変更画面（従来どおり）
+   ・約 TR_LP_MS 長押し → 枠が浮き上がる（振動つき）→ 指に追従 → 離した位置の技と入れ替わる
+   ・長押し成立前に TR_LP_CANCEL_PX 以上動いたらキャンセル（誤爆防止）
+   ・空のスロットは持ち上げられないが、空きスロットへ落とすことはできる（その位置へ移動）
+   ・入れ替えるのは作業用の trMovesDraft だけ。「けってい」を押すまで実個体には反映しない
+   --------------------------------------------------------- */
+const TR_LP_MS = 380;
+const TR_LP_CANCEL_PX = 8;
+const TR_MOVE_SLOTS = 4;
+const trMoveDrag = {
+  timer: null, pointerId: null,
+  fromIdx: -1, overIdx: -1,
+  startX: 0, startY: 0,
+  offsetY: 0,         // 枠の中でつかんだ位置（枠上端からのY）
+  slotH: 0,           // 1枠ぶんの移動量（高さ＋gap）
+  baseTops: [],       // 各枠の元のtop（#tr-moves基準）
+  active: false, el: null,
+  justDragged: false, // ドラッグ直後のclick抑止
+};
+
+function trMoveDragReset() {
+  clearTimeout(trMoveDrag.timer);
+  trMoveDrag.timer = null;
+  trMoveDrag.pointerId = null;
+  trMoveDrag.active = false;
+  trMoveDrag.el = null;
+  trMoveDrag.fromIdx = -1;
+  trMoveDrag.overIdx = -1;
+  const box = $('tr-moves');
+  box.classList.remove('reordering');
+  box.querySelectorAll('.tr-move').forEach((n) => {
+    n.classList.remove('lp-arming', 'lifting');
+    n.style.transform = '';
+    n.style.transition = '';
+    n.style.zIndex = '';
+  });
+}
+
+// 持ち上げ開始
+function trMoveDragLift(slotEl, clientY) {
+  const box = $('tr-moves');
+  const slots = Array.from(box.querySelectorAll('.tr-move'));
+  const boxRect = box.getBoundingClientRect();
+  trMoveDrag.baseTops = slots.map((n) => n.getBoundingClientRect().top - boxRect.top);
+  const r = slotEl.getBoundingClientRect();
+  trMoveDrag.offsetY = clientY - r.top;
+  // 1枠ぶんの移動量：隣の枠とのtop差（gapを含む）
+  trMoveDrag.slotH = slots.length > 1 ? (trMoveDrag.baseTops[1] - trMoveDrag.baseTops[0]) : r.height;
+  trMoveDrag.active = true;
+  trMoveDrag.overIdx = trMoveDrag.fromIdx;
+  slotEl.classList.remove('lp-arming');
+  slotEl.classList.add('lifting');
+  box.classList.add('reordering');
+  try { if (navigator.vibrate) navigator.vibrate(18); } catch (e) {}
+}
+
+// ドラッグ中：持ち上げ枠を指に追従、落とし先の枠は持ち上げ枠の元の位置へ動く（入れ替えの予告）
+function trMoveDragMove(clientY) {
+  const box = $('tr-moves');
+  const boxRect = box.getBoundingClientRect();
+  const slots = Array.from(box.querySelectorAll('.tr-move'));
+  const lift = trMoveDrag.el;
+  if (!lift) return;
+  const wantTop = clientY - boxRect.top - trMoveDrag.offsetY;
+  const minTop = trMoveDrag.baseTops[0];
+  const maxTop = trMoveDrag.baseTops[TR_MOVE_SLOTS - 1];
+  const clampedTop = Math.max(minTop, Math.min(maxTop, wantTop));
+  const dy = clampedTop - trMoveDrag.baseTops[trMoveDrag.fromIdx];
+  lift.style.transform = `translateY(${dy}px) scale(1.04)`;
+
+  let over = Math.round((clampedTop - minTop) / trMoveDrag.slotH);
+  over = Math.max(0, Math.min(TR_MOVE_SLOTS - 1, over));
+  trMoveDrag.overIdx = over;
+
+  const from = trMoveDrag.fromIdx;
+  slots.forEach((n, i) => {
+    if (i === from) return;
+    let shift = 0;
+    if (i === over && over !== from) shift = trMoveDrag.baseTops[from] - trMoveDrag.baseTops[i];
+    n.style.transform = shift ? `translateY(${shift}px)` : '';
+  });
+}
+
+// 離した：入れ替えを確定して再描画
+function trMoveDragDrop() {
+  const from = trMoveDrag.fromIdx;
+  const to = trMoveDrag.overIdx;
+  const lift = trMoveDrag.el;
+  const box = $('tr-moves');
+  if (lift && from >= 0 && to >= 0 && from !== to) {
+    // 持ち上げ枠を落とし先へスッと収めてから確定
+    lift.style.transition = 'transform .16s cubic-bezier(.2,.8,.3,1), box-shadow .16s ease';
+    lift.style.transform = `translateY(${trMoveDrag.baseTops[to] - trMoveDrag.baseTops[from]}px) scale(1)`;
+    while (trMovesDraft.length < TR_MOVE_SLOTS) trMovesDraft.push(null);   // 空きスロットも対象にするため4枠ぶんそろえる
+    const moved = trMovesDraft[from];
+    trMovesDraft[from] = trMovesDraft[to] || null;
+    trMovesDraft[to] = moved;
+    trMoveDrag.justDragged = true;
+    setTimeout(() => { trMoveDrag.justDragged = false; }, 250);
+    setTimeout(() => { trMoveDragReset(); trRenderMovesAndTraits(trTarget); }, 170);
+  } else {
+    // 位置は変わらず：元の場所に戻す
+    if (lift) {
+      lift.style.transition = 'transform .16s cubic-bezier(.2,.8,.3,1), box-shadow .16s ease';
+      lift.style.transform = '';
+    }
+    trMoveDrag.justDragged = trMoveDrag.active;
+    setTimeout(() => { trMoveDrag.justDragged = false; }, 250);
+    setTimeout(() => { trMoveDragReset(); }, 170);
+  }
+  box.classList.remove('reordering');
+}
+
+function trSetupMoveReorder() {
+  const box = $('tr-moves');
+
+  box.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const slotEl = e.target.closest('.tr-move');
+    if (!slotEl) return;
+    const idx = parseInt(slotEl.dataset.slot, 10);
+    if (!trMovesDraft[idx]) return;               // 空のスロットは持ち上げ対象外（タップで技を覚えさせる）
+    if (trMoveDrag.pointerId !== null) return;    // 多重タッチ防止
+    trMoveDrag.pointerId = e.pointerId;
+    trMoveDrag.fromIdx = idx;
+    trMoveDrag.el = slotEl;
+    trMoveDrag.startX = e.clientX;
+    trMoveDrag.startY = e.clientY;
+    trMoveDrag.active = false;
+    slotEl.classList.add('lp-arming');
+    clearTimeout(trMoveDrag.timer);
+    trMoveDrag.timer = setTimeout(() => {
+      if (trMoveDrag.pointerId === null || !trMoveDrag.el) return;
+      try { box.setPointerCapture(trMoveDrag.pointerId); } catch (err) {}
+      trMoveDragLift(trMoveDrag.el, trMoveDrag.startY);
+    }, TR_LP_MS);
+  });
+
+  box.addEventListener('pointermove', (e) => {
+    if (e.pointerId !== trMoveDrag.pointerId) return;
+    if (!trMoveDrag.active) {
+      // 長押し成立前に動いた＝タップ／スクロール意図なので中止
+      if (Math.hypot(e.clientX - trMoveDrag.startX, e.clientY - trMoveDrag.startY) > TR_LP_CANCEL_PX) {
+        trMoveDragReset();
+      }
+      return;
+    }
+    e.preventDefault();
+    trMoveDragMove(e.clientY);
+  });
+
+  const end = (e) => {
+    if (e.pointerId !== trMoveDrag.pointerId) return;
+    try { box.releasePointerCapture(e.pointerId); } catch (err) {}
+    if (trMoveDrag.active) trMoveDragDrop();
+    else trMoveDragReset();   // 長押し前に離した＝通常タップ（clickは別ハンドラ）
+  };
+  box.addEventListener('pointerup', end);
+  box.addEventListener('pointercancel', (e) => {
+    if (e.pointerId !== trMoveDrag.pointerId) return;
+    trMoveDragReset();
+  });
+
+  // 長押しでコンテキストメニューが出るのを防ぐ
+  box.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+trSetupMoveReorder();
 $('tr-msel-close').addEventListener('click', closeMoveSelect);
 $('tr-msel-ok').addEventListener('click', trConfirmMove);
 $('tr-move-overlay').addEventListener('click', (e) => {

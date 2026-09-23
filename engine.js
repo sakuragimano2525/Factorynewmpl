@@ -78,7 +78,14 @@ const BOSS_ONLY_SPECIES_ID = BOSS_ONLY_SPECIES_IDS[0]; // 後方互換用（メ�
 // 通常の抽選プールにも入りうる種族なので BOSS_ONLY_SPECIES_IDS とは別に管理する。
 // 乱入ボスを倒すと、実績「intrusion_<ID>」が解除され（achievements.js）、
 // 以後そのポケモンは乱入ボスとして二度と登場しない。
-const INTRUSION_BOSS_IDS = [171, 36, 91, 322, 347, 360, 1009, 1023, 1024, 1025, 1026];
+// 1032〜1041は「隠しポケモン」（HIDDEN_SPECIES_ACHIEVEMENT）でもあり、対応する実績を
+// 解除するまで通常のボックス・NPC戦・6匹選出には一切出ないが、乱入ボスとしては
+// （隠しポケモンの実績が未解除でも）サプライズ的にNPCの3匹目として登場する。
+// 乱入で倒された場合は他の乱入ボスと全く同じ扱い＝intrusion_実績解除・メガ解放候補・以後乱入に出ない。
+const INTRUSION_BOSS_IDS = [
+  171, 36, 91, 322, 347, 360, 1009, 1023, 1024, 1025, 1026, 476, 1030,
+  1032, 1034, 1037, 1038, 1039,
+];
 function intrusionAchievementId(speciesId) { return 'intrusion_' + speciesId; }
 
 // ---- 乱入ボスのメガシンカ解放 ----
@@ -140,8 +147,34 @@ function resetMegaUnlocks() {
 // 図鑑には枠だけ存在し、中身は「？？？」＋🔒で伏せられる（乱入ボスのメガロックと同じ見た目）。
 // 実績が解除された瞬間に自動でロックが外れ、以後はボックス・ランダム戦・NPC戦すべてに登場する。
 // 新しい隠しポケモンを増やす場合は、HIDDEN_SPECIES_ACHIEVEMENT にID→実績IDの対応を追記するだけでよい。
+//
+// 【1032〜1041について】
+// この10体は「実績解除まで隠しポケモン」かつ「乱入ボスとしてはサプライズで登場する」特別枠として
+// INTRUSION_BOSS_IDS（乱入候補）には既に追加済み。
+// 1033のみ pokedex_100 で解放される設定済み。残り9体（1032,1034〜1041）は
+// まだここに登録していないため、現状は「隠しポケモンではない」＝通常のボックス・NPC戦・
+// 6匹選出プールにも普通に出てしまう状態。1体ずつ隠しポケモン化したい場合は、
+// 下の対応表に  1032: '実績id',  のように1行追記するだけでよい（実績idはachievements.js
+// のACHIEVEMENTS配列にあるidの文字列と一致させること）。乱入ボスとしての登場・撃破時の
+// 実績解除（intrusion_1032など）・メガ解放は INTRUSION_BOSS_IDS に入っているため
+// このオブジェクトへの追記状況に関わらず既に有効。
 const HIDDEN_SPECIES_ACHIEVEMENT = {
   2000: 'win_streak_team_10', // アリアスカル：チーム戦10連勝目のボスを倒すと解放
+  1032: 'pokedex_150', 
+  1033: 'type_streak_fire',
+1034: 'type_streak_normal',
+1035: 'type_streak_bug',
+1030: 'type_streak_dragon',
+1036: 'type_streak_flying',
+1037: 'type_streak_dark',
+1038: 'type_streak_psychic',
+1039: 'type_streak_grass',
+1040: 'type_streak_rock',
+1041: 'type_streak_ghost',
+1990: 'type_streak_poison',
+1026: 'type_streak_shine',
+1025: 'type_streak_ice',
+1024: 'type_streak_steel',
 };
 const HIDDEN_SPECIES_IDS = Object.keys(HIDDEN_SPECIES_ACHIEVEMENT).map(Number);
 function isHiddenSpecies(speciesId) { return HIDDEN_SPECIES_IDS.includes(Number(speciesId)); }
@@ -158,6 +191,75 @@ function getRemainingIntrusionBossIds() {
     return !(window.Achievements && window.Achievements.isUnlocked(intrusionAchievementId(id)));
   });
 }
+
+// ---- タイプ縛り連勝（NPCチームバトルで6匹全員が同じタイプ1本の編成のまま連勝する実績） ----
+// タイプごとに現在の連勝数をlocalStorageで保持する。1敗、またはチーム戦以外・縛り崩れで即0にリセット。
+// 新しいタイプを対象に加える場合は achievements.js の TYPE_STREAK_TARGET_TYPES に追記するだけでよく、
+// こちらのロジック側は変更不要（対象タイプは自動的に実績一覧から拾う）。
+const TYPE_STREAK_GOAL = 5;
+const TYPE_STREAK_STORAGE_KEY = 'pokeriere_type_streak_v1';
+const TypeStreak = (() => {
+  let streaks = {}; // { [typeName]: number }
+
+  function load() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(TYPE_STREAK_STORAGE_KEY));
+      if (raw && typeof raw === 'object') streaks = raw;
+    } catch (e) { streaks = {}; }
+  }
+  function save() {
+    try { localStorage.setItem(TYPE_STREAK_STORAGE_KEY, JSON.stringify(streaks)); } catch (e) {}
+  }
+  function get(type) { return streaks[type] || 0; }
+
+  // このバトルで実績対象になっているタイプの一覧（achievements.js側の定義から取得）。
+  function targetTypes() {
+    try {
+      if (window.Achievements && typeof window.Achievements.typeStreakTargetTypes === 'function') {
+        return window.Achievements.typeStreakTargetTypes();
+      }
+    } catch (e) {}
+    return [];
+  }
+  // 6匹のパーティ（GAME_DATA.speciesのtype1/type2を持つオブジェクト配列）が、
+  // 指定タイプ1本で統一されているか（type1かtype2のどちらかにそのタイプを持てばOK、
+  // 全員がそのタイプを持っていること）。
+  function isPartyOfType(team, type) {
+    if (!Array.isArray(team) || team.length < 6) return false;
+    return team.every((p) => {
+      const sp = p && (p.species || GAME_DATA.species[p.speciesId]);
+      if (!sp) return false;
+      return sp.type1 === type || sp.type2 === type;
+    });
+  }
+
+  // バトル結果を反映する。isTeamBattle=falseなら全タイプの連勝を0にリセットするだけ。
+  // 勝利時は、パーティがそのタイプで統一されていたタイプだけ+1し、それ以外のタイプは0にリセットする。
+  // 敗北時はすべて0にリセットする。達成（goal到達）したタイプがあれば実績を解除する。
+  function reportResult(isTeamBattle, playerWon, team) {
+    load();
+    const types = targetTypes();
+    if (!isTeamBattle || !playerWon) {
+      types.forEach((type) => { streaks[type] = 0; });
+      save();
+      return;
+    }
+    types.forEach((type) => {
+      if (isPartyOfType(team, type)) {
+        streaks[type] = (streaks[type] || 0) + 1;
+        if (streaks[type] >= TYPE_STREAK_GOAL && window.Achievements) {
+          window.Achievements.unlock('type_streak_' + type);
+        }
+      } else {
+        streaks[type] = 0;
+      }
+    });
+    save();
+  }
+
+  load();
+  return { get, reportResult };
+})();
 
 // 選出・ボックス・ランダム戦などの「実際に登場しうる」プール。
 // ボス専用種族に加えて、実績未解除の隠しポケモンもここでは除外する。
@@ -263,6 +365,10 @@ function chooseMoves(species) {
   // きあいだめ(attack414)は最優先技：候補にあれば1枠目を確定できあいだめにする。
   const KIAIDAME_MOVE_ID = 414;
   const hasKiaidame = statusMoves.includes(KIAIDAME_MOVE_ID);
+  // こらえる(attack506)も同様に最優先技：候補にあれば必ず習得させる（きあいだめが無い場合は1枠目、
+  // きあいだめも候補にある場合はきあいだめを1枠目、こらえるを2枠目に確定する）。
+  const KORAERU_MOVE_ID = 506;
+  const hasKoraeru = statusMoves.includes(KORAERU_MOVE_ID);
 
   // ---- 手順1：従来どおり、枠ごとに「変化技 or 攻撃技」を決めて技を選ぶ ----
   // ここでは攻撃技の中身（同タイプかどうか）にはまだこだわらず、攻撃技が何枠になるかを確定させる。
@@ -273,6 +379,12 @@ function chooseMoves(species) {
 
     if (slot === 0 && hasKiaidame && statusPool.includes(KIAIDAME_MOVE_ID)) {
       chosen.push(KIAIDAME_MOVE_ID);
+      slotKinds.push('status');
+      continue;
+    }
+    if (hasKoraeru && statusPool.includes(KORAERU_MOVE_ID) &&
+        (slot === 0 || (slot === 1 && chosen[0] === KIAIDAME_MOVE_ID))) {
+      chosen.push(KORAERU_MOVE_ID);
       slotKinds.push('status');
       continue;
     }
@@ -415,6 +527,76 @@ function updateYowashiForm(poke, logFn, withEffect) {
     } else {
       logFn(`${poke.species.name}は　たんどくのすがたに　なった！`, meta);
     }
+  }
+  return true;
+}
+
+// ---- アイニーチュ（ID1990）専用：HP低下によるフォルムチェンジ ----
+// ヨワシと違い、①片道の変化（一度発動したら戦闘終了までもとに戻らない）、
+// ②HP種族値も変化するため最大HP・残りHPが変動分だけ増える、③状態異常（こんらん含む）が全解除、
+// という仕様のため、ヨワシとは別関数として実装する。
+// フォルムチェンジ後の種族値（この差分だけ変化する。元の種族値はgamedata.js側で定義される）。
+const AINEECHU_SPECIES_ID = 1990;
+const AINEECHU_FORM_BASE_STATS = { hp: 196, atk: 113, def: 110, spa: 111, spd: 110, spe: 20 };
+
+// フォルムチェンジ後の実数値（atk/def/spa/spd/spe）を再計算する。
+// HPは「増加分」を個別に加算して処理するため、ここでは対象外。
+function recalcAineechuStats(poke) {
+  const base = AINEECHU_FORM_BASE_STATS;
+  poke.stats.atk = calcStat(base.atk, poke.iv, poke.evs[1], poke.level, false, natureMultiplier(poke.nature, 'atk'));
+  poke.stats.def = calcStat(base.def, poke.iv, poke.evs[2], poke.level, false, natureMultiplier(poke.nature, 'def'));
+  poke.stats.spa = calcStat(base.spa, poke.iv, poke.evs[3], poke.level, false, natureMultiplier(poke.nature, 'spa'));
+  poke.stats.spd = calcStat(base.spd, poke.iv, poke.evs[4], poke.level, false, natureMultiplier(poke.nature, 'spd'));
+  poke.stats.spe = calcStat(base.spe, poke.iv, poke.evs[5], poke.level, false, natureMultiplier(poke.nature, 'spe'));
+}
+
+// ターン終了時（状態異常等の処理が全て済んだ最終的な残りHPが確定した後）に呼ぶ。
+// 条件：まだフォルムチェンジしておらず、残りHPが最大HPの1/2以下ならフォルムチェンジする。
+// 一度発動したら poke.aineechuFormed = true が立ち、以後は残りHPが半分を超えても交代しても
+// 元に戻らない（バトル終了時にポケモンが再生成されるため自然にリセットされる）。
+// 戻り値は変化が起きたかどうか。
+function updateAineechuForm(poke, logFn) {
+  if (!poke || poke.fainted || poke.speciesId !== AINEECHU_SPECIES_ID) return false;
+  if (poke.aineechuFormed) return false;
+  if (!(poke.currentHp <= poke.maxHp / 2)) return false;
+
+  poke.aineechuFormed = true;
+  poke.formState = 'awakened';
+
+  // HP種族値の変動分だけ、最大HP・残りHPを同じ値だけ増加させる。
+  // 上昇値 = (HP種族値の変動分) × 2 × レベル / 100 （小数点以下切り捨て）
+  const baseHpDiff = AINEECHU_FORM_BASE_STATS.hp - poke.species.baseStats.hp;
+  const hpGain = Math.floor(baseHpDiff * 2 * poke.level / 100);
+  poke.maxHp += hpGain;
+  poke.currentHp += hpGain;
+
+  // 実数値（A/B/C/D/S）を新しい種族値で再計算する（ランク補正はそのまま維持）。
+  recalcAineechuStats(poke);
+
+  // 状態異常（どく・やけど・まひ・ねむり・こおり）とこんらんを全て解除する。
+  // 特性「いざない」で仕込まれた「Nターン後にねむり」の予約も無効化する。
+  const hadStatus = poke.status && poke.status !== STATUS.NONE;
+  const hadConfuse = poke.confuseTurns > 0;
+  poke.status = STATUS.NONE;
+  poke.badlyPoisonCounter = 0;
+  poke.confuseTurns = 0;
+  poke.izanaiTurns = 0;
+
+  logFn(`${poke.species.name}は　すがたを　かえた！`, {
+    aineechuForm: true,
+    side: poke.side,
+    hpSnapshot: poke.currentHp,
+    maxHpSnapshot: poke.maxHp,
+    statusSnapshot: poke.status || STATUS.NONE,
+    confuseSnapshot: poke.confuseTurns || 0,
+  });
+  if (hadStatus || hadConfuse) {
+    logFn(`${poke.species.name}の　状態異常が　なおった！`, {
+      statusApply: poke.side,
+      hpSnapshot: poke.currentHp,
+      statusSnapshot: poke.status || STATUS.NONE,
+      confuseSnapshot: poke.confuseTurns || 0,
+    });
   }
   return true;
 }
@@ -719,17 +901,17 @@ const MEGA_EVOLUTION_DATA = {
    585: {
     type1: 'normal', type2: 'fairy',
     ability: 91,
-    baseStats: { hp: 100, atk: 80, def: 126, spa: 80, spd: 126, spe: 66 },
+    baseStats: { hp: 100, atk: 40, def: 126, spa: 120, spd: 126, spe: 66 },
   },
    513: {
     type1: 'ground', type2: 'steel',
-    ability: 60,
+    ability: 75,
     baseStats: { hp: 100, atk: 165, def: 100, spa: 0, spd: 65, spe: 103 },
   },
   151: {
     type1: 'grass', type2: 'poison',
     ability: 104,
-    baseStats: { hp: 100, atk: 135, def: 55, spa: 135, spd: 75, spe: 110 },
+    baseStats: { hp: 100, atk: 145, def: 55, spa: 145, spd: 75, spe: 110 },
   },
 
 347: {
@@ -882,7 +1064,7 @@ const MEGA_EVOLUTION_DATA = {
    322: {
     type1: 'dragon', type2: 'sound',
     ability: 146,
-    baseStats: { hp: 85, atk: 110, def: 100, spa: 177, spd: 90, spe: 153 },
+    baseStats: { hp: 85, atk: 140, def: 100, spa: 177, spd: 90, spe: 123 },
   },
    441: {
     type1: 'dragon', type2: null,
@@ -948,6 +1130,41 @@ const MEGA_EVOLUTION_DATA = {
     type1: 'dragon', type2: 'fairy',
     ability: 138,
     baseStats: { hp: 80, atk: 140, def: 80, spa: 140, spd: 100, spe: 80 },
+  },
+476: {
+    type1: 'fire', type2: null,
+    ability: 3,
+    baseStats: { hp: 105, atk: 150, def: 70, spa: 100, spd: 100, spe: 135 },
+  },
+32 : {
+    type1: 'grass', type2: 'poison',
+    ability: 53,
+    baseStats: { hp: 80, atk: 90, def: 80, spa: 155, spd: 149, spe: 96 },
+  },
+   1032: {
+    type1: 'electric', type2: 'fire',
+    ability: 133,
+    baseStats: { hp: 90, atk: 140, def: 102, spa: 140, spd: 88, spe: 85 },
+  },
+   1034: {
+    type1: 'dark', type2: null,
+    ability: 102,
+    baseStats: { hp: 80, atk: 140, def: 80, spa: 140, spd: 80, spe: 90 },
+  },
+  1037 : {
+    type1: 'dark', type2: 'sound',
+    ability: 64,
+    baseStats: { hp: 110, atk: 161, def: 92, spa: 59, spd: 70, spe: 138 },
+  },
+  1038 : {
+    type1: 'ghost', type2: 'psychic',
+    ability: 25,
+    baseStats: { hp: 95, atk: 94, def: 95, spa: 80, spd: 100, spe: 116 },
+  },
+   1039: {
+    type1: 'dragon', type2: 'psychic',
+    ability: 65,
+    baseStats: { hp: 100, atk: 122, def: 115, spa: 128, spd: 95, spe: 100 },
   },
     50: {
     forms: {
@@ -1244,7 +1461,11 @@ function createRandomPokemon(speciesId, level = 100) {
     // ---- ヨワシ専用：フォルム状態 ----
     // 'solo' = たんどくのすがた（初期値）, 'school' = むれたすがた
     // ID1012（ヨワシ）以外では常に 'solo' のまま未使用。
+    // ID1990（アイニーチュ）の場合は初期値null → フォルムチェンジ後は'awakened'。
     formState: (speciesId === YOWASHI_SPECIES_ID) ? 'solo' : null,
+    // ---- アイニーチュ専用：フォルムチェンジ済みフラグ ----
+    // 一度trueになったら戦闘終了までfalseに戻らない（片道のフォルムチェンジ）。
+    aineechuFormed: false,
   };
 }
 
@@ -2515,6 +2736,10 @@ function applyEndOfTurnStatus(poke, logFn) {
   // ヨワシ：ターン終了時、（毒・やけど・バインド等の処理が全て済んだ）最終的な残りHPに応じて
   // 「むれたすがた」⇔「たんどくのすがた」を判定する。ここでの変化は「魚が集まる／散る」演出付き。
   if (!poke.fainted) updateYowashiForm(poke, logFn, true);
+
+  // アイニーチュ：ターン終了時、（毒・やけど・バインド等の処理が全て済んだ）最終的な残りHPが
+  // 最大HPの半分以下ならフォルムチェンジする（片道・一度きり）。
+  if (!poke.fainted) updateAineechuForm(poke, logFn);
 }
 
 // ---- ふんど ----
@@ -2752,14 +2977,21 @@ function executeMultiHit(attacker, defender, move, logFn) {
         survivedByGanjou = true;
       }
     }
+    // こらえる：がんじょうと異なり満タンHP条件は無い。ひんしになるダメージなら必ずHPが1残る。
+    // 連続技の各打でも毎回この判定が通るため、複数回ヒットしてもこらえる中は倒れない。
+    let survivedByEndure = false;
+    if (!survivedByGanjou && defender.enduring && damage >= defender.currentHp) {
+      survivedByEndure = true;
+    }
 
     defender.currentHp = Math.max(0, defender.currentHp - damage);
-    if (survivedByGanjou) defender.currentHp = 1;
+    if (survivedByGanjou || survivedByEndure) defender.currentHp = 1;
     logFn(`${defender.species.name}に${damage}のダメージ！`, { hit: defender.side, typeMult, moveType: move.type, movePower: power, moveId: move.id });
     if (isCrit) logFn('急所に当たった！');
     if (typeMult > 1) logFn('効果は抜群だ！');
     else if (typeMult < 1) logFn('効果は今ひとつのようだ…');
     if (survivedByGanjou) logFn(`${defender.species.name}はがんじょうで持ちこたえた！`);
+    if (survivedByEndure) logFn(`${defender.species.name}はこらえた！`);
 
     let suppressSecondary = false;
     if (attacker.ability === ABILITY.CHIKARAZUKU) suppressSecondary = true;
@@ -2905,6 +3137,31 @@ function executeMove(attacker, defender, move, logFn, turnCtx) {
     return;
   }
 
+  // ---- こらえる（成否判定・状態セット） ----
+  // 本家仕様：まもると同じ連続使用成功率（100%→50%→25%→…）。
+  // 成功したターンは、攻撃技でひんしになるダメージを受けても必ずHPが1残る（連続技の各打も含む）。
+  // 実際のHP1保証はダメージ適用箇所（がんじょうと同様の分岐）で行い、ここでは成否判定と
+  // attacker.enduring フラグのセットのみを行う。
+  if (move.id === 506) {
+    if (move.pp <= 0) {
+      logFn(`${attacker.species.name}は技が出せない！`);
+      return;
+    }
+    move.pp--;
+    const streak = attacker.endureStreak || 0;
+    const successRate = 100 / Math.pow(2, streak);
+    if (rand(1, 100) <= successRate) {
+      attacker.enduring = true;
+      attacker.endureStreak = streak + 1;
+      logFn(`${attacker.species.name}はこらえる！`);
+    } else {
+      attacker.enduring = false;
+      attacker.endureStreak = 0;
+      logFn(`しかし失敗した！`);
+    }
+    return;
+  }
+
   // ---- マジックミラー ----
   // マジックミラーは「相手に向けて撃つ変化技」のみを跳ね返す特性。
   // つるぎのまい等、相手に効果を及ぼさない自分強化オンリーの技（oppRank/oppStatusが無く、
@@ -3010,9 +3267,14 @@ function executeMove(attacker, defender, move, logFn, turnCtx) {
     logFn(`${attacker.species.name}は技が出せない！`);
     return;
   }
-  move.pp--;
-  logFn(`${attacker.species.name}の${move.name}！`, { moveUse: attacker.side });
-
+  
+// 変更後
+move.pp--;
+logFn(`${attacker.species.name}の${move.name}！`, {
+  moveUse: attacker.side,
+  moveId: move.id,
+  moveCategory: move.category,
+});
   // ---- メガソーラー：発動ログ ----
   // 「ひでり扱い」が実際に結果を変える場合だけ、技1回につき1回出す（連続技・おやこあいのループの外側）。
   //  ・ほのお技：ひでりの強化を受ける／みず技：半減する（実際の天候が晴れ以外の時のみ意味がある）
@@ -3547,10 +3809,16 @@ function executeMove(attacker, defender, move, logFn, turnCtx) {
         survivedByGanjou = true;
       }
     }
+    // こらえる：がんじょうと異なり満タンHP条件は無い。ひんしになるダメージなら必ずHPが1残る。
+    // おやこあいの2発目でも毎回この判定が通るため、複数回ヒットしてもこらえる中は倒れない。
+    let survivedByEndure = false;
+    if (!survivedByGanjou && defender.enduring && damage >= defender.currentHp) {
+      survivedByEndure = true;
+    }
 
     const hpBeforeDamage = defender.currentHp;
     defender.currentHp = Math.max(0, defender.currentHp - damage);
-    if (survivedByGanjou) defender.currentHp = 1;
+    if (survivedByGanjou || survivedByEndure) defender.currentHp = 1;
     const actualDamageDealt = hpBeforeDamage - defender.currentHp;
     totalDamageDealt += actualDamageDealt;
     lastHitDamage = damage;
@@ -3559,6 +3827,7 @@ function executeMove(attacker, defender, move, logFn, turnCtx) {
     if (isCrit) logFn('急所に当たった！');
     if (typeMult > 1 && hitNum === 1) logFn('効果は抜群だ！');
     else if (typeMult < 1 && hitNum === 1) logFn('効果は今ひとつのようだ…');
+    if (survivedByEndure) logFn(`${defender.species.name}はこらえた！`);
     if (survivedByGanjou) logFn(`${defender.species.name}はがんじょうで持ちこたえた！`);
 
     // ---- はかいこうせん：命中して技が成立した場合、相手を倒したかどうかに関わらず
@@ -3817,6 +4086,14 @@ async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onIm
       poke.protecting = false;
       const usingProtect = action.type === 'move' && action.move && action.move.id === 2019;
       if (!usingProtect) poke.protectStreak = 0;
+
+      // ---- こらえるの状態リセット ----
+      // こらえるも「使ったそのターンだけ」有効な状態。まもると全く同じ考え方でリセットする。
+      // 連続成功率のカウントも、このターンにこらえるを選ばなかった側はリセットする
+      // （本家仕様：前のターンにこらえるを使っていないと連続ボーナスが途切れる）。
+      poke.enduring = false;
+      const usingEndure = action.type === 'move' && action.move && action.move.id === 506;
+      if (!usingEndure) poke.endureStreak = 0;
     }
   });
 
@@ -4313,6 +4590,23 @@ function chooseTrainerAttack(attacker, defender, usableMoves, opponentAction) {
     const withoutSucker = usableMoves.filter((m) => m.id !== 29);
     if (withoutSucker.length > 0) usableMoves = withoutSucker;
   }
+
+  // アイニーチュ(ID1990)専用：こらえる(506)を最優先で使わせる。
+  // プレイヤーが攻撃技を選んでいる時は最優先、変化技を選んでいる時は使わせない(-999)。
+  if (attacker.speciesId === AINEECHU_SPECIES_ID) {
+    const endureMove = usableMoves.find((m) => m.id === 506);
+    if (endureMove) {
+      const playerChoseStatusMove = !!(opponentAction && opponentAction.type === 'move' &&
+        opponentAction.move && opponentAction.move.category === 'status');
+      if (!playerChoseStatusMove) {
+        return endureMove;
+      }
+      // 変化技選択時はこらえるを候補から除外（スコア-999扱い）し、通常評価に回す
+      usableMoves = usableMoves.filter((m) => m.id !== 506);
+      if (usableMoves.length === 0) return endureMove; // 他に選べる技が無ければ仕方なくこらえる
+    }
+  }
+
   const defTypes = getEffectiveTypes(defender);
   if (!defTypes || defTypes.length === 0) {
     return usableMoves[Math.floor(Math.random() * usableMoves.length)];

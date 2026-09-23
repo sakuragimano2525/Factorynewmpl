@@ -79,7 +79,22 @@ html,body{
 }
 #rotate-hint p{ font-weight:700; color:var(--ink-soft); margin:0; font-size:15px; }
 
-/* ================= TITLE SCREEN ================= */
+/* ================= TITLE / HOME SCREEN ================= */
+/* =====================================================================
+   ホーム画面（ショップと同じ白ベース・高質感トーンに統一）
+   設計方針：
+   - ショップ画面で確立した「白基調 + はっきりした光沢・影 + ほんのり
+     滲むカラーグロー」の質感言語をホームにも適用する。
+   - #screen-title 配下だけをスコープしたクラスで上書きし、他画面が
+     共有する .neu-btn 等の基本挙動には手を加えない。
+   ===================================================================== */
+:root{
+  --home-panel: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+  --home-line: rgba(51,57,74,0.08);
+  --home-line-strong: rgba(51,57,74,0.14);
+  --home-shadow: 0 8px 20px rgba(120,130,160,0.18), inset 0 1px 0 rgba(255,255,255,0.9);
+  --home-shadow-sm: 0 4px 12px rgba(120,130,160,0.16), inset 0 1px 0 rgba(255,255,255,0.85);
+}
 #screen-title{
   flex-direction:column;
   position:relative;
@@ -87,11 +102,11 @@ html,body{
   padding: 0;
   width:100%; height:100%;
   background:
-    radial-gradient(circle at 18% 12%, rgba(91,140,255,0.24), transparent 52%),
-    radial-gradient(circle at 88% 18%, rgba(139,107,255,0.22), transparent 52%),
-    radial-gradient(circle at 80% 90%, rgba(79,214,122,0.16), transparent 50%),
-    radial-gradient(circle at 10% 88%, rgba(255,93,93,0.12), transparent 50%),
-    var(--bg-0);
+    radial-gradient(circle at 18% 10%, rgba(91,140,255,0.16), transparent 52%),
+    radial-gradient(circle at 88% 16%, rgba(139,107,255,0.14), transparent 52%),
+    radial-gradient(circle at 82% 92%, rgba(79,214,122,0.10), transparent 50%),
+    radial-gradient(circle at 10% 88%, rgba(255,93,93,0.08), transparent 50%),
+    linear-gradient(180deg, #ffffff 0%, var(--bg-0) 100%);
 }
 .title-bg-orb{
   position:absolute;
@@ -150,15 +165,29 @@ html,body{
   gap:10px;
   flex:0 0 auto;
 }
-.title-name-btn{
+/* 左上：プレイヤー名ボタン。ショップの通貨バッジと同じ質感の白パネルに */
+#screen-title .title-name-btn{
   display:flex; align-items:center; gap:8px;
-  padding:10px 20px 10px 14px;
+  padding:9px 20px 9px 8px;
   border-radius:999px;
   flex:0 1 auto;
   min-width:0;
+  background: var(--home-panel);
+  border: 1px solid var(--home-line-strong);
+  box-shadow: var(--home-shadow-sm);
 }
-.title-name-btn .tnb-icon{ font-size:15px; line-height:1; flex:0 0 auto; }
-.title-name-btn .tnb-label{ font-size:12.5px; font-weight:800; max-width:32vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#screen-title .title-name-btn:active{
+  box-shadow: inset 0 2px 6px rgba(120,130,160,0.2);
+  transform: scale(0.97);
+}
+.title-name-btn .tnb-icon{
+  font-size:14px; line-height:1; flex:0 0 auto;
+  width:26px; height:26px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background: linear-gradient(150deg, var(--accent-a), var(--accent-b));
+  color:#fff;
+}
+.title-name-btn .tnb-label{ font-size:12.5px; font-weight:800; color:var(--ink); max-width:32vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .title-record-btn{ font-size:16px; }
 
 
@@ -180,7 +209,10 @@ html,body{
   margin-bottom:22px;
   border-radius:50%;
   background: linear-gradient(180deg, #ff5d5d 0%, #ff5d5d 48%, var(--ink) 48%, var(--ink) 54%, #fff 54%, #fff 100%);
-  box-shadow: var(--shadow-light), inset 0 0 0 3px rgba(51,57,74,0.12);
+  box-shadow:
+    0 10px 24px rgba(120,130,160,0.28),
+    0 2px 0 rgba(255,255,255,0.7) inset,
+    0 0 0 3px rgba(51,57,74,0.1);
   position:relative;
   animation: emblemFloat 4.5s ease-in-out infinite;
 }
@@ -188,7 +220,7 @@ html,body{
   content:'';
   position:absolute; inset:0;
   border-radius:50%;
-  background: linear-gradient(180deg, rgba(255,255,255,0.28) 0%, transparent 45%);
+  background: linear-gradient(180deg, rgba(255,255,255,0.4) 0%, transparent 45%);
   mix-blend-mode: overlay;
 }
 .title-emblem::after{
@@ -212,11 +244,11 @@ html,body{
   text-align:center;
 }
 .title-logo{
-  font-size: clamp(32px, 6.4vw, 58px);
+  font-size: clamp(24px, 5.6vw, 42px);
   font-weight:900;
-  letter-spacing: 2px;
+  letter-spacing: 0.5px;
   margin:0;
-  line-height:1.15;
+  line-height:1.25;
   max-width: 92vw;
   background: linear-gradient(120deg, var(--accent-a), var(--accent-b) 55%, var(--accent-hp));
   background-size: 200% auto;
@@ -314,34 +346,105 @@ html,body{
   border-radius: 999px;
 }
 
-/* ---- Title menu (2 buttons: NPC / Player) ---- */
+/* ---- Title menu (3 buttons: NPC / Player / Box) ---- */
 .title-menu-row{
   display:flex;
-  gap: 20px;
-  margin-top: 40px;
+  gap: 14px;
+  margin-top: 36px;
   justify-content: center;
   flex-wrap: wrap;
   width: 100%;
-  max-width: 520px;
+  max-width: 720px;
 }
-.title-menu-btn{
-  padding: 24px 28px;
-  flex: 1 1 200px;
-  min-width: 190px;
-  display:flex; flex-direction:column; align-items:center; gap:7px;
-  border-radius: var(--radius-lg);
+#screen-title .title-menu-btn{
+  --menu-accent: var(--accent-a);
+  --menu-accent-2: var(--accent-b);
+  position:relative;
+  padding: 22px 18px 20px;
+  flex: 1 1 180px;
+  min-width: 160px;
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+  border-radius: 22px;
+  background: var(--home-panel);
+  border: 1px solid var(--home-line);
+  box-shadow: var(--home-shadow);
   transition: box-shadow .12s ease, transform .18s cubic-bezier(.2,.8,.2,1);
+  overflow:hidden;
 }
-.title-menu-btn:active{ transform: scale(0.98); }
-.title-menu-btn .tmb-title{ font-size: 17px; font-weight: 900; }
-.title-menu-btn .tmb-sub{ font-size: 11.5px; font-weight: 700; opacity: 0.75; }
+/* 上端の光沢バー + ほんのり滲むアクセントカラーのグロー。ショップのカードと同じ意匠 */
+#screen-title .title-menu-btn::before{
+  content:'';
+  position:absolute; top:0; left:14%; right:14%; height:3px;
+  border-radius:0 0 3px 3px;
+  background: linear-gradient(90deg, var(--menu-accent), var(--menu-accent-2));
+  box-shadow: 0 0 10px 1px var(--menu-accent);
+}
+#screen-title .title-menu-btn::after{
+  content:'';
+  position:absolute; top:-24px; left:50%;
+  width:140px; height:90px;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, var(--menu-accent), transparent 72%);
+  opacity:0.14;
+  filter: blur(4px);
+  pointer-events:none;
+}
+#screen-title .title-menu-btn:active{
+  transform: scale(0.97);
+  box-shadow: inset 0 3px 8px rgba(120,130,160,0.22);
+}
+/* primary（NPCとバトル）：ボタン地そのものをアクセントのグラデーションに */
+#screen-title .title-menu-btn.primary{
+  background: linear-gradient(150deg, var(--accent-a), var(--accent-b));
+  border-color: transparent;
+  box-shadow:
+    0 10px 24px rgba(91,140,255,0.32),
+    inset 0 1px 0 rgba(255,255,255,0.35);
+}
+#screen-title .title-menu-btn.primary::before{
+  background: linear-gradient(90deg, rgba(255,255,255,0.8), rgba(255,255,255,0.3));
+  box-shadow:none;
+}
+#screen-title .title-menu-btn.primary::after{ opacity:0.22; background: radial-gradient(circle, #fff, transparent 72%); }
+#screen-title .title-menu-btn.primary:active{
+  box-shadow: inset 0 4px 10px rgba(0,0,0,0.22);
+}
+.title-menu-btn .tmb-title{ font-size: 16px; font-weight: 900; margin-top:10px; }
+.title-menu-btn .tmb-sub{ font-size: 11.5px; font-weight: 700; opacity: 0.6; margin-top:2px; }
 .title-menu-btn.primary .tmb-sub{ color: #fff; opacity: 0.85; }
+/* アイコンをショップの商品パネルと同じ丸パネルに収める */
+.tmb-icon-wrap{
+  width:56px; height:56px;
+  border-radius:16px;
+  display:flex; align-items:center; justify-content:center;
+  background:
+    radial-gradient(circle at 50% 26%, rgba(255,255,255,0.7), transparent 60%),
+    linear-gradient(160deg, #eef1f7, #e2e6ee);
+  border: 1px solid var(--home-line);
+  box-shadow: inset 0 2px 6px rgba(120,130,160,0.16);
+}
+#screen-title .title-menu-btn.primary .tmb-icon-wrap{
+  background:
+    radial-gradient(circle at 50% 26%, rgba(255,255,255,0.5), transparent 60%),
+    rgba(255,255,255,0.16);
+  border-color: rgba(255,255,255,0.35);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,0.12);
+}
+.tmb-box-icon{
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(80,90,120,0.22));
+}
 @media (hover:hover){
-  .title-menu-btn:hover{ transform: translateY(-3px); }
+  #screen-title .title-menu-btn:hover{ transform: translateY(-3px); }
 }
 @media (max-width: 420px){
-  .title-menu-row{ gap:14px; }
-  .title-menu-btn{ padding:20px 18px; min-width:0; }
+  .title-menu-row{ gap:12px; }
+  #screen-title .title-menu-btn{ padding:16px 12px 14px; min-width:0; flex-basis: 150px; }
+  .tmb-icon-wrap{ width:46px; height:46px; border-radius:13px; }
+  .tmb-box-icon{ width:26px; height:26px; }
   .ready-room-card{ width: 100%; padding: 0 16px 18px; }
   .ready-room-roomid{ letter-spacing: 6px; }
   .ready-vs-row{ gap: 8px; }
@@ -2433,11 +2536,14 @@ html,body{
   border-left: 1px solid rgba(0,0,0,0.08);
   padding-left: 12px;
 }
-.pdw-stat-row{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; font-size:11px; font-weight:700; color:var(--ink); }
+.pdw-stat-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; font-weight:700; color:var(--ink); }
 .pdw-stat-name{ color:var(--ink-soft); flex-shrink:0; }
+.pdw-stat-name{ display:inline-flex; align-items:center; gap:3px; }
+.pdw-stat-ico{ flex:none; width:12px; height:12px; display:inline-flex; align-items:center; justify-content:center; color:var(--ink-soft); }
+.pdw-stat-ico svg{ width:100%; height:100%; display:block; }
 .pdw-stat-values{ display:inline-flex; align-items:baseline; gap:5px; margin-left:auto; }
-.pdw-stat-value{ color:var(--ink); }
-.pdw-stat-ev{ font-size:9px; color:var(--ink-soft); font-weight:700; }
+.pdw-stat-value{ color:var(--ink); min-width:3ch; text-align:right; font-variant-numeric:tabular-nums; }
+.pdw-stat-ev{ font-size:9px; color:var(--ink-soft); font-weight:700; min-width:3ch; text-align:right; font-variant-numeric:tabular-nums; }
 
 
 #pick-overlay .trade-offer-row{ flex-wrap:nowrap; gap:8px; }
@@ -2679,12 +2785,15 @@ html,body{
   padding-left: 12px;
   padding-top: 17px; /* わざ列の「わざ」見出し分の高さに合わせる */
 }
-.pd-stat-row{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; font-size:11.5px; font-weight:700; color:var(--ink); }
+.pd-stat-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11.5px; font-weight:700; color:var(--ink); }
 .pd-stat-row.pd-stat-spe{ margin-top:auto; padding-top:6px; border-top:1px solid rgba(0,0,0,0.08); }
 .pd-stat-name{ color:var(--ink-soft); flex-shrink:0; }
+.pd-stat-name{ display:inline-flex; align-items:center; gap:4px; }
+.pd-stat-ico{ flex:none; width:13px; height:13px; display:inline-flex; align-items:center; justify-content:center; color:var(--ink-soft); }
+.pd-stat-ico svg{ width:100%; height:100%; display:block; }
 .pd-stat-values{ display:inline-flex; align-items:baseline; gap:6px; margin-left:auto; }
-.pd-stat-value{ color:var(--ink); }
-.pd-stat-ev{ font-size:9.5px; color:var(--ink-soft); font-weight:700; }
+.pd-stat-value{ color:var(--ink); min-width:3ch; text-align:right; font-variant-numeric:tabular-nums; }
+.pd-stat-ev{ font-size:9.5px; color:var(--ink-soft); font-weight:700; min-width:3ch; text-align:right; font-variant-numeric:tabular-nums; }
 
 /* ================= 対人チーム戦：拡張パーティー詳細UI（自分/相手の選出を並べて見る） ================= */
 .party-panel.tt-mode{
@@ -2851,16 +2960,20 @@ html,body{
   width:40px;
   height:40px;
   border-radius:50%;
-  border:none;
-  background: var(--surface);
-  box-shadow: var(--shadow-light);
-  font-size:19px;
+  border: 1px solid var(--home-line-strong);
+  background: var(--home-panel);
+  box-shadow: var(--home-shadow-sm);
+  font-size:17px;
+  color: var(--ink);
   display:flex; align-items:center; justify-content:center;
   cursor:pointer;
   z-index:5;
 }
-.title-settings-btn:active{ transform: scale(0.94); }
-.title-pokedex-btn{ font-size:18px; }
+.title-settings-btn:active{
+  transform: scale(0.94);
+  box-shadow: inset 0 2px 6px rgba(120,130,160,0.2);
+}
+.title-pokedex-btn{ font-size:17px; }
 /* 本格バトルボタン（🏆の右）。poke_ball.png をボタン内に収める */
 .title-serious-icon{
   width: 24px;
@@ -2871,18 +2984,18 @@ html,body{
 
 /* ---- 🏆記録ボタンのランク枠（メガあり／メガなしの最大連勝数に応じて変化） ---- */
 .title-record-btn.rank-bronze{
-  box-shadow: 0 0 0 2.5px #b06a35, var(--shadow-light);
+  box-shadow: 0 0 0 2.5px #b06a35, var(--home-shadow-sm);
 }
 .title-record-btn.rank-silver{
-  box-shadow: 0 0 0 2.5px #c0c6cc, var(--shadow-light);
+  box-shadow: 0 0 0 2.5px #a7adba, var(--home-shadow-sm);
 }
 .title-record-btn.rank-gold{
-  box-shadow: 0 0 0 2.5px #e8b923, var(--shadow-light);
+  box-shadow: 0 0 0 2.5px #e8b923, var(--home-shadow-sm);
 }
 .title-record-btn.rank-rainbow{
-  box-shadow: 0 0 0 2.5px transparent, var(--shadow-light);
+  box-shadow: 0 0 0 2.5px transparent, var(--home-shadow-sm);
   background-image:
-    linear-gradient(var(--surface), var(--surface)),
+    linear-gradient(#fff, #fbfcfe),
     conic-gradient(from 0deg, #ff5b5b, #ffb144, #f4e04d, #58d68d, #4aa3ff, #a86bff, #ff5b5b);
   background-origin: border-box;
   background-clip: padding-box, border-box;
@@ -3019,6 +3132,351 @@ html,body{
   filter: drop-shadow(0 1px 1px rgba(0,0,0,.35));
 }
 
+/* =====================================================================
+   ショップ（ソシャゲ品質・白背景版）
+   設計方針：
+   - アプリ全体のベース（--bg-0 の淡いグレー×白）に合わせ、白を基調に
+     しつつも「そのへんのSaaSカード」に見えないよう、はっきりした
+     ハイライト・影・縁取りで立体感と光沢のある質感を作る。
+   - ポケモンのタイプ色（TR_TYPE_COLOR / .type-chip .t-*）を各カードの
+     縁取り・グロー・アイコン背景に流用し、既存のデータ構造だけで
+     商品ごとの個性を出す（新しいレアリティ概念は導入しない）。
+   - 導線・DOM構造・id・class名は既存のまま。見た目だけを差し替える。
+   ===================================================================== */
+:root{
+  --shop-bg-0:#f4f6fa;
+  --shop-bg-1:#ffffff;
+  --shop-panel:#ffffff;
+  --shop-panel-edge: rgba(255,255,255,0.9);
+  --shop-line: rgba(51,57,74,0.08);
+  --shop-line-strong: rgba(51,57,74,0.14);
+  --shop-ink:#33394a;
+  --shop-ink-soft:#7b8296;
+  --shop-gold-a:#ffb648;
+  --shop-gold-b:#ff8a3d;
+  --shop-gold-c:#e06b1f;
+}
+
+/* ---- ショップ全体：背景 ---- */
+.shop-overlay{
+  position:absolute; inset:0; z-index:230;
+  height:100%; height:100dvh;
+  max-height:100%; max-height:100dvh;
+  background:
+    radial-gradient(circle at 16% 10%, rgba(91,140,255,0.14), transparent 50%),
+    radial-gradient(circle at 88% 16%, rgba(139,107,255,0.12), transparent 50%),
+    radial-gradient(circle at 82% 92%, rgba(79,214,122,0.09), transparent 50%),
+    linear-gradient(180deg, var(--shop-bg-1) 0%, var(--shop-bg-0) 100%);
+  display:flex; flex-direction:column;
+  opacity:0; pointer-events:none;
+  transition: opacity .22s ease;
+  font-family: var(--font-main);
+  color: var(--shop-ink);
+  overflow:hidden;
+}
+.shop-overlay.show{ opacity:1; pointer-events:auto; }
+
+/* ---- ヘッダー：タイトル + 通貨バッジ ---- */
+.shop-header{
+  position:relative;
+  flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+  padding: max(16px, env(safe-area-inset-top)) 18px 14px;
+  z-index:2;
+}
+.shop-header::after{
+  content:'';
+  position:absolute; left:18px; right:18px; bottom:0;
+  height:1px;
+  background: linear-gradient(90deg, transparent, var(--shop-line-strong) 20%, var(--shop-line-strong) 80%, transparent);
+}
+.shop-header-title{
+  font-weight:900; font-size:19px; color:var(--shop-ink);
+  letter-spacing:2.5px;
+  display:flex; align-items:center; gap:8px;
+}
+.shop-header-title::before,
+.shop-header-title::after{
+  content:'';
+  width:16px; height:2px;
+  border-radius:2px;
+  background: linear-gradient(90deg, var(--shop-gold-b), transparent);
+}
+.shop-header-title::after{ background: linear-gradient(90deg, transparent, var(--shop-gold-b)); }
+.shop-currency-badge{
+  position:absolute; top:calc(max(16px, env(safe-area-inset-top)) + 3px); right:14px;
+  display:flex; align-items:center; gap:7px;
+  background: linear-gradient(180deg, #ffffff, #f1f3f8);
+  border: 1px solid var(--shop-line-strong);
+  box-shadow:
+    0 3px 10px rgba(120,130,160,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.9);
+  border-radius:999px;
+  padding: 6px 16px 6px 6px;
+  font-weight:900; font-size:14.5px; color:#c9791f;
+  font-variant-numeric: tabular-nums;
+}
+.shop-currency-icon{
+  width:24px; height:24px; object-fit:contain;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.18));
+}
+
+/* ---- ショップ本体：グリッド ---- */
+.shop-grid{
+  flex:1 1 auto; min-height:0;
+  overflow-y:scroll;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  grid-auto-rows: max-content;
+  align-content:start;
+  align-items:start;
+  gap:14px;
+  padding: 14px 16px 28px;
+  z-index:1;
+}
+
+/* ---- 商品カード ---- */
+.shop-cell{
+  --cell-type-color: #8a93ad;
+  position:relative;
+  align-self:start;
+  display:flex; flex-direction:column; align-items:center;
+  padding: 16px 10px 14px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+  border: 1px solid var(--shop-line);
+  box-shadow:
+    0 6px 16px rgba(120,130,160,0.16),
+    inset 0 1px 0 rgba(255,255,255,0.9);
+  cursor:pointer;
+  overflow:hidden;
+  transition: transform .15s cubic-bezier(.2,.8,.3,1.3), box-shadow .15s ease, border-color .15s ease;
+}
+/* タイプカラーを上端の光沢バーとして表現：商品ごとの個性を作る唯一の装飾軸 */
+.shop-cell::before{
+  content:'';
+  position:absolute; top:0; left:14%; right:14%; height:3px;
+  border-radius:0 0 3px 3px;
+  background: var(--cell-type-color);
+  box-shadow: 0 0 10px 1px var(--cell-type-color);
+  opacity:0.9;
+}
+.shop-cell::after{
+  /* カード上部にうっすら滲むタイプカラーのグロー。派手さは抑えて質感だけ足す */
+  content:'';
+  position:absolute; top:-20px; left:50%;
+  width:130px; height:90px;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, var(--cell-type-color), transparent 72%);
+  opacity:0.16;
+  filter: blur(4px);
+  pointer-events:none;
+}
+.shop-cell:active{
+  transform: scale(0.96);
+  box-shadow:
+    0 2px 6px rgba(120,130,160,0.2),
+    inset 0 2px 6px rgba(120,130,160,0.18);
+}
+
+.shop-cell-imgwrap{
+  position:relative;
+  width:76px; height:76px;
+  border-radius:18px;
+  background:
+    radial-gradient(circle at 50% 28%, rgba(255,255,255,0.6), transparent 60%),
+    linear-gradient(160deg, #eef1f7, #e2e6ee);
+  border: 1px solid var(--shop-line);
+  box-shadow: inset 0 2px 6px rgba(120,130,160,0.16);
+  display:flex; align-items:center; justify-content:center;
+  overflow:hidden;
+  margin-bottom:10px;
+}
+.shop-cell-imgwrap img{
+  width:58px; height:58px; object-fit:contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 3px 4px rgba(80,90,120,0.25));
+  transition: transform .15s ease;
+}
+/* 画像読み込み失敗時のプレースホルダー：カード枠に合わせて角丸四角にする */
+.shop-cell-imgwrap .sprite-fallback.shop-cell-sprite{
+  border-radius:18px;
+  position:absolute; inset:0;
+}
+.shop-cell:active .shop-cell-imgwrap img{ transform: scale(0.94); }
+
+.shop-cell-name{
+  font-size:13px; font-weight:800; color:var(--shop-ink);
+  text-align:center; line-height:1.25;
+  min-height: 2.5em;
+  display:flex; align-items:center; justify-content:center;
+}
+.shop-cell-price{
+  margin-top:9px;
+  display:flex; align-items:center; gap:5px;
+  background: linear-gradient(180deg, #fff6e8, #ffecd0);
+  border: 1px solid rgba(224,141,31,0.25);
+  border-radius:999px;
+  padding: 5px 13px 5px 7px;
+  font-size:13px; font-weight:900;
+  color: #b56a19;
+  font-variant-numeric: tabular-nums;
+}
+.shop-cell-price img{
+  width:17px; height:17px; object-fit:contain;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.18));
+}
+.shop-cell.owned{ cursor:default; }
+.shop-cell.owned::before{ opacity:0.3; filter:grayscale(1); box-shadow:none; }
+.shop-cell.owned::after{ opacity:0.05; filter: blur(4px) grayscale(1); }
+.shop-cell.owned .shop-cell-imgwrap{
+  filter: grayscale(0.7) brightness(0.96);
+}
+.shop-cell.owned .shop-cell-imgwrap img{ opacity:0.55; }
+.shop-cell-owned-label{
+  font-size:11.5px; font-weight:800; letter-spacing:0.5px;
+  color: var(--shop-ink-soft);
+  padding: 5px 6px;
+  white-space:nowrap;
+}
+.shop-cell-owned-label::before{
+  content:'✓ ';
+  color:#3fae6e;
+  font-weight:900;
+}
+
+/* ---- 購入確認カード ---- */
+.shop-detail-overlay{
+  position:fixed; inset:0; z-index:260;
+  display:flex; align-items:center; justify-content:center;
+  background: rgba(51,57,74,0.32);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  opacity:0; pointer-events:none;
+  transition: opacity .2s ease;
+  padding: 20px;
+}
+.shop-detail-overlay.show{ opacity:1; pointer-events:auto; }
+.shop-detail-card{
+  --cell-type-color: #8a93ad;
+  position:relative;
+  width:min(340px, 90vw);
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+  border: 1px solid var(--shop-line-strong);
+  box-shadow:
+    0 20px 50px rgba(80,90,120,0.28),
+    inset 0 1px 0 rgba(255,255,255,0.9);
+  border-radius: 26px;
+  padding: 30px 24px 22px;
+  display:flex; flex-direction:column; align-items:center;
+  text-align:center;
+  color: var(--shop-ink);
+  font-family: var(--font-main);
+  overflow:hidden;
+  animation: shopDetailPop .22s cubic-bezier(.2,.9,.3,1.25);
+}
+@keyframes shopDetailPop{
+  0%{ transform: scale(0.88); opacity:0; }
+  100%{ transform: scale(1); opacity:1; }
+}
+.shop-detail-card::before{
+  content:'';
+  position:absolute; top:0; left:0; right:0; height:4px;
+  background: linear-gradient(90deg, transparent, var(--cell-type-color), transparent);
+}
+.shop-detail-imgwrap{
+  position:relative;
+  width:128px; height:128px;
+  border-radius:26px;
+  background:
+    radial-gradient(circle at 50% 26%, rgba(255,255,255,0.7), transparent 60%),
+    linear-gradient(160deg, #eef1f7, #e2e6ee);
+  border: 1px solid var(--shop-line);
+  box-shadow: inset 0 3px 10px rgba(120,130,160,0.18);
+  display:flex; align-items:center; justify-content:center;
+  overflow:hidden;
+  margin-bottom:16px;
+}
+.shop-detail-imgwrap::after{
+  content:'';
+  position:absolute; top:-30px; left:50%;
+  width:150px; height:100px;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, var(--cell-type-color), transparent 70%);
+  opacity:0.2;
+  filter: blur(6px);
+  pointer-events:none;
+}
+.shop-detail-imgwrap img{
+  position:relative; z-index:1;
+  width:100px; height:100px; object-fit:contain;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 4px 6px rgba(80,90,120,0.25));
+}
+.shop-detail-imgwrap .sprite-fallback.shop-cell-sprite{
+  position:absolute; inset:0; z-index:1; border-radius:26px;
+}
+.shop-detail-name{
+  font-size:19px; font-weight:900; color:var(--shop-ink); margin-bottom:4px;
+  letter-spacing:0.5px;
+}
+.shop-detail-types{
+  display:flex; gap:5px; justify-content:center; flex-wrap:wrap;
+  margin-bottom:14px;
+}
+.shop-detail-price{
+  display:flex; align-items:center; gap:7px;
+  background: linear-gradient(180deg, #fff6e8, #ffecd0);
+  border: 1px solid rgba(224,141,31,0.3);
+  border-radius:999px;
+  padding: 9px 20px 9px 11px;
+  font-size:17px; font-weight:900; color: #b56a19;
+  margin-bottom:22px;
+  font-variant-numeric: tabular-nums;
+}
+.shop-detail-price img{ width:24px; height:24px; object-fit:contain; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.18)); }
+.shop-detail-btn-row{ display:flex; gap:10px; width:100%; }
+.shop-detail-btn{
+  flex:1;
+  padding:14px 0;
+  font-size:15px; font-weight:900;
+  border-radius:999px;
+  border:none;
+  cursor:pointer;
+  font-family: var(--font-main);
+  transition: transform .12s ease, filter .12s ease, box-shadow .12s ease;
+}
+.shop-detail-btn:active{ transform: scale(0.96); }
+.shop-detail-btn:not(.primary){
+  background: #f1f3f8;
+  color: var(--shop-ink);
+  border: 1px solid var(--shop-line-strong);
+}
+.shop-detail-btn:not(.primary):active{ background: #e7eaf1; }
+.shop-detail-btn.primary{
+  background: linear-gradient(135deg, var(--shop-gold-a), var(--shop-gold-b) 55%, var(--shop-gold-c));
+  color:#fff;
+  box-shadow: 0 6px 16px rgba(255,138,61,0.35), inset 0 1px 0 rgba(255,255,255,0.4);
+}
+.shop-detail-btn.primary:active{
+  box-shadow: inset 0 3px 8px rgba(0,0,0,0.15);
+}
+/* 購入不可（ディスク不足）時のフィードバック用 */
+.shop-detail-price.insufficient{
+  border-color: rgba(255,93,93,0.6);
+  background: linear-gradient(180deg, #fff0f0, #ffe2e2);
+  color:#d84b4b;
+  animation: shopShake .32s ease;
+}
+@keyframes shopShake{
+  0%,100%{ transform: translateX(0); }
+  25%{ transform: translateX(-4px); }
+  75%{ transform: translateX(4px); }
+}
+
 @media (max-height: 420px){
   .pokedex-header{ padding: 8px 12px 6px; }
   .pokedex-count{ font-size:12.5px; padding:6px 16px; }
@@ -3028,8 +3486,37 @@ html,body{
   .pokedex-grid{ grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); gap:7px; padding:4px 10px 14px; }
   .pokedex-cell-imgwrap{ width:40px; height:40px; }
   .pokedex-cell-imgwrap img{ width:32px; height:32px; }
+  .shop-header{ padding: 8px 12px 6px; }
+  .shop-header-title{ font-size:14px; }
+  .shop-currency-badge{ padding:5px 12px 5px 6px; font-size:12px; top:6px; right:10px; }
+  .shop-currency-icon{ width:17px; height:17px; }
+  .shop-grid{ grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap:9px; padding:8px 10px 16px; }
+  .shop-cell{ padding:10px 6px 8px; border-radius:14px; }
+  .shop-cell-imgwrap{ width:52px; height:52px; border-radius:13px; }
+  .shop-cell-imgwrap img{ width:40px; height:40px; }
+  .shop-cell-name{ font-size:10.5px; min-height:2.4em; }
+  .shop-cell-price{ font-size:10.5px; padding:3px 9px 3px 5px; }
+  .shop-cell-price img{ width:13px; height:13px; }
   .pokedex-cell-name{ font-size:9px; }
 }
+
+/* ---- スマホ横画面など、さらに高さが低い場合：ショップのカードをもっと小さくして
+   スクロール前提のレイアウトを確実に成立させる ---- */
+@media (max-height: 340px){
+  .shop-header{ padding: 5px 10px 4px; }
+  .shop-header-title{ font-size:12.5px; letter-spacing:1.5px; }
+  .shop-header-title::before, .shop-header-title::after{ width:10px; }
+  .shop-currency-badge{ padding:4px 10px 4px 5px; font-size:11px; top:5px; right:8px; }
+  .shop-currency-icon{ width:14px; height:14px; }
+  .shop-grid{ grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap:7px; padding:6px 8px 12px; }
+  .shop-cell{ padding:7px 4px 6px; border-radius:12px; }
+  .shop-cell-imgwrap{ width:40px; height:40px; border-radius:10px; margin-bottom:5px; }
+  .shop-cell-imgwrap img{ width:30px; height:30px; }
+  .shop-cell-name{ font-size:9px; line-height:1.15; min-height:2.3em; }
+  .shop-cell-price{ font-size:9px; padding:2px 7px 2px 4px; margin-top:5px; }
+  .shop-cell-price img{ width:10px; height:10px; }
+}
+
 
 /* ---- 図鑑：詳細画面（全画面・スクロール不要） ---- */
 .pokedex-detail-overlay{
@@ -3126,6 +3613,9 @@ html,body{
   padding: 6px 13px;
   font-size:12px; font-weight:800; color:var(--ink);
 }
+.pdx-stat-label{ display:inline-flex; align-items:center; gap:5px; }
+.pdx-stat-ico{ flex:none; width:14px; height:14px; display:inline-flex; align-items:center; justify-content:center; color:var(--ink-soft); }
+.pdx-stat-ico svg{ width:100%; height:100%; display:block; }
 .pdx-stat-rank{ font-size:15px; font-weight:900; }
 .pdx-rank-S{ color:#1a3fd6; }
 .pdx-rank-A{ color:#d6b800; }
@@ -3148,6 +3638,7 @@ html,body{
   .pdx-ability-desc{ font-size:9px; -webkit-line-clamp:1; }
   .pdx-stat-row{ padding:5px 10px; font-size:10.5px; }
   .pdx-stat-rank{ font-size:13px; }
+  .pdx-stat-ico{ width:12px; height:12px; }
 }
 
 .settings-overlay{
@@ -3338,15 +3829,22 @@ html,body{
   background: var(--sb-card); cursor:pointer;
   box-shadow: 0 2px 5px rgba(50,35,140,0.25);
 }
-/* 名前は左上、画像は右 */
+/* 名前は枠の左上に小さく（7文字が1行に収まるサイズ）、画像は右下に置く。
+   名前・画像・mega.png・番号はすべて絶対配置なので、互いの位置が押し合わない。 */
 .sb-slot .sb-slot-name{
-  flex:1 1 0; min-width:0; align-self:center;
-  font-size:9.5px; font-weight:800; color:var(--sb-ink); line-height:1.15;
-  /* 長い名前は2行まで折り返して省略（1行だと「リザ…」まで削れて判別できない） */
-  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
-  overflow:hidden; word-break:break-all; white-space:normal;
+  position:absolute; left:5px; top:3px; right:2px;
+  font-size:7.5px; font-weight:800; color:var(--sb-ink); line-height:1.1; letter-spacing:-0.02em;
+  /* 6文字ぶんが1行に収まる（画像を大きく取るため7.5px）。それより長い名前だけ末尾を省略（折り返さない＝左上の小さい表示を保つ） */
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  pointer-events:none;
 }
-.sb-slot .sb-slot-img{ flex:none; align-self:center; height:80%; max-width:34%; aspect-ratio:1/1; object-fit:contain; }
+.sb-slot .sb-slot-img{
+  position:absolute; right:2px; bottom:1px;
+  /* 画像は枠の高さいっぱいの正方形（幅は aspect-ratio で追従）。名前側が画像の左端で止まる（下の .sb-slot-name の right 参照） */
+  height:calc(100% - 3px); width:auto;
+  aspect-ratio:1/1; object-fit:contain;
+  pointer-events:none;
+}
 .sb-slot.empty{
   background: rgba(255,255,255,0.22); box-shadow:none; cursor:default;
   border:2px dashed rgba(255,255,255,0.55); align-items:center; justify-content:center; padding:0;
@@ -3380,16 +3878,15 @@ html,body{
 }
 /* 並び替え中は他の枠を少し控えめに、スクロール等の誤操作を防ぐ */
 .sb-party.reordering .sb-slot:not(.lifting){ opacity:.92; }
-/* 枠番号バッジ（左上）：並び順が一目で分かるように */
+/* 枠番号バッジ（左下）：並び順が一目で分かるように。左上は名前に使うので下へ置く */
 .sb-slot .sb-slot-idx{
-  position:absolute; left:4px; top:50%; transform:translateY(-50%);
+  position:absolute; left:4px; bottom:3px;
   width:12px; height:12px; border-radius:50%;
   background:var(--sb-deep); color:#fff;
   font-size:8px; font-weight:900; line-height:12px; text-align:center;
   pointer-events:none;
 }
-/* 番号バッジの分だけ名前を右へ */
-.sb-slot:not(.empty){ padding-left:20px; }
+/* （番号バッジは左下の絶対配置。名前・画像も絶対配置なので、枠の左余白は取らない） */
 .sb-clear-btn{
   flex:0 0 auto; padding:6px 4px; border:none; border-radius:999px; cursor:pointer;
   background: var(--sb-card); color:#c2413b; font-size:10px; font-weight:900;
@@ -3412,6 +3909,17 @@ html,body{
   background: linear-gradient(180deg, var(--sb-mid), var(--sb-deep));
 }
 .sb-box-sub{ font-size:10px; font-weight:800; color:var(--sb-ink-soft); }
+/* 並び替えセレクト：タイトルとは少し間を開けて置く */
+.sb-sort-select{
+  margin-left:10px; padding:3px 22px 3px 10px; border-radius:999px;
+  font-size:10px; font-weight:800; font-family:inherit; color:var(--sb-ink-soft);
+  background-color:rgba(255,255,255,0.75); border:1.5px solid rgba(120,100,220,0.35);
+  -webkit-appearance:none; appearance:none; cursor:pointer; outline:none;
+  background-image:linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:calc(100% - 12px) 55%, calc(100% - 8px) 55%;
+  background-size:4px 4px, 4px 4px; background-repeat:no-repeat;
+}
+.sb-sort-select:focus{ border-color:var(--sb-mid); }
 .sb-box-grid{
   flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden;
   display:grid; grid-template-columns: repeat(auto-fill, minmax(max(48px, calc((100% - 7 * 6px) / 8)), 1fr));
@@ -3439,9 +3947,23 @@ html,body{
 .sb-cell .sb-mega,
 .sb-slot .sb-mega{
   position:absolute; right:2px; bottom:2px;
-  width:11px; height:11px; object-fit:contain; pointer-events:none;
+  width:11px; height:11px; object-fit:contain; pointer-events:none; z-index:2;
   filter: drop-shadow(0 1px 1px rgba(40,30,110,0.35));
 }
+
+/* ショップ未購入：ボックスではロック表示（見た目は真っ黒なシルエット＋鍵アイコン、タップ操作は無効） */
+.sb-cell.locked{ cursor:default; }
+.sb-cell.locked img{ filter: brightness(0); opacity:0.55; }
+.sb-cell.locked .sb-mega{ display:none; } /* ロック中はメガ表示も出さない */
+.sb-lock-overlay{
+  display:none; position:absolute; inset:0;
+  align-items:center; justify-content:center;
+  border-radius:11px; pointer-events:none;
+}
+.sb-cell.locked .sb-lock-overlay{ display:flex; }
+.sb-lock-icon{ width:38%; height:38%; object-fit:contain; opacity:0.85; }
+/* lock.png が読み込めない場合、JS側のonerrorで非表示にした上でこのフォールバック絵文字を出す */
+.sb-lock-overlay.no-icon::after{ content:"🔒"; font-size:14px; line-height:1; opacity:0.9; }
 
 /* 右：詳細パネル */
 .sb-detail{
@@ -3578,7 +4100,13 @@ html,body{
   flex:1 1 0; min-width:0; font-size:8.5px; font-weight:800; color:var(--sb-ink); line-height:1.1;
   display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; word-break:break-all;
 }
-.ps-row .ps-img{ flex:none; height:80%; max-width:38%; aspect-ratio:1/1; object-fit:contain; }
+.ps-row .ps-img-wrap{
+  flex:none; height:80%; max-width:38%; aspect-ratio:1/1;
+  display:flex; align-items:center; justify-content:center;
+  border-radius:7px; background: var(--sb-card);
+  overflow:hidden;
+}
+.ps-row .ps-img{ width:100%; height:100%; object-fit:contain; }
 /* アイテム欄：メガシンカできるポケモンは mega.png を小さく表示（参考画像のもちものの位置） */
 .ps-row .ps-item{ flex:none; width:12px; height:12px; object-fit:contain; }
 
@@ -3611,8 +4139,243 @@ html,body{
 .ps-action-set{ background: linear-gradient(135deg, #4f7fff, #2f56e0); color:#fff; }
 .ps-action-write{ background: linear-gradient(135deg, #35c06a, #1f9a4f); color:#fff; }
 .ps-action-write:disabled{ opacity:.45; cursor:not-allowed; }
+.ps-action-detail{ background: linear-gradient(135deg, #ffb445, #f08a1e); color:#fff; }
 .ps-action-cancel{ background: rgba(0,0,0,0.06); color:var(--ink-soft); margin-top:4px; }
 .ps-action-hint{ margin:10px 0 0; font-size:10px; color:var(--ink-soft); font-weight:700; }
+
+/* -----------------------------------------------------------
+   パーティ詳細：1画面でパーティ6匹をまとめて見る（対戦のボックス風の一覧）
+   参考：SV「チーム確認」画面（1280x720基準の比率をそのまま vw/vh に換算）
+     ・全体は画面中央の枠（左右に約10%ずつ余白）。上の帯は中央に幅約55%
+     ・カード：幅約39%×高さ約17%（2列×3行）。ヘッダーは名前＋タイプだけの薄い帯
+     ・ヘッダーの下：左＝特性、右＝技4つ（横長バー）。右下に大きな透かし番号
+   クラス名は pdt- 接頭辞（ポケモン詳細ポップアップの .pd- と衝突しないように）
+   ----------------------------------------------------------- */
+.pdt-overlay{
+  position:fixed; inset:0; z-index:260;
+  background:
+    linear-gradient(115deg, rgba(255,255,255,0.0) 0 60%, rgba(255,226,130,0.55) 60% 100%),
+    repeating-linear-gradient(135deg, rgba(255,255,255,0.26) 0 36px, rgba(255,255,255,0) 36px 72px),
+    linear-gradient(160deg, #fff7dc 0%, #ffefbe 50%, #ffe6a4 100%);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  opacity:0; pointer-events:none;
+  transition: opacity .15s ease;
+  font-size:16px; /* 内部要素のemベースを固定し、他画面のフォント指定の影響を受けないようにする */
+}
+.pdt-overlay.show{ opacity:1; pointer-events:auto; }
+
+/* 中央の枠：参考画像と同じく画面の約82%幅・約76%高さに収める */
+.pdt-wrap{
+  position:relative; box-sizing:border-box;
+  width:min(88vw, calc(96vh * 1.72));
+  height:96vh;
+  display:flex; flex-direction:column; justify-content:center; gap:2.4vh;
+  padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+}
+
+/* ---- 上の帯：左＝パーティ名（濃い紫）／右＝プレイヤー（薄い紫）。境目は斜め ---- */
+.pdt-topbar{
+  flex:0 0 auto; position:relative; display:flex; align-items:stretch;
+  width:70%; margin:0 auto;
+  height:clamp(28px, 7.2vh, 52px);
+  border-radius:3px; overflow:hidden;
+  background:#8f82e6;
+  box-shadow: 0 2px 5px rgba(70,55,160,0.25);
+}
+.pdt-back-btn{
+  position:absolute; left:5px; top:50%; transform:translateY(-50%); z-index:3;
+  width:clamp(20px, 4.6vh, 30px); height:clamp(20px, 4.6vh, 30px);
+  border-radius:50%; border:none; cursor:pointer; padding:0;
+  background: rgba(255,255,255,0.28); color:#fff; font-weight:900; font-size:clamp(10px, 2.4vh, 15px);
+  display:flex; align-items:center; justify-content:center;
+}
+.pdt-topbar-name{
+  position:relative; z-index:1;
+  flex:0 0 52%; min-width:0; padding:0 3% 0 5%;
+  display:flex; align-items:center; justify-content:center;
+  background:#6f62c8;
+  clip-path: polygon(0 0, 100% 0, calc(100% - 3.4vh) 100%, 0 100%);
+  font-weight:700; font-size:clamp(11px, 2.8vh, 18px); color:#fff; letter-spacing:.04em;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.pdt-topbar-player{
+  position:relative; z-index:2;
+  flex:1 1 auto; min-width:0; margin-left:-3.4vh; padding:0 3% 0 5%;
+  display:flex; align-items:center; justify-content:center; gap:2.2vh;
+  background:#9587ec;
+  clip-path: polygon(3.4vh 0, 100% 0, 100% 100%, 0 100%);
+}
+.pdt-topbar-fav{
+  flex:none; width:clamp(22px, 5.2vh, 38px); height:clamp(22px, 5.2vh, 38px);
+  object-fit:contain; border-radius:50%;
+  background:#fff; box-shadow:0 0 0 2px rgba(255,255,255,0.8);
+}
+.pdt-topbar-fav.empty{ visibility:hidden; }
+.pdt-topbar-playername{
+  font-weight:700; font-size:clamp(11px, 2.8vh, 18px); color:#fff; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; letter-spacing:.03em;
+}
+
+/* ---- L/R ラベル付きタブバー：能力／ステータス切替 ---- */
+.pdt-tabbar{
+  flex:0 0 auto; display:flex; align-items:center; justify-content:center; gap:1.6%;
+  width:70%; margin:0 auto;
+}
+.pdt-tab-side{
+  flex:none; width:clamp(16px, 3.6vh, 24px); height:clamp(16px, 3.6vh, 24px);
+  border-radius:50%; background:rgba(255,255,255,0.55); color:#7a74a8;
+  display:flex; align-items:center; justify-content:center;
+  font-size:clamp(9px, 2vh, 13px); font-weight:900;
+}
+.pdt-tabs{
+  flex:1 1 auto; display:flex; border-radius:999px; overflow:hidden;
+  background:#e3ddf5; box-shadow:inset 0 0 0 1px rgba(120,106,207,0.25);
+  height:clamp(22px, 5vh, 34px);
+}
+.pdt-tab{
+  flex:1 1 0; border:none; cursor:pointer; font-family:inherit;
+  background:transparent; color:#7a74a8; font-weight:800;
+  font-size:clamp(10px, 2.4vh, 15px); letter-spacing:.04em;
+}
+.pdt-tab.active{
+  background: linear-gradient(180deg, #9fd94a, #7fc22e);
+  color:#fff; border-radius:999px;
+  box-shadow: 0 2px 5px rgba(70,110,20,0.3);
+}
+
+/* ---- カード：2列×3行（参考画像のカード比率＝幅約39%：高さ約17%）---- */
+.pdt-grid{
+  flex:0 0 auto;
+  display:grid; grid-template-columns: 1fr 1fr;
+  column-gap:3.4%; row-gap:2vh;
+  width:100%;
+}
+.pdt-card{
+  position:relative; box-sizing:border-box;
+  height:min(19.4vh, 13.6vw);
+  display:flex; flex-direction:column;
+  border-radius:4px; overflow:visible;
+  background: linear-gradient(180deg, rgba(133,120,216,0.94), rgba(120,106,207,0.94));
+  box-shadow: 0 2px 5px rgba(70,55,160,0.28), inset 0 0 0 1px rgba(255,255,255,0.32);
+}
+/* 右下の大きな透かし番号（1〜6） */
+.pdt-card-no{
+  position:absolute; right:2.2%; bottom:1%; z-index:0; pointer-events:none;
+  font-size:min(10.6vh, 7.4vw); font-weight:900; font-style:italic; line-height:1;
+  color:rgba(255,255,255,0.18);
+}
+.pdt-card.empty{ background: rgba(125,110,210,0.32); }
+.pdt-card.empty .pdt-card-no{ color:rgba(255,255,255,0.32); }
+
+/* ヘッダー：名前＋タイプだけの薄い帯（右端を斜めに切る） */
+.pdt-card-head{
+  flex:0 0 auto; position:relative; z-index:1;
+  display:flex; align-items:center; gap:1.2%;
+  height:23%; padding:0 3% 0 16%;
+}
+.pdt-card-head::before{
+  content:''; position:absolute; inset:0; z-index:-1;
+  background: linear-gradient(90deg, #6e60c9, #8072dc);
+  clip-path: polygon(0 0, calc(100% - 1.2vh) 0, 100% 100%, 0 100%);
+  border-radius:4px 0 0 0;
+}
+/* スプライトはヘッダー左に大きく飛び出させる */
+.pdt-card-img{
+  position:absolute; left:1%; top:-9%; z-index:4;
+  width:min(8vh, 5.6vw); height:min(8vh, 5.6vw);
+  object-fit:contain;
+  filter: drop-shadow(0 1px 1px rgba(40,30,110,0.5));
+}
+span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
+.pdt-card-name{
+  flex:0 1 auto; min-width:0;
+  font-weight:700; font-size:clamp(10px, 2.9vh, 19px); color:#fff; letter-spacing:.02em;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.pdt-card-mega{ flex:none; height:1.1em; width:auto; object-fit:contain; }
+.pdt-card-types{ flex:none; display:flex; align-items:center; gap:4px; margin-left:auto; }
+.pdt-type-chip{
+  flex:none; display:inline-flex; align-items:center; justify-content:center;
+  width:min(3.5vh, 2.5vw); height:min(3.5vh, 2.5vw);
+  border-radius:50%; overflow:hidden;
+  box-shadow:0 0 0 1.5px rgba(255,255,255,0.75);
+}
+.pdt-type-chip img{ width:100%; height:100%; object-fit:contain; display:block; }
+
+/* 本体：左＝特性、右＝技4つ（右半分に大きな横長バー） */
+.pdt-card-body{
+  flex:1 1 auto; min-height:0; position:relative; z-index:1;
+  display:flex; align-items:stretch;
+  padding:0.8% 2% 1.4% 0;
+}
+.pdt-card-side{
+  flex:1 1 0; min-width:0; padding:2% 0 0 16%;
+  display:flex; flex-direction:column; justify-content:flex-start;
+}
+.pdt-card-ability{
+  margin:0; font-size:clamp(9.5px, 2.4vh, 15px); font-weight:600; color:#fff; line-height:1.2;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.pdt-card-moves{
+  flex:0 0 49%; min-width:0;
+  display:flex; flex-direction:column; justify-content:space-between; gap:1.6%;
+}
+.pdt-move{
+  flex:1 1 0; min-height:0; overflow:hidden;
+  display:flex; align-items:center; gap:3%;
+  padding:0 3% 0 2.4%; border-radius:2px;
+  background: rgba(255,255,255,0.22);
+  box-shadow: inset 0 -1px 0 rgba(255,255,255,0.22);
+}
+.pdt-move-icon{ flex:none; width:min(2.9vh, 2.1vw); height:min(2.9vh, 2.1vw); max-height:86%; object-fit:contain; }
+.pdt-move-name{
+  min-width:0; font-size:clamp(9px, 2.3vh, 15px); font-weight:600; color:#fff; line-height:1.1;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+
+/* ---- ステータスタブ：カード本体に実数値＋努力値バーを2列で表示 ---- */
+.pdt-card-body.pdt-stat-body{
+  padding:1% 3% 2% 16%;
+  display:flex; flex-direction:column; justify-content:space-between; gap:1.4%;
+}
+.pdt-stat-row{
+  flex:1 1 0; min-height:0; display:flex; align-items:center; gap:2.4%;
+}
+.pdt-stat-half{
+  flex:1 1 0; min-width:0; display:flex; align-items:center; gap:1.6%;
+  overflow:hidden;
+}
+.pdt-stat-label{
+  flex:none; width:5.6em; font-size:clamp(8px, 2vh, 12.5px); font-weight:700; color:#fff;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.pdt-stat-val{
+  flex:none; width:2.4em; text-align:right; font-size:clamp(8.5px, 2.1vh, 13px); font-weight:800; color:#fff;
+}
+.pdt-stat-bar{
+  flex:1 1 auto; min-width:0; height:0.55em; border-radius:999px;
+  background:rgba(255,255,255,0.28); overflow:hidden;
+}
+.pdt-stat-bar i{
+  display:block; height:100%; border-radius:999px;
+  background:linear-gradient(90deg, #ffb347, #ff8a3d);
+}
+.pdt-stat-ev{
+  flex:none; width:2em; text-align:right; font-size:clamp(7.5px, 1.9vh, 11.5px); font-weight:700; color:rgba(255,255,255,0.85);
+}
+
+/* 縦向き（横長ではない画面）：1列に積む */
+@media (max-aspect-ratio: 1/1){
+  .pdt-wrap{ width:94vw; height:auto; max-height:98vh; overflow-y:auto; justify-content:flex-start; }
+  .pdt-topbar{ width:100%; }
+  .pdt-tabbar{ width:100%; }
+  .pdt-grid{ grid-template-columns:1fr; row-gap:10px; }
+  .pdt-card{ height:120px; }
+  .pdt-card-img{ width:56px; height:56px; }
+  .pdt-card-head{ padding-left:64px; }
+  .pdt-card-side{ padding-left:64px; }
+  .pdt-card-body.pdt-stat-body{ padding-left:64px; }
+}
 
 /* =========================================================
    NPCとバトル：モード選択（ランダム / チーム）
@@ -4191,6 +4954,24 @@ html,body{
   font-family:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent;
 }
 .tr-move:active{ transform:scale(.98); }
+
+/* ---- 技を長押しで持ち上げて並び替え（左の手持ちと同じ操作） ---- */
+/* touch-action:none：持ち上げ後にブラウザが縦スクロールとして指を横取りしてドラッグが途切れるのを防ぐ */
+#tr-moves{ position:relative; touch-action:none; }
+.tr-move{
+  -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
+  transition: transform .18s cubic-bezier(.2,.8,.3,1), box-shadow .18s ease;
+  will-change: transform;
+}
+/* 長押し成立の予告（押している間じわっと沈む）。:active の scale(.98) より深く沈める */
+.tr-move.lp-arming{ transform:scale(.95); }
+/* 持ち上げ中：指に追従（transitionは切って即追従）。枠を浮かせて影を強める */
+.tr-move.lifting{
+  z-index:20; transition: box-shadow .18s ease;
+  box-shadow:0 0 0 3px rgba(157,255,58,.85), 0 12px 20px rgba(30,20,100,.5);
+  cursor:grabbing;
+}
+#tr-moves.reordering .tr-move:not(.lifting){ opacity:.92; }
 .tr-move .tico{
   display:flex; align-items:center; justify-content:center;
   background:#9aa0b8;
@@ -4888,23 +5669,22 @@ html,body{
   .sb-party-name{ font-size:14px; padding:8px 10px; }
   .sb-party-name .pn-edit{ font-size:13px; }
   .sb-party{ gap:8px; }
-  /* 1行目：番号＋名前（1行で広く）／画像は右に大きく。名前が縦に1文字ずつ割れないようにする */
+  /* 名前は枠の左上に小さく（7文字が1行に収まる）／画像とmega.pngは右下。すべて絶対配置 */
   .sb-slot{
-    padding:4px 8px 4px 34px; gap:6px; border-radius:14px;
+    padding:4px 8px; gap:6px; border-radius:14px;
     max-height:110px;
   }
-  .sb-slot .sb-slot-idx{ left:9px; width:20px; height:20px; font-size:12px; line-height:20px; }
-  .sb-slot:not(.empty){ padding-left:34px; }
+  .sb-slot .sb-slot-idx{ left:8px; bottom:6px; width:18px; height:18px; font-size:11px; line-height:18px; }
   .sb-slot .sb-slot-name{
-    font-size:14px; line-height:1.2; letter-spacing:0;
-    /* 折り返しは単語（文字）の途中ではなく、収まらないときだけ2行 */
-    word-break:normal; overflow-wrap:anywhere;
-    -webkit-line-clamp:2;
+    left:9px; top:6px; right:6px;
+    /* 枠幅(約180〜240px)に対して7文字が余裕で収まる、控えめな大きさ */
+    font-size:12px; line-height:1.15; letter-spacing:0;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
-  /* 画像は枠の高さいっぱいまで使い、幅の上限も緩める */
-  .sb-slot .sb-slot-img{ height:86%; max-width:46%; }
+  /* 画像は右下。名前と重ならないよう、枠の高さに対して控えめに */
+  .sb-slot .sb-slot-img{ right:6px; bottom:3px; height:calc(100% - 6px); max-width:calc(100% - 92px); }
   .sb-slot.empty .sb-slot-no{ font-size:18px; }
-  /* mega.pngは画像の右下に重ねる（名前と横並びにならない）。大きめで見やすく */
+  /* mega.pngは画像の右下に重ねる。大きめで見やすく */
   .sb-slot .sb-mega{ right:6px; bottom:5px; width:26px; height:26px; }
   .sb-clear-btn{ font-size:13px; padding:9px 6px; }
 
@@ -4912,6 +5692,7 @@ html,body{
   .sb-box{ padding:12px; gap:8px; }
   .sb-box-title{ font-size:14px; padding:5px 20px; }
   .sb-box-sub{ font-size:13px; }
+  .sb-sort-select{ font-size:13px; padding:5px 28px 5px 14px; margin-left:16px; background-position:calc(100% - 15px) 55%, calc(100% - 10px) 55%; }
   /* ボックスの枠を「コンテナ」にして、その幅(cqw)から正方形セルの一辺を計算する。
      セルの高さを幅で決めるので、行の高さが潰れたり循環したりしない。
      一辺 = (枠の内側の幅 - 列間の隙間7つ - 左右の余白) / 8 */
@@ -5050,9 +5831,7 @@ html,body{
           <span class="tnb-label" id="title-name-label">トレーナー0000</span>
         </button>
         <button id="btn-title-record" class="title-settings-btn title-record-btn" type="button" aria-label="戦績記録">🏆</button>
-        <button id="btn-title-serious" class="title-settings-btn title-serious-btn" type="button" aria-label="本格バトル">
-          <img class="title-serious-icon" src="./poke_ball.png" alt="本格バトル" onerror="this.style.display='none'">
-        </button>
+        <button id="btn-title-shop" class="title-settings-btn title-shop-btn" type="button" aria-label="ショップ">🛍</button>
       </div>
       <div class="title-topbar-right">
         <button id="btn-title-pokedex" class="title-settings-btn title-pokedex-btn" type="button" aria-label="図鑑">📖</button>
@@ -5070,10 +5849,17 @@ html,body{
       <div class="title-underline"></div>
       <div class="title-menu-row">
         <button id="btn-npc-battle" class="neu-btn primary title-menu-btn" type="button">
+          <span class="tmb-icon-wrap"><img class="tmb-box-icon" src="./npc.png" alt="" onerror="this.style.display='none'"></span>
           <span class="tmb-title">NPCとバトル</span>
           <span class="tmb-sub">1人で挑戦</span>
         </button>
-        <button id="btn-player-battle" class="neu-btn title-menu-btn" type="button">
+        <button id="btn-title-serious" class="neu-btn title-menu-btn title-menu-btn-box" type="button" style="--menu-accent:#4fd67a; --menu-accent-2:#2fb85e;">
+          <span class="tmb-icon-wrap"><img class="tmb-box-icon" src="./poke_ball.png" alt="" onerror="this.style.display='none'"></span>
+          <span class="tmb-title">ボックス</span>
+          <span class="tmb-sub">手持ちを編集</span>
+        </button>
+        <button id="btn-player-battle" class="neu-btn title-menu-btn" type="button" style="--menu-accent:#ff9d5c; --menu-accent-2:#ff6b6b;">
+          <span class="tmb-icon-wrap"><img class="tmb-box-icon" src="./players.png" alt="" onerror="this.style.display='none'"></span>
           <span class="tmb-title">プレイヤーとバトル</span>
           <span class="tmb-sub">友達と対戦</span>
         </button>
@@ -5166,7 +5952,7 @@ html,body{
   <div id="screen-mp-team" class="screen">
     <div class="ps-wrap">
       <div class="ps-topbar">
-        <button id="mp-team-btn-back" class="sb-round-btn" type="button" aria-label="もどる">↩</button>
+        <button id="mp-team-btn-back" class="sb-round-btn" type="button" aria-label="もどる"><svg class="sb-back-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M15 5 L8 12 L15 19" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <div class="ps-title">つかう チームを えらんでください</div>
         <span class="ps-spacer"></span>
       </div>
@@ -5181,7 +5967,7 @@ html,body{
 
       <div class="sb-topbar">
         <div class="sb-topbar-left">
-          <button id="sb-btn-back" class="sb-round-btn" type="button" aria-label="もどる">↩</button>
+          <button id="sb-btn-back" class="sb-round-btn" type="button" aria-label="もどる"><svg class="sb-back-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M15 5 L8 12 L15 19" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         </div>
         <div class="sb-topbar-center">
           <button type="button" id="sb-topbar-title" class="sb-topbar-title sb-title-btn" aria-label="パーティを選ぶ"><span id="sb-title-text">パーティー1</span><span class="sb-title-caret">▾</span></button>
@@ -5205,7 +5991,7 @@ html,body{
         <div class="sb-box">
           <div class="sb-box-head">
             <span class="sb-box-title">ボックス</span>
-            <span class="sb-box-sub" id="sb-box-sub"></span>
+            <select id="sb-sort-select" class="sb-sort-select" aria-label="ボックスの並び替え"></select>
           </div>
           <div class="sb-box-grid" id="sb-box-grid"></div>
         </div>
@@ -5239,7 +6025,7 @@ html,body{
 
       <!-- 1. ヘッダー：アイコン・名前・タイプ -->
       <div class="tr-head">
-        <button id="tr-btn-back" class="tr-head-back" type="button" aria-label="もどる">↩</button>
+        <button id="tr-btn-back" class="tr-head-back" type="button" aria-label="もどる"><svg class="sb-back-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M15 5 L8 12 L15 19" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <img id="tr-head-icon" class="tr-head-icon" alt="">
         <div id="tr-head-name" class="tr-head-name"></div>
         <div id="tr-head-types" class="tr-head-types"></div>
@@ -5345,7 +6131,7 @@ html,body{
   <div id="screen-partysel" class="screen">
     <div class="ps-wrap">
       <div class="ps-topbar">
-        <button id="ps-btn-back" class="sb-round-btn" type="button" aria-label="もどる">↩</button>
+        <button id="ps-btn-back" class="sb-round-btn" type="button" aria-label="もどる"><svg class="sb-back-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M15 5 L8 12 L15 19" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <div class="ps-title">編成する パーティを えらんでください</div>
         <span class="ps-spacer"></span>
       </div>
@@ -5360,8 +6146,33 @@ html,body{
         <div class="ps-action-btn-col">
           <button type="button" class="ps-action-btn ps-action-set" id="ps-action-set">セット</button>
           <button type="button" class="ps-action-btn ps-action-write" id="ps-action-write">保存</button>
+          <button type="button" class="ps-action-btn ps-action-detail" id="ps-action-detail">詳細</button>
           <button type="button" class="ps-action-btn ps-action-cancel" id="ps-action-cancel">キャンセル</button>
         </div>
+      </div>
+    </div>
+
+    <!-- パーティ詳細：1画面でパーティ6匹をまとめて見る -->
+    <div class="pdt-overlay" id="pdt-overlay" role="dialog" aria-label="パーティ詳細">
+      <div class="pdt-wrap">
+        <div class="pdt-topbar">
+          <button type="button" class="pdt-back-btn" id="pdt-back-btn" aria-label="もどる">〈</button>
+          <div class="pdt-topbar-name" id="pdt-topbar-name">パーティー1</div>
+          <div class="pdt-topbar-player">
+            <img class="pdt-topbar-fav" id="pdt-topbar-fav" src="" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+            <span class="pdt-topbar-playername" id="pdt-topbar-playername"></span>
+          </div>
+        </div>
+        <div class="pdt-tabbar">
+          <span class="pdt-tab-side">←</span>
+          <div class="pdt-tabs">
+            <button type="button" class="pdt-tab active" id="pdt-tab-ability" data-pdt-tab="ability">能力</button>
+            <button type="button" class="pdt-tab" id="pdt-tab-stats" data-pdt-tab="stats">ステータス</button>
+          </div>
+          <span class="pdt-tab-side">→</span>
+        </div>
+        <div class="pdt-grid" id="pdt-grid"></div>
+        <div class="pdt-grid pdt-grid-stats" id="pdt-grid-stats" style="display:none;"></div>
       </div>
     </div>
   </div>
@@ -5388,7 +6199,7 @@ html,body{
   <div id="screen-npc-team" class="screen">
     <div class="ps-wrap">
       <div class="ps-topbar">
-        <button id="npc-team-btn-back" class="sb-round-btn" type="button" aria-label="もどる">↩</button>
+        <button id="npc-team-btn-back" class="sb-round-btn" type="button" aria-label="もどる"><svg class="sb-back-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" aria-hidden="true"><path d="M15 5 L8 12 L15 19" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <div class="ps-title">つかう チームを えらんでください</div>
         <span class="ps-spacer"></span>
       </div>
@@ -5831,6 +6642,25 @@ html,body{
       <button id="pokedex-tab-mega" class="pokedex-tab-btn" type="button" data-tab="mega">メガシンカ</button>
     </div>
     <div class="pokedex-grid" id="pokedex-grid"></div>
+  </div>
+
+  <!-- ショップ：左上のバッグアイコン🛍から開く。買ったポケモンはボックスで使えるようになる想定（機能は今後実装）。
+       テスト用に ID[410,411,486,489,557] を固定で表示し、値段はすべて disc.png × 50 固定にしている。 -->
+  <div class="shop-overlay" id="shop-overlay">
+    <div class="shop-header">
+      <button id="shop-close-btn" class="pokedex-close-btn" type="button" aria-label="とじる">×</button>
+      <div class="shop-header-title">ショップ</div>
+      <div class="shop-currency-badge" id="shop-currency-badge">
+        <img class="shop-currency-icon" src="./disc.png" alt="" onerror="this.style.display='none'">
+        <span id="shop-currency-count">-</span>
+      </div>
+    </div>
+    <div class="shop-grid" id="shop-grid"></div>
+  </div>
+
+  <!-- ショップ：ポケモンをタップした時の購入確認カード -->
+  <div class="shop-detail-overlay" id="shop-detail-overlay">
+    <div class="shop-detail-card" id="shop-detail-card"></div>
   </div>
 
   <!-- 図鑑：発見済みポケモンをタップした時の詳細画面 -->
