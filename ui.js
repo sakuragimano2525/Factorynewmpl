@@ -3986,8 +3986,12 @@ async function endBattle(playerWon) {
   }
   // タイプ縛り連勝の判定（NPCチームバトルのみ対象。対人戦・通常NPC戦は対象外で、
   // チーム戦で負けた場合や縛りが崩れた場合はそのタイプの連勝が0にリセットされる）。
+  // 判定は「組んだ手持ち6匹」(npcTeamState.source)で行う。state.playerTeamは
+  // そこから実際にバトルへ選出した3匹(NPC_PICK_COUNT)しか入っておらず、
+  // isPartyOfTypeがteam.length<6で弾いてしまうため常にfalseになっていた。
   if (!state.multiplayer && typeof TypeStreak !== 'undefined') {
-    TypeStreak.reportResult(!!npcTeamState.active, playerWon, state.playerTeam);
+    const typeStreakTeam = (npcTeamState.active && npcTeamState.source) ? npcTeamState.source : state.playerTeam;
+    TypeStreak.reportResult(!!npcTeamState.active, playerWon, typeStreakTeam);
   }
   // 乱入戦が終わったら、勝敗にかかわらず乱入状態は解除（負けた場合は連勝ごとリセットされる）
   if (state.isIntrusionBattle) {
