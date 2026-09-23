@@ -6857,7 +6857,7 @@ let pokedexTab = 'normal';
 function pokedexEntryIds() {
   // 選出プールと同じ「最終進化系 or 進化しないポケモン」のみをID順で並べる。
   // 隠しポケモンは実績未解除でも枠自体は図鑑に表示するため、専用関数を使う。
-  return getFinalSpeciesIdsForPokedex().slice().sort((a, b) => a - b);
+  return sortByPokedexOrder(getFinalSpeciesIdsForPokedex());   // 本家の図鑑番号順（並びは engine.js の POKEDEX_CUSTOM_ORDER で編集）
 }
 
 // メガシンカタブのエントリ一覧：{ speciesId, formKey } の配列。
@@ -6978,6 +6978,7 @@ function calcNpcDiscReward(battleNo) {
    ディスクはNPC戦・対人戦の勝利で加算される（DiscReward参照）。 */
 const SHOP_ITEMS = {
 	17:100,
+	1012: 100,
   410: 50,
   411: 50,
   486: 50,
@@ -7002,9 +7003,9 @@ const SHOP_ITEMS = {
 1008: 50,
 1009: 50,
 1010: 50,
-1012: 100,
 1013: 50,
   1032: 50,
+  1042:100,
 };
 
 const SHOP_DISC_STORAGE_KEY = 'pokeriere_shop_disc_v1';
@@ -7432,6 +7433,21 @@ function sbLoadSortKey() {
 function sbSaveSortKey(k) {
   try { localStorage.setItem(SB_SORT_STORAGE_KEY, k); } catch (e) { /* 保存できなくても動作は続ける */ }
 }
+// 並び替えのオプション（チェックボックス2つ）。どちらも「HP〜素早さ順」のときだけ効く（表示専用）。
+//   noEv  ：努力値なし ＝ 努力値ポイントを足さない実数値で並べる
+//   mega  ：メガを考慮する ＝ 解放済みのメガシンカ持ちは、メガ後の種族値の実数値で並べる
+const SB_SORT_OPT_STORAGE_KEY = 'pokeriere_serious_box_sort_opt_v1';
+function sbLoadSortOpt() {
+  const def = { noEv: false, mega: false };
+  try {
+    const d = JSON.parse(localStorage.getItem(SB_SORT_OPT_STORAGE_KEY) || 'null');
+    if (d && typeof d === 'object') return { noEv: !!d.noEv, mega: !!d.mega };
+  } catch (e) { /* プライベートモード等は無視 */ }
+  return def;
+}
+function sbSaveSortOpt(o) {
+  try { localStorage.setItem(SB_SORT_OPT_STORAGE_KEY, JSON.stringify({ noEv: !!o.noEv, mega: !!o.mega })); } catch (e) { /* 保存できなくても動作は続ける */ }
+}
 const SB_PARTY_COUNT = 20;   // 保存できるパーティ数（パーティ1〜20）
 const sbDefaultPartyName = (n) => `パーティ${n}`;   // n は 1 始まりの番号
 const SB_DEFAULT_PARTY_NAME = sbDefaultPartyName(1);
@@ -7446,6 +7462,7 @@ const sbState = {
   selected: null,   // 詳細パネルに表示中の個体
   built: false,
   sortKey: sbLoadSortKey(),   // 【表示専用】ボックスの並び方（no/type/hp/atk/def/spa/spd/spe）。保存される
+  sortOpt: sbLoadSortOpt(),   // 【表示専用】並び替えのオプション { noEv: 努力値なし, mega: メガを考慮する }。保存される
   megaView: false,  // 【表示専用】trueならメガシンカ可能なポケモンのステータスをメガ後の種族値で表示する（画像やデータそのものは変えない）
   // 以下は「今の手持ち」への窓口。既存の描画・並び替え・追加/外すの処理はこれまで通り
   // sbState.party / sbState.partyName を読み書きするだけでよい（実体は常に working 側）。
@@ -7546,12 +7563,12 @@ function sbLoad() {
     // 保存時のボックス番号(idx の値)で引けるよう、null を含んだまま元の並びを保持しておく
     const restored = data.box.map(sbRestorePoke);
     // ゲーム側で種族が増減しても崩れないよう「今の全種族」と突き合わせる
-    const idsNow = getFinalSpeciesIds().slice().sort((a, b) => a - b);
+    const idsNow = sortByPokedexOrder(getFinalSpeciesIds());
     const nowSet = new Set(idsNow);
     const kept = restored.filter((p) => p && nowSet.has(p.speciesId));   // 削除された種族は除外
     const have = new Set(kept.map((p) => p.speciesId));
     const added = idsNow.filter((id) => !have.has(id)).map((id) => sbCreateDefaultPokemon(id)); // 新種族は追加
-    sbState.box = kept.concat(added).sort((a, b) => a.speciesId - b.speciesId);
+    sbState.box = sbSortBoxByDexOrder(kept.concat(added));   // 図鑑と同じ並び
     // 保存されたボックス番号の並び → 個体の配列（欠けた個体・重複・6匹超過は除く）
     const toMembers = (idxList) => (Array.isArray(idxList) ? idxList : [])
       .map((i) => restored[i])
@@ -7676,12 +7693,23 @@ function sbRecalcStats(p) {
   p.currentHp = p.stats.hp;
 }
 
+// ボックスの個体配列を図鑑と同じ順（POKEDEX_CUSTOM_ORDER）に並べ替えた新しい配列を返す。
+// 同じ種族IDが複数あっても元の順序を保つ（安定ソート）。
+function sbSortBoxByDexOrder(pokes) {
+  const order = sortByPokedexOrder(pokes.map((p) => p.speciesId));
+  const rank = new Map();
+  order.forEach((id, i) => { if (!rank.has(id)) rank.set(id, i); });
+  return pokes.map((p, i) => ({ p, i }))
+    .sort((a, b) => (rank.get(a.p.speciesId) - rank.get(b.p.speciesId)) || (a.i - b.i))
+    .map((o) => o.p);
+}
+
 function sbBuildBox() {
   if (sbState.built) return;
   if (sbLoad()) return;   // 前回の編成があればそれを復元（ボックスの技も前回のまま）
   // 選出・図鑑と同じ「普通に選ばれるポケモン」全員（getFinalSpeciesIds：ボス専用は除外済み）。
   // メガ形態は種族データに存在しないため、メガ前の通常の姿だけが入る。
-  const ids = getFinalSpeciesIds().slice().sort((a, b) => a - b);
+  const ids = sortByPokedexOrder(getFinalSpeciesIds());   // 図鑑と同じ並び（engine.js の POKEDEX_CUSTOM_ORDER）
   sbState.box = ids.map((id) => sbCreateDefaultPokemon(id));
   sbInitParties();
   sbState.selected = null;
@@ -7697,7 +7725,7 @@ function sbEnsureSpeciesInBox(speciesId) {
   if (!sbState.built) return; // 未構築なら次回のsbBuildBoxで自動的に含まれる
   if (sbState.box.some((p) => p && p.speciesId === speciesId)) return; // 既にある
   sbState.box.push(sbCreateDefaultPokemon(speciesId));
-  sbState.box.sort((a, b) => a.speciesId - b.speciesId);
+  sbState.box = sbSortBoxByDexOrder(sbState.box);   // 図鑑と同じ並び
   sbSave();
 }
 
@@ -7755,26 +7783,61 @@ function sbRenderParty() {
 
 // 現在の並び方での「ボックス番号(sbState.box の添字)」の並び。
 // 同じ値のときは番号(図鑑順)の小さい方を先にする＝どの並び方でも結果が毎回同じになる。
+// 鍵付き（ショップ未購入）のポケモンは、どの並び方でも一番下にまとめて並べる。
 // HP〜素早さは、努力値ポイントを含めた実数値（p.stats）で、値の大きい順。
+//   ・「努力値なし」ON：努力値ポイントを足さない実数値（性格・個体値・レベルは反映）で並べる
+//   ・「メガを考慮する」ON：解放済みのメガシンカ持ちは、メガ後の種族値で計算した実数値で並べる
+//     （未解放のメガはネタバレ防止のため対象外＝メガ前の実数値のまま。X/Yがある種族は選択中のフォーム）
 // タイプ順は type1 のID（TYPE_ID：bug=1 … shine=20）の小さい順。
+// 【表示専用】p 自体は一切書き換えない。
+function sbSortStatValue(p, key) {
+  const opt = sbState.sortOpt || {};
+  const noEv = !!opt.noEv;
+  // 基準にする種族値：メガ考慮ONかつ解放済みメガ持ちならメガ後、それ以外は通常の種族値
+  let base = p.species.baseStats[key];
+  if (opt.mega && sbMegaVisible(p)) {
+    const md = getMegaEvolutionDataForSpeciesId(p.speciesId, p.megaForm);
+    if (md && md.baseStats && md.baseStats[key] != null) base = md.baseStats[key];
+  }
+  if (!noEv) {
+    // 努力値あり：通常は p.stats そのまま（計算結果と表示が必ず一致する）。メガ考慮時だけ計算し直す。
+    if (base === p.species.baseStats[key]) return (p.stats && p.stats[key]) || 0;
+    const pts = p.evPoints || {};
+    const nm = key === 'hp' ? 1 : natureMultiplier(p.nature, key);
+    const bonus = Math.max(0, Math.min(SB_EV_MAX, pts[key] || 0));
+    return calcStat(base, p.iv, 0, p.level, key === 'hp', nm) + bonus;
+  }
+  // 努力値なし：ポイントを足さない実数値
+  const nm = key === 'hp' ? 1 : natureMultiplier(p.nature, key);
+  return calcStat(base, p.iv, 0, p.level, key === 'hp', nm);
+}
 function sbBoxOrder() {
   const box = sbState.box;
   const order = box.map((_, i) => i);
   const key = sbState.sortKey;
-  if (key === 'no') return order;   // 番号順（sbState.box そのものの並び）
-  const val = (i) => {
-    const p = box[i];
-    if (key === 'type') {
-      const id = TYPE_ID[p.species.type1];
-      return id === undefined ? 999 : id;
-    }
-    return (p.stats && p.stats[key]) || 0;
-  };
-  return order.sort((a, b) => {
-    const va = val(a), vb = val(b);
-    if (va !== vb) return key === 'type' ? va - vb : vb - va;   // タイプ=小さい順／能力=大きい順
-    return a - b;
-  });
+  let sorted;
+  if (key === 'no') {
+    sorted = order;   // 番号順（sbState.box そのものの並び）
+  } else {
+    const val = (i) => {
+      const p = box[i];
+      if (key === 'type') {
+        const id = TYPE_ID[p.species.type1];
+        return id === undefined ? 999 : id;
+      }
+      return sbSortStatValue(p, key);
+    };
+    sorted = order.sort((a, b) => {
+      const va = val(a), vb = val(b);
+      if (va !== vb) return key === 'type' ? va - vb : vb - va;   // タイプ=小さい順／能力=大きい順
+      return a - b;
+    });
+  }
+  // 鍵付き（ショップ未購入）は、どの並び方でも一番下へまとめる。
+  // ロック同士は、選んだ並び方（番号順なら図鑑順）のまま下に並ぶ。購入すると本来の位置へ戻る。
+  const unlocked = [], locked = [];
+  sorted.forEach((i) => { (sbIsLocked(box[i]) ? locked : unlocked).push(i); });
+  return unlocked.concat(locked);
 }
 
 function sbRenderBox() {
@@ -7790,7 +7853,7 @@ function sbRenderBox() {
   // 並びが前回と同じなら何もしない（努力値を変えた直後などは stats が変わるので、並びの署名で判定する）。
   {
     const order = sbBoxOrder();
-    const sig = sbState.sortKey + ':' + order.join(',');
+    const sig = sbState.sortKey + ':' + (sbState.sortOpt.noEv ? 1 : 0) + (sbState.sortOpt.mega ? 1 : 0) + ':' + order.join(',');
     if (grid.dataset.orderSig !== sig) {
       const byIdx = new Map();
       Array.from(grid.children).forEach((c) => byIdx.set(parseInt(c.dataset.boxIdx, 10), c));
@@ -7828,6 +7891,20 @@ function sbRenderBox() {
   // 「300匹」の表示は廃止。ヘッダーには並び替えセレクトを出す。
   const sel = $('sb-sort-select');
   if (sel && sel.value !== sbState.sortKey) sel.value = sbState.sortKey;
+  sbRenderSortOpts();
+}
+// 並び替えオプション（努力値なし／メガを考慮する）のチェック状態を反映する。
+// 番号順・タイプ順では意味がないので、そのときは薄くして押せなくする（チェックの状態自体は保持する）。
+function sbRenderSortOpts() {
+  const isStat = SB_STAT_KEYS.includes(sbState.sortKey);
+  [['sb-sort-noev', 'noEv'], ['sb-sort-mega', 'mega']].forEach(([id, k]) => {
+    const cb = $(id);
+    if (!cb) return;
+    cb.checked = !!sbState.sortOpt[k];
+    cb.disabled = !isStat;
+    const lb = cb.closest('label');
+    if (lb) lb.classList.toggle('disabled', !isStat);
+  });
 }
 // ショップで購入した直後など、ボックスを開き直さなくてもロック表示だけ即座に更新するための関数。
 function sbRefreshLockState() {
@@ -7839,6 +7916,9 @@ function sbRefreshLockState() {
     const p = sbState.box[i];
     cells[ci].classList.toggle('locked', sbIsLocked(p));
   }
+  // 購入でロックが外れたら、鍵付きは一番下という並びも即座に反映する
+  // （並びが同じなら sbRenderBox 側で何もしない。スクロール位置は並びが変わった時だけ先頭へ戻る）
+  sbRenderBox();
 }
 
 // 並び替えセレクト：選択肢を作り、変更されたら並び方を保存して再描画する
@@ -7854,6 +7934,17 @@ function sbRefreshLockState() {
     sbSaveSortKey(k);
     sbRenderBox();
   });
+  // チェックボックス：努力値なし／メガを考慮する（変えたら保存して並べ直す）
+  [['sb-sort-noev', 'noEv'], ['sb-sort-mega', 'mega']].forEach(([id, k]) => {
+    const cb = $(id);
+    if (!cb) return;
+    cb.addEventListener('change', () => {
+      sbState.sortOpt[k] = cb.checked;
+      sbSaveSortOpt(sbState.sortOpt);
+      sbRenderBox();
+    });
+  });
+  sbRenderSortOpts();
 })();
 
 // タップはグリッドに1つだけ付ける（イベント委譲）
@@ -9181,17 +9272,40 @@ function trAbilityListHtml() {
   const list = (trTarget && Array.isArray(trTarget.species.abilities) && trTarget.species.abilities.length)
     ? trTarget.species.abilities
     : (trTarget ? [trAbilityDraft] : []);
-  return list.map((abId) => {
+  const normalHtml = list.map((abId) => {
     const desc = (GAME_DATA && GAME_DATA.abilityDesc && GAME_DATA.abilityDesc[abId]) || '';
     return `<button type="button" class="tr-asel-item" data-ability="${abId}">
       <span class="an">${abilityJp(abId)}</span>${desc ? `<span class="ad">${desc}</span>` : ''}
     </button>`;
   }).join('');
+  return normalHtml + trMegaAbilitySectionHtml();
+}
+
+// 特性選択の下に出す「--メガシンカ後--」セクション。
+// ・メガシンカできる種族で、かつ解放済みのものだけ表示する（sbMegaVisible が解放判定を兼ねる。
+//   乱入ボス系の未解放メガは、特性名でネタバレしないよう一切出さない）。
+// ・X/Y両方のメガを持つ種族（リザードン・ライチュウ）は、トレーニング画面で選んでいる方
+//   （trMegaFormDraft）の特性を出す。
+// ・これは「見るだけ」の表示。選択できるボタンにはしない（メガ後の特性は変身時に自動で決まり、
+//   trAbilityDraft／保存内容には一切影響しない）。
+function trMegaAbilitySectionHtml() {
+  if (!trTarget || !sbMegaVisible(trTarget)) return '';
+  const mega = getMegaEvolutionDataForSpeciesId(trTarget.speciesId, trMegaFormDraft);
+  if (!mega || mega.ability == null) return '';
+  const desc = (GAME_DATA && GAME_DATA.abilityDesc && GAME_DATA.abilityDesc[mega.ability])
+    || abilityDescById(mega.ability) || '';
+  // X/Yがある種族は、どちらのフォームの特性か分かるよう見出しに添える
+  const formTag = hasMultiMegaForms(trTarget) && trMegaFormDraft
+    ? `<span class="tr-asel-megaform ${trMegaFormDraft === 'Y' ? 'y' : 'x'}">${trMegaFormDraft}</span>` : '';
+  return `<div class="tr-asel-megahead"><span>メガシンカ後</span>${formTag}</div>
+    <div class="tr-asel-item tr-asel-megaitem" aria-label="メガシンカ後の特性（表示のみ）">
+      <span class="an">${abilityJp(mega.ability)}</span>${desc ? `<span class="ad">${desc}</span>` : ''}
+    </div>`;
 }
 
 function trUpdateAbilityListSelection() {
   const cur = trAbilityDraft;
-  $('tr-asel-list').querySelectorAll('.tr-asel-item').forEach((el) => {
+  $('tr-asel-list').querySelectorAll('.tr-asel-item[data-ability]').forEach((el) => {
     el.classList.toggle('selected', parseInt(el.dataset.ability, 10) === cur);
   });
 }
@@ -9236,7 +9350,7 @@ $('tr-btn-megaview').addEventListener('click', () => {
 $('tr-asel-close').addEventListener('click', closeAbilitySelect);
 $('tr-ability-overlay').addEventListener('click', (e) => {
   if (e.target === $('tr-ability-overlay')) closeAbilitySelect();
-  const item = e.target.closest('.tr-asel-item');
+  const item = e.target.closest('.tr-asel-item[data-ability]');
   if (item) trChooseAbility(parseInt(item.dataset.ability, 10));
 });
 

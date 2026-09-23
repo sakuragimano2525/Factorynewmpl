@@ -3903,7 +3903,7 @@ html,body{
   background: linear-gradient(180deg, rgba(255,255,255,0.55), rgba(255,255,255,0.32));
   box-shadow: 0 6px 16px rgba(70,55,160,0.22), inset 0 0 0 2px rgba(255,255,255,0.6);
 }
-.sb-box-head{ flex:0 0 auto; display:flex; align-items:center; gap:8px; }
+.sb-box-head{ flex:0 0 auto; display:flex; align-items:center; flex-wrap:wrap; gap:4px 8px; }   /* チェックボックスが増えたので、狭い幅では折り返す */
 .sb-box-title{
   padding:3px 14px; border-radius:999px; color:#fff; font-size:11px; font-weight:900;
   background: linear-gradient(180deg, var(--sb-mid), var(--sb-deep));
@@ -3920,6 +3920,18 @@ html,body{
   background-size:4px 4px, 4px 4px; background-repeat:no-repeat;
 }
 .sb-sort-select:focus{ border-color:var(--sb-mid); }
+/* 並び替えオプション（努力値なし／メガを考慮する）：セレクトの右に並べる小さなチェックボックス */
+.sb-sort-chk{
+  display:inline-flex; align-items:center; gap:4px; flex:0 0 auto;
+  font-size:10px; font-weight:800; color:var(--sb-ink-soft); cursor:pointer;
+  white-space:nowrap; user-select:none; -webkit-user-select:none;
+}
+.sb-sort-chk input{
+  width:13px; height:13px; margin:0; cursor:pointer;
+  accent-color:var(--sb-mid);
+}
+.sb-sort-chk.disabled{ opacity:.4; cursor:not-allowed; }
+.sb-sort-chk.disabled input{ cursor:not-allowed; }
 .sb-box-grid{
   flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden;
   display:grid; grid-template-columns: repeat(auto-fill, minmax(max(48px, calc((100% - 7 * 6px) / 8)), 1fr));
@@ -5321,6 +5333,35 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
 .tr-asel-item.selected .an{ color:#2c5c00; }
 .tr-asel-item.selected .ad{ color:#3d6b00; }
 .tr-asel-item:active{ transform:scale(.98); }
+
+/* ---- 「--メガシンカ後--」セクション（表示専用。選択はできない） ----
+   ・見出しは左右に罫線を引いた「-- メガシンカ後 --」風。X/Yがある種族は右に小さくX/Yの札を添える。
+   ・項目は通常の特性ボタンと同じ形だが、選べないのでタップの反応（縮み）は付けず、色も少し落ち着けて
+     「これは選択肢ではなく参考表示」と一目で分かるようにする。 */
+.tr-asel-megahead{
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  margin-top:4px;
+  font-size:11.5px; font-weight:900; letter-spacing:.14em; color:#ffd86a;
+}
+.tr-asel-megahead::before, .tr-asel-megahead::after{
+  content:''; flex:1 1 auto; height:2px; border-radius:2px;
+  background:linear-gradient(90deg, rgba(255,216,106,0), rgba(255,216,106,.85));
+}
+.tr-asel-megahead::after{ background:linear-gradient(270deg, rgba(255,216,106,0), rgba(255,216,106,.85)); }
+.tr-asel-megaform{
+  display:inline-block; padding:0 6px; border-radius:6px;
+  color:#fff; font-size:11px; font-weight:900; letter-spacing:0;
+}
+.tr-asel-megaform.x{ background:linear-gradient(135deg,#4f9dff,#2f6ae0); }
+.tr-asel-megaform.y{ background:linear-gradient(135deg,#ff5a5a,#e02f2f); }
+.tr-asel-megaitem{
+  cursor:default;
+  background:linear-gradient(180deg,#fff6d6,#ffe9a8);
+  box-shadow:0 0 0 2px rgba(255,216,106,.85);
+}
+.tr-asel-megaitem .an{ color:#8a5a00; }
+.tr-asel-megaitem .ad{ color:#8c6a1f; }
+.tr-asel-megaitem:active{ transform:none; }
 .tr-asel-close{
   align-self:center; margin-top:2px;
   padding:6px 26px; border-radius:999px; border:none; cursor:pointer;
@@ -5629,6 +5670,10 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
   .tr-nsel-colhead, .tr-nsel-rowhead{ font-size:9.5px; padding:4px 2px; gap:2px; }
   .tr-nsel-colhead svg, .tr-nsel-rowhead svg{ width:11px; height:11px; }
   .tr-nsel-title, .tr-asel-title{ font-size:11.5px; }
+  .tr-asel-card{ max-height:calc(100% - 4px); gap:6px; padding:10px 14px 12px; }
+  .tr-asel-list{ overflow-y:auto; min-height:0; gap:5px; -webkit-overflow-scrolling:touch; }
+  .tr-asel-item{ padding:6px 12px; }
+  .tr-asel-megahead{ font-size:10.5px; margin-top:2px; }
 }
 
 @media (max-height: 460px){
@@ -5693,6 +5738,8 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
   .sb-box-title{ font-size:14px; padding:5px 20px; }
   .sb-box-sub{ font-size:13px; }
   .sb-sort-select{ font-size:13px; padding:5px 28px 5px 14px; margin-left:16px; background-position:calc(100% - 15px) 55%, calc(100% - 10px) 55%; }
+  .sb-sort-chk{ font-size:13px; gap:6px; }
+  .sb-sort-chk input{ width:17px; height:17px; }
   /* ボックスの枠を「コンテナ」にして、その幅(cqw)から正方形セルの一辺を計算する。
      セルの高さを幅で決めるので、行の高さが潰れたり循環したりしない。
      一辺 = (枠の内側の幅 - 列間の隙間7つ - 左右の余白) / 8 */
@@ -5992,6 +6039,8 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
           <div class="sb-box-head">
             <span class="sb-box-title">ボックス</span>
             <select id="sb-sort-select" class="sb-sort-select" aria-label="ボックスの並び替え"></select>
+            <label class="sb-sort-chk"><input type="checkbox" id="sb-sort-noev"><span>努力値なし</span></label>
+            <label class="sb-sort-chk"><input type="checkbox" id="sb-sort-mega"><span>メガを考慮する</span></label>
           </div>
           <div class="sb-box-grid" id="sb-box-grid"></div>
         </div>
