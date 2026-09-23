@@ -16,10 +16,10 @@
   const ACHIEVEMENTS = [
     { id: 'first_win',       title: 'はじめての勝利', desc: 'NPCバトルで初めて勝利する',        card: 'card1.png'  },
     { id: 'win_streak_5',    title: '疾風怒濤',          desc: 'NPCバトルで5連勝を達成する',       card: 'card2.png'  },
-    { id: 'win_streak_10',        title: '風林火山',       desc: '10連勝目に登場するボスを倒す',     card: 'card3.png'  },
+    { id: 'win_streak_11',        title: '風林火山',       desc: '10連勝目に登場するボスを倒す',     card: 'card3.png'  },
     { id: 'win_streak_15',   title: '百戦錬磨',         desc: 'NPCバトルで15連勝を達成する',      card: 'card4.png'  },
     { id: 'win_streak_team_5', title: 'チーム5連勝',  desc: 'チームバトルで5連勝を達成する',    card: 'card16.png' },
-{ id: 'win_streak_team_10', title: 'Oracle',  desc: 'チームバトルでボスを倒す',    card: 'card17.png' },
+{ id: 'win_streak_team_11', title: 'Oracle',  desc: 'チームバトルでボスを倒す',    card: 'card17.png' },
     { id: 'mega_first',      title: 'メガシンカ',     desc: 'はじめてメガシンカを発動する',     card: 'card5.png'  },
     { id: 'pvp_first_win',   title: '対人戦初勝利',   desc: 'プレイヤーとのバトルで勝利する',   card: 'card6.png'  },
     { id: 'pokedex_50',      title: '図鑑ビギナー',      desc: '図鑑に50匹のポケモンを登録する',   card: 'card7.png'  },
@@ -161,7 +161,7 @@
         const best = Math.max(MaxWinStreak.getOff(), MaxWinStreak.getOn());
         if (best >= 1)  unlock('first_win');
         if (best >= 5)  unlock('win_streak_5');
-        if (best >= 10) unlock('win_streak_10');
+        if (best >= 11) unlock('win_streak_11');
         if (best >= 15) unlock('win_streak_15');
       }
       if (typeof MaxWinStreak !== 'undefined' && typeof MaxWinStreak.getTeam === 'function') {
@@ -205,8 +205,8 @@ if (megaCount >= 80) unlock('mega_pokedex_80');
         const entries = BattleHistory.get();
         if (entries.some((e) => e.mode === 'pvp' && e.win)) unlock('pvp_first_win');
         // 10の倍数の連勝 = ボス戦勝利
-        if (entries.some((e) => e.mode === 'npc' && e.win && e.streak && e.streak % 10 === 0)) {
-          unlock('win_streak_10');
+        if (entries.some((e) => e.mode === 'npc' && e.win && e.streak && e.streak % 11 === 0)) {
+          unlock('win_streak_11');
         }
       }
     } catch (e) {}
