@@ -375,6 +375,7 @@ const POKEDEX_CUSTOM_ORDER = [
   102, // No.319 サメハダー
   48, // No.323 バクーダ
   42, // No.324 コータス
+  1044,
   165, // No.326 ブーピッグ
   390, // No.330 フライゴン
   344, // No.334 チルタリス
@@ -413,6 +414,7 @@ const POKEDEX_CUSTOM_ORDER = [
   145, // No.464 ドサイドン
   453, // No.466 エレキブル
   46, // No.468 トゲキッス
+  1045,
   435, // No.470 リーフィア
   436, // No.471 グレイシア
   139, // No.472 グライオン
@@ -493,18 +495,21 @@ const POKEDEX_CUSTOM_ORDER = [
   125, // No.713 クレベース
   322, // No.715 オンバーン
   1042,
+  1043,
   528, // No.730 アシレーヌ
   1021, // No.740 ケケンカニ
   592, // No.745 ルガルガン
   593, // No.745 ルガルガン
   1012, // No.746 ヨワシ
   549, // No.768 グソクムシャ
+  1046,
   458, // No.832 バイウールー
   179, // No.834 カジリガメ
   115, // No.849 ストリンダー
   116, // No.849 ストリンダー
   169, // No.863 ニャイキング
   52, // Gマタドガス
+  1047,
   68, // No.869 マホイップ
   189, // No.870 タイレーツ
   590, // No.873 モスノウ
@@ -530,10 +535,12 @@ const POKEDEX_CUSTOM_ORDER = [
 1034, // ムラノサヤ
 601, // ホンタイアメ
   602, // キャンリング
+  1048,
 1000, // テンノチシキ
 251, // ティアラブカ
   598, // クマフィア
   600, // アルタオーロ
+  1049,
 1033, // センノガハラ
 1001, // フレカリス
 1032, // トウリュウガ
@@ -541,6 +548,7 @@ const POKEDEX_CUSTOM_ORDER = [
 596, // メイデナー
 1007, // ムルルイン
 1035, // ゴキブリュレ
+1050,
   17, // クシャムシャ
   254, // プラナイト
   255, // プラレイド
@@ -986,7 +994,7 @@ const MEGA_EVOLUTION_DATA = {
 15: {
     type1: 'bug', type2: 'poison',
     ability: 68,
-    baseStats: { hp: 40, atk: 265, def: 40, spa: 0, spd: 80, spe: 152 },
+    baseStats: { hp: 40, atk: 165, def: 40, spa: 0, spd: 80, spe: 152 },
   },
 468: { // メガフシギバナ
     type1: 'grass', type2: 'poison',
@@ -1492,7 +1500,7 @@ const MEGA_EVOLUTION_DATA = {
   },
   1038 : {
     type1: 'ghost', type2: 'psychic',
-    ability: 25,
+    ability: 121,
     baseStats: { hp: 95, atk: 94, def: 95, spa: 80, spd: 100, spe: 116 },
   },
    1039: {
@@ -2023,6 +2031,8 @@ const ABILITY = {
   RANDOM_ACT: 150,    // ランダムアクト（オリジナル）：物理技の威力1.2倍／ターン終了時に自分の技が全てランダムに変化する
   IZANAI: 151,        // いざない（オリジナル）：相手から攻撃を受けた時、相手は2ターン後にねむりになる
   MEGA_SOLAR: 152,    // メガソーラー（本家メガメガニウム）：自分が攻撃する間だけ「ひでり」と同じ効果を受ける（実際の天候は変わらない）
+  HAGANE_TSUKAI: 153, // はがねつかい（オリジナル）：鋼技の威力1.2倍
+  UMI_NO_RUNE: 154,   // うみのルーン（オリジナル）：水技の威力1.2倍
 };
 
 const KIKENYOCHI_ABILITIES = [ABILITY.KIKIKAIHI, ABILITY.KIKENYOCHI_2];
@@ -2682,6 +2692,18 @@ function calcDamage(attacker, defender, move, logFn) {
       if (logFn) logFn(`${attacker.species.name}の${abilityJp(attacker.ability)}が発動！威力が${Math.floor(move.power * 1.2)}相当になった！`);
     }
   }
+  if (attacker.ability === ABILITY.HAGANE_TSUKAI && move.type === 'steel') {
+    if (!gasActive || gasImmune(attacker)) {
+      dmg = Math.floor(dmg * 1.2);
+      if (logFn) logFn(`${attacker.species.name}の${abilityJp(attacker.ability)}が発動！威力が${Math.floor(move.power * 1.2)}相当になった！`);
+    }
+  }
+  if (attacker.ability === ABILITY.UMI_NO_RUNE && move.type === 'water') {
+    if (!gasActive || gasImmune(attacker)) {
+      dmg = Math.floor(dmg * 1.2);
+      if (logFn) logFn(`${attacker.species.name}の${abilityJp(attacker.ability)}が発動！威力が${Math.floor(move.power * 1.2)}相当になった！`);
+    }
+  }
   if (attacker.ability === ABILITY.TECHNICIAN && move.power <= 60) {
     if (!gasActive || gasImmune(attacker)) {
       dmg = Math.floor(dmg * 1.5);
@@ -3118,7 +3140,9 @@ function effectiveAbilityId(poke) {
 }
 
 // ---- かげぬい：「相手は逃げられなくなる」 ----
+// ランチャーアーム（id 330）も同じ「相手は逃げられなくなる」効果を持つ。
 const KAGENUI_MOVE_ID = 507;
+const SHADOW_TRAP_MOVE_IDS = [KAGENUI_MOVE_ID, 330];
 
 // 指定ポケモンが「逃げられない（交代できない）」状態かどうか。
 // バインド中と、かげぬいで縫い止められている間は交代不可。
@@ -4354,9 +4378,9 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     logFn(`フィールドが破壊された！`);
   }
 
-  // ---- かげぬい：命中してもなお相手が場に残っていれば、逃げられなくする ----
+  // ---- かげぬい／ランチャーアーム：命中してもなお相手が場に残っていれば、逃げられなくする ----
   // ちからずく持ちでは追加効果として扱い、発動しない（ガス中は特性が無効なので通常どおり発動）。
-  if (move.id === KAGENUI_MOVE_ID && !defender.fainted && !suppressSecondary) {
+  if (SHADOW_TRAP_MOVE_IDS.includes(move.id) && !defender.fainted && !suppressSecondary) {
     applyShadowTrap(defender, logFn, attacker);
   }
 

@@ -3963,6 +3963,15 @@ html,body{
   filter: drop-shadow(0 1px 1px rgba(40,30,110,0.35));
 }
 
+/* パーティ枠：現在使えない特性・技を持ったままの個体（本来は選出できないが、
+   後からデータ変更で無効化されたケースの救済表示）に警告バッジを出す */
+.sb-slot.sb-slot-invalid{ box-shadow: inset 0 0 0 2px rgba(255,60,60,0.85), 0 2px 8px rgba(50,35,140,0.3); }
+.sb-slot .sb-slot-warn{
+  position:absolute; left:2px; top:2px; z-index:3;
+  font-size:11px; line-height:1; pointer-events:none;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.5));
+}
+
 /* ショップ未購入：ボックスではロック表示（見た目は真っ黒なシルエット＋鍵アイコン、タップ操作は無効） */
 .sb-cell.locked{ cursor:default; }
 .sb-cell.locked img{ filter: brightness(0); opacity:0.55; }
@@ -4024,6 +4033,9 @@ html,body{
   background:rgba(255,255,255,0.14); font-size:10.5px; font-weight:800;
 }
 .sb-d-ability .lb{ flex:none; padding:1px 7px; border-radius:999px; background:var(--sb-mid); font-size:9.5px; font-weight:900; }
+/* 削除・変更された特性/技を持ったままの表示（❌）。目立つ赤で警告する */
+.sb-d-ability.sb-invalid{ background:rgba(255,70,70,0.28); box-shadow:inset 0 0 0 1px rgba(255,90,90,0.6); }
+.sb-d-ability.sb-invalid span:not(.lb){ color:#ffb3b3; }
 
 .sb-stats{ display:flex; flex-direction:column; gap:2px; }
 .sb-stat{ display:grid; grid-template-columns: 62px 26px minmax(0,1fr) 20px; align-items:center; gap:5px; font-size:10px; font-weight:800; }
@@ -4047,6 +4059,8 @@ html,body{
 .sb-move .mi{ flex:none; width:18px; height:18px; object-fit:contain; }
 .sb-move .mn{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sb-move .pp{ flex:none; margin-left:0; padding:1px 6px; border-radius:999px; background:rgba(0,0,0,0.3); font-size:10px; font-weight:900; }
+.sb-move.sb-invalid{ background:rgba(255,70,70,0.28); box-shadow:inset 0 0 0 1px rgba(255,90,90,0.6); }
+.sb-move.sb-invalid .mn{ color:#ffb3b3; }
 
 .sb-d-actions{ margin-top:auto; display:flex; justify-content:center; gap:6px; padding-top:2px; }
 .sb-train-btn{
@@ -4966,6 +4980,9 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
   font-family:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent;
 }
 .tr-move:active{ transform:scale(.98); }
+/* 削除・変更された技を持ったままの表示（❌）。目立つ赤で警告する */
+.tr-move.sb-invalid{ background:linear-gradient(180deg,#fff,#ffd6d6); box-shadow:inset 0 0 0 1.5px rgba(220,40,40,.55), 0 2px 4px rgba(50,40,130,.22); }
+.tr-move.sb-invalid .mn{ color:#d02a2a; }
 
 /* ---- 技を長押しで持ち上げて並び替え（左の手持ちと同じ操作） ---- */
 /* touch-action:none：持ち上げ後にブラウザが縦スクロールとして指を横取りしてドラッグが途切れるのを防ぐ */
@@ -5023,6 +5040,8 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
   text-align:center; line-height:1.15;
 }
 .tr-pill.small{ font-size:11.5px; letter-spacing:.03em; }
+/* 削除・変更された特性を持ったままの表示（❌）。目立つ赤で警告する */
+.tr-pill.sb-invalid{ background:linear-gradient(180deg,#fff,#ffd6d6); color:#d02a2a; box-shadow:inset 0 0 0 1.5px rgba(220,40,40,.55), 0 2px 5px rgba(50,40,130,.25); }
 
 /* メガ先（X/Y）切替行：普段は非表示、X/Y両方あるポケモンの時だけ .show で現れる */
 .tr-megaform-row{
@@ -5557,6 +5576,107 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
   .tr-msel-ok, .tr-msel-close{ padding:7px 24px; font-size:14px; }
 }
 
+
+/* =========================================================
+   ボックスのタイプ絞り込み
+   ・ヘッダーのボタン：未設定は「タイプ絞込」、設定中は選んだタイプのアイコン＋名前で強調
+   ・該当外のマス（.tf-dim）はグレーにして下へ寄せ、タップ不可（詳細を開く/パーティに入れる操作は無効）
+   ========================================================= */
+.sb-type-filter-btn{
+  display:inline-flex; align-items:center; gap:5px; flex:0 0 auto;
+  margin-left:2px; padding:3px 12px 3px 8px; border-radius:999px; cursor:pointer;
+  font-family:inherit; font-size:10px; font-weight:800; color:var(--sb-ink-soft);
+  background:rgba(255,255,255,0.75); border:1.5px solid rgba(120,100,220,0.35);
+  white-space:nowrap;
+}
+.sb-type-filter-btn:active{ transform:scale(0.96); }
+.sb-type-filter-btn .sb-tf-ico{ display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; }
+.sb-type-filter-btn .sb-tf-ico img{ width:100%; height:100%; object-fit:contain; display:block; }
+/* 絞り込み中：ボタン自体を目立たせ、解除し忘れに気づけるようにする */
+.sb-type-filter-btn.active{
+  color:#fff; border-color:transparent;
+  background:linear-gradient(180deg, var(--sb-mid), var(--sb-deep));
+  box-shadow:0 0 0 2px rgba(157,255,58,0.55), 0 2px 6px rgba(70,55,160,0.3);
+}
+.sb-type-filter-btn.active .sb-tf-ico{ background:#fff; border-radius:50%; padding:1px; }
+
+/* 該当外：グレーアウトして最下部へ。詳細も開けない（見た目でも「押せない」と分かるようにする） */
+.sb-cell.tf-dim{ cursor:default; box-shadow:0 1px 3px rgba(50,35,140,0.12); }
+.sb-cell.tf-dim img.sb-cell-img,
+.sb-cell.tf-dim span.sb-cell-img{ filter:grayscale(1) brightness(0.9); opacity:0.42; }
+.sb-cell.tf-dim{ background:#e6e6ee; }
+.sb-cell.tf-dim .sb-mega{ opacity:0.4; filter:grayscale(1); }
+.sb-cell.tf-dim.in-party::after{ opacity:0.5; }
+
+/* ---- タイプ選択ポップアップ ---- */
+.sb-tf-overlay{
+  position:absolute; inset:0; z-index:35;
+  display:none; align-items:center; justify-content:center;
+  padding:8px;
+  background:rgba(20,14,54,.6);
+  backdrop-filter:blur(1.5px);
+}
+.sb-tf-overlay.show{ display:flex; }
+.sb-tf-card{
+  width:100%; max-width:560px; max-height:100%;
+  display:flex; flex-direction:column; gap:10px;
+  padding:14px 16px 14px;
+  border-radius:20px;
+  background:linear-gradient(180deg,#39307e,#2a2463);
+  box-shadow:0 10px 30px rgba(0,0,0,.5), 0 0 0 2px #6a5ce0;
+  color:#fff;
+}
+.sb-tf-title{
+  flex:0 0 auto; text-align:center; font-size:14px; font-weight:900; letter-spacing:.08em; color:#f0edff;
+  padding-bottom:6px; border-bottom:1.5px solid rgba(255,255,255,.16);
+}
+.sb-tf-grid{
+  flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain;
+  display:grid; grid-template-columns:repeat(5, minmax(0,1fr)); gap:7px;
+  padding:2px;
+}
+.sb-tf-item{
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  min-height:54px; padding:6px 2px; border:none; border-radius:14px; cursor:pointer;
+  font-family:inherit; font-size:10.5px; font-weight:900; color:#3a32b8; letter-spacing:.02em;
+  background:linear-gradient(180deg,#fff,#e9e5ff);
+  box-shadow:0 2px 0 rgba(0,0,0,.18);
+  -webkit-tap-highlight-color:transparent;
+}
+.sb-tf-item img{ width:26px; height:26px; object-fit:contain; display:block; }
+.sb-tf-item:active{ transform:scale(.95); }
+.sb-tf-item.selected{
+  background:linear-gradient(180deg,#c8f24a,#9edb1e); color:#264f00;
+  box-shadow:0 0 0 2.5px #fff, 0 0 12px 3px rgba(190,255,60,.7);
+}
+.sb-tf-foot{ flex:0 0 auto; display:flex; align-items:center; justify-content:center; gap:12px; padding-top:2px; }
+.sb-tf-clear, .sb-tf-close{
+  min-width:100px; padding:8px 22px; border-radius:999px; border:none; cursor:pointer;
+  font-family:inherit; font-size:13px; font-weight:900; letter-spacing:.08em;
+  box-shadow:0 3px 8px rgba(0,0,0,.3);
+}
+.sb-tf-close{ color:#3a32b8; background:#fff; }
+.sb-tf-clear{ color:#fff; background:linear-gradient(180deg,#f0708a,#d8425f); }
+.sb-tf-clear:disabled{ opacity:.4; cursor:default; }
+.sb-tf-clear:active, .sb-tf-close:active{ transform:scale(.97); }
+@media (max-height: 460px){
+  .sb-tf-card{ padding:8px 12px 10px; gap:6px; max-width:520px; }
+  .sb-tf-title{ font-size:12.5px; padding-bottom:3px; }
+  .sb-tf-grid{ gap:5px; grid-template-columns:repeat(10, minmax(0,1fr)); }   /* 横長の低い画面は10列×2行で1画面に収める */
+  .sb-tf-item{ min-height:44px; font-size:9px; border-radius:11px; padding:4px 1px; }
+  .sb-tf-item img{ width:20px; height:20px; }
+  .sb-tf-clear, .sb-tf-close{ padding:6px 18px; font-size:12px; }
+  .sb-type-filter-btn{ font-size:9.5px; padding:2px 10px 2px 7px; }
+}
+@media (min-width: 900px) and (min-height: 500px){
+  .sb-type-filter-btn{ font-size:13px; padding:5px 16px 5px 10px; gap:6px; }
+  .sb-type-filter-btn .sb-tf-ico{ width:20px; height:20px; }
+  .sb-tf-card{ max-width:640px; padding:18px 22px; }
+  .sb-tf-grid{ gap:10px; }
+  .sb-tf-item{ min-height:72px; font-size:13px; }
+  .sb-tf-item img{ width:34px; height:34px; }
+}
+
 /* =========================================================
    型の保存/ロード（ボックス画面の「保存/ロード」）
    ・6スロットを縦に並べる。空き＝「保存」／埋まり＝「ロード」「上書き」「削除」
@@ -6041,6 +6161,10 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
             <select id="sb-sort-select" class="sb-sort-select" aria-label="ボックスの並び替え"></select>
             <label class="sb-sort-chk"><input type="checkbox" id="sb-sort-noev"><span>努力値なし</span></label>
             <label class="sb-sort-chk"><input type="checkbox" id="sb-sort-mega"><span>メガを考慮する</span></label>
+            <button type="button" id="sb-type-filter-btn" class="sb-type-filter-btn" aria-label="タイプで絞り込む" aria-haspopup="dialog">
+              <span class="sb-tf-ico" id="sb-type-filter-ico"></span>
+              <span class="sb-tf-label" id="sb-type-filter-label">タイプ絞込</span>
+            </button>
           </div>
           <div class="sb-box-grid" id="sb-box-grid"></div>
         </div>
@@ -6048,6 +6172,18 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
         <!-- 右：詳細パネル -->
         <div class="sb-detail" id="sb-detail"></div>
 
+      </div>
+    </div>
+
+    <!-- タイプ絞り込み：むし〜シャインの20タイプから1つ選ぶ。選んだタイプを持つポケモンだけボックスの上に来て、残りはグレーで下へ。解除するまで固定 -->
+    <div class="sb-tf-overlay" id="sb-tf-overlay" role="dialog" aria-label="タイプで絞り込む">
+      <div class="sb-tf-card">
+        <div class="sb-tf-title">タイプで絞り込み</div>
+        <div class="sb-tf-grid" id="sb-tf-grid"></div>
+        <div class="sb-tf-foot">
+          <button type="button" class="sb-tf-clear" id="sb-tf-clear">解除</button>
+          <button type="button" class="sb-tf-close" id="sb-tf-close">とじる</button>
+        </div>
       </div>
     </div>
 

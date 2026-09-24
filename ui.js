@@ -2113,7 +2113,7 @@ function playTypeEffect(side, moveType, big) {
 // 専用のフルスクリーン演出。スプライト枠に縛られず戦闘画面全体（battle-field）を使う。
 // パワージェム(312)・ジェムレーザー(315)・グラベルブレス(317)・ステルスロック(318)は全画面ではなく「自分→相手」へ飛翔する演出のため、被弾側(defSide)を渡して
 // 攻撃側スプライト→防御側スプライトの座標をTypeFX側で実測する。
-const SPECIAL_MOVE_FX_IDS = [292,300,113,103,218,227,7,24,25,28,284,348,203,222,61,124,32,33,37,173,112,75,76,72,138,123,63,66,153,156,157,353,355,354,253,254,273,277,374,93,480, 483, 132,13,18,233,332,484, 53, 73, 79, 117,172,235, 236, 237, 312, 315, 317, 318];
+const SPECIAL_MOVE_FX_IDS = [198,43,333,334,335,338,139,292,300,113,103,218,227,7,24,25,28,284,348,203,222,61,124,32,33,37,173,112,75,76,72,138,123,63,66,153,156,157,353,355,354,253,254,273,277,374,93,480, 483, 132,13,18,233,332,484, 53, 73, 79, 117,172,235, 236, 237, 312, 315, 317, 318];
 function playSpecialMoveEffect(moveId, defSide) {
   const wrap = $('special-fx-layer');
   if (!wrap || !window.TypeFX || !window.TypeFX.playSpecial) return Promise.resolve();
@@ -2799,6 +2799,8 @@ const ABILITY_DESC_BY_ID = {
 19: 'じめんタイプのわざをうけない',
 72: 'サウンドタイプの技の威力が1.2倍になる',
 73: 'シャインタイプの技の威力が1.2倍になる',
+153: 'はがねタイプの技の威力が1.2倍になる',
+154: 'みずタイプの技の威力が1.2倍になる',
 80: 'ノーマルの技がこおりになる（威力1.2倍）',
 81: 'ノーマルの技がでんきになる（威力1.2倍）',
 82: 'ノーマルの技がドラゴンになる（威力1.2倍）',
@@ -3244,6 +3246,28 @@ function askConfirm(text) {
     };
     yesBtn.onclick = () => { cleanup(); resolve(true); };
     noBtn.onclick = () => { cleanup(); resolve(false); };
+  });
+}
+
+// 「はい」ボタンだけの単純な通知モーダル（既存の確認ダイアログを流用）。
+// 選出ブロックなど、Yes/Noの選択肢が不要な警告表示に使う。
+function askAlert(text) {
+  return new Promise((resolve) => {
+    $('confirm-text').textContent = text;
+    $('confirm-overlay').classList.add('show');
+    const yesBtn = $('confirm-yes');
+    const noBtn = $('confirm-no');
+    const prevNoDisplay = noBtn.style.display;
+    noBtn.style.display = 'none';
+    yesBtn.textContent = 'OK';
+    const cleanup = () => {
+      $('confirm-overlay').classList.remove('show');
+      yesBtn.onclick = null;
+      noBtn.onclick = null;
+      noBtn.style.display = prevNoDisplay;
+      yesBtn.textContent = 'はい';
+    };
+    yesBtn.onclick = () => { cleanup(); resolve(true); };
   });
 }
 
@@ -5013,6 +5037,13 @@ $('mp-team-scroller').addEventListener('click', async (e) => {
   // 選出は「6匹の中から3匹」なので、6匹そろっていないパーティーは使えない
   if (members.length < 6) {
     mpTeamToast(members.length === 0 ? `${pt.name}は 保存されていません` : `${pt.name}は ${members.length}匹しかいません（6匹必要です）`);
+    return;
+  }
+  // 現在使えない特性・技（❌表示）を持ったポケモンが1匹でもいると、直すまでこのパーティーは使えない
+  const invalidOnes = members.filter((p) => sbHasInvalidLoadout(p));
+  if (invalidOnes.length > 0) {
+    const names = invalidOnes.map((p) => p.species.name).join('、');
+    mpTeamToast(`${pt.name}：${names}が 現在使えない特性・技のままです`);
     return;
   }
   const ok = await askConfirm(`${pt.name}を つかいますか？`);
@@ -7006,6 +7037,15 @@ const SHOP_ITEMS = {
 1013: 50,
   1032: 50,
   1042:100,
+  1043:100,
+1044:50,
+1045:50,
+1046:50,
+1047:50,
+1048:100,
+1049:100,
+1050:100,
+
 };
 
 const SHOP_DISC_STORAGE_KEY = 'pokeriere_shop_disc_v1';
@@ -7448,6 +7488,25 @@ function sbLoadSortOpt() {
 function sbSaveSortOpt(o) {
   try { localStorage.setItem(SB_SORT_OPT_STORAGE_KEY, JSON.stringify({ noEv: !!o.noEv, mega: !!o.mega })); } catch (e) { /* 保存できなくても動作は続ける */ }
 }
+// タイプ絞り込み（表示専用）。選んだタイプ（1〜20：TYPE_IDの値）を type1/type2 のどちらかに持つポケモンだけをボックスの上に出し、
+// それ以外はグレーにして下へ寄せる。「解除」するまでずっと固定（保存される）。null=絞り込みなし。
+// sbState.box 自体（保存・パーティ復元の基準）は一切変えない。
+const SB_TYPE_FILTER_STORAGE_KEY = 'pokeriere_serious_box_type_filter_v1';
+// ポップアップに並べるタイプ（むし=1 … シャイン=20。TYPE_ID の並びそのまま）
+const SB_TYPE_FILTER_KEYS = Object.keys(TYPE_ID).sort((a, b) => TYPE_ID[a] - TYPE_ID[b]);
+function sbLoadTypeFilter() {
+  try {
+    const k = localStorage.getItem(SB_TYPE_FILTER_STORAGE_KEY);
+    if (k && SB_TYPE_FILTER_KEYS.includes(k)) return k;   // 未知のタイプ（データ変更後の古い値）は無視して解除扱い
+  } catch (e) { /* プライベートモード等は無視 */ }
+  return null;
+}
+function sbSaveTypeFilter(k) {
+  try {
+    if (k) localStorage.setItem(SB_TYPE_FILTER_STORAGE_KEY, k);
+    else localStorage.removeItem(SB_TYPE_FILTER_STORAGE_KEY);
+  } catch (e) { /* 保存できなくても動作は続ける */ }
+}
 const SB_PARTY_COUNT = 20;   // 保存できるパーティ数（パーティ1〜20）
 const sbDefaultPartyName = (n) => `パーティ${n}`;   // n は 1 始まりの番号
 const SB_DEFAULT_PARTY_NAME = sbDefaultPartyName(1);
@@ -7463,6 +7522,7 @@ const sbState = {
   built: false,
   sortKey: sbLoadSortKey(),   // 【表示専用】ボックスの並び方（no/type/hp/atk/def/spa/spd/spe）。保存される
   sortOpt: sbLoadSortOpt(),   // 【表示専用】並び替えのオプション { noEv: 努力値なし, mega: メガを考慮する }。保存される
+  typeFilter: sbLoadTypeFilter(),   // 【表示専用】タイプ絞り込み（タイプ名 'fire' 等 / null=なし）。解除するまで保存される
   megaView: false,  // 【表示専用】trueならメガシンカ可能なポケモンのステータスをメガ後の種族値で表示する（画像やデータそのものは変えない）
   // 以下は「今の手持ち」への窓口。既存の描画・並び替え・追加/外すの処理はこれまで通り
   // sbState.party / sbState.partyName を読み書きするだけでよい（実体は常に working 側）。
@@ -7661,6 +7721,44 @@ function sbMegaBadgeHtml(p) {
 function sbIsLocked(p) {
   return !!(p && typeof Shop !== 'undefined' && !Shop.isOwned(p.speciesId));
 }
+
+/* ---------------------------------------------------------
+   バランス調整等でゲームデータ側から削除・変更された特性/技を
+   持ったままの個体を検出する（「❌」表示・選出ブロック用）。
+   ・特性：その種族の現在の species.abilities に含まれていなければ無効
+   ・技　：現在そのポケモンが覚えられる技ID一覧（levelUpMoveIds）に無ければ無効
+   保存データ由来の個体を上書きせず「持たせたまま無効と分かるようにする」ための判定であり、
+   sbRestorePoke のような自動置き換えは行わない。
+   --------------------------------------------------------- */
+function sbIsAbilityInvalid(p) {
+  if (!p || !p.species) return false;
+  const list = p.species.abilities;
+  if (!Array.isArray(list) || list.length === 0) return false; // 種族データ側にリストが無ければ判定不能=有効扱い
+  return !list.includes(p.ability);
+}
+function sbIsMoveInvalid(p, move) {
+  if (!p || !p.species || !move) return false;
+  const validIds = levelUpMoveIds(p.species);
+  return !validIds.includes(move.id);
+}
+// そのポケモンが「特性か技のどれか1つでも」無効を抱えているか（選出ブロックの判定に使う）
+function sbHasInvalidLoadout(p) {
+  if (!p) return false;
+  if (sbIsAbilityInvalid(p)) return true;
+  return (p.moves || []).some((m) => m && sbIsMoveInvalid(p, m));
+}
+// 表示用：無効なら「❌」を前置した名前を返す
+function sbAbilityLabel(p, abilityId) {
+  const name = abilityJp(abilityId);
+  if (p && p.species && Array.isArray(p.species.abilities) && p.species.abilities.length && !p.species.abilities.includes(abilityId)) {
+    return `❌${name}`;
+  }
+  return name;
+}
+function sbMoveLabel(p, move) {
+  if (!move) return '';
+  return sbIsMoveInvalid(p, move) ? `❌${move.name}` : move.name;
+}
 // ロック中のマスに重ねる鍵アイコン（画像が無ければCSSの疑似要素（🔒）だけで見せる）。
 function sbLockOverlayHtml() {
   return '<div class="sb-lock-overlay"><img class="sb-lock-icon" src="./lock.png" alt="" onerror="this.style.display=\'none\';this.parentElement.classList.add(\'no-icon\')"></div>';
@@ -7764,12 +7862,15 @@ function sbRenderParty() {
       slots.push(`<div class="sb-slot empty" data-empty-idx="${i}"><span class="sb-slot-no">${i + 1}</span></div>`);
     } else {
       const sel = sbState.selected === p ? ' selected' : '';
+      const warn = sbHasInvalidLoadout(p) ? ' sb-slot-invalid' : '';
+      const warnBadge = sbHasInvalidLoadout(p) ? '<span class="sb-slot-warn" title="現在使えない特性・技があります">❌</span>' : '';
       // 名前は左上、画像は右、mega.pngは右下（小さめ）。左上の番号は並び順の目印。
-      slots.push(`<div class="sb-slot${sel}" data-party-idx="${i}">
+      slots.push(`<div class="sb-slot${sel}${warn}" data-party-idx="${i}">
         <span class="sb-slot-idx">${i + 1}</span>
         <span class="sb-slot-name">${p.species.name}</span>
         ${sbSpriteHtml(p, 'sb-slot-img')}
         ${sbMegaBadgeHtml(p)}
+        ${warnBadge}
       </div>`);
     }
   }
@@ -7811,6 +7912,14 @@ function sbSortStatValue(p, key) {
   const nm = key === 'hp' ? 1 : natureMultiplier(p.nature, key);
   return calcStat(base, p.iv, 0, p.level, key === 'hp', nm);
 }
+// 絞り込み中のタイプに該当するか（通常時のタイプ1・2のどちらか。メガ後のタイプは見ない＝ボックスのマスの姿と一致させる）。
+// 絞り込みなしなら全員 true。
+function sbTypeMatches(p) {
+  const f = sbState.typeFilter;
+  if (!f) return true;
+  if (!p || !p.species) return false;
+  return p.species.type1 === f || p.species.type2 === f;
+}
 function sbBoxOrder() {
   const box = sbState.box;
   const order = box.map((_, i) => i);
@@ -7833,11 +7942,17 @@ function sbBoxOrder() {
       return a - b;
     });
   }
-  // 鍵付き（ショップ未購入）は、どの並び方でも一番下へまとめる。
-  // ロック同士は、選んだ並び方（番号順なら図鑑順）のまま下に並ぶ。購入すると本来の位置へ戻る。
-  const unlocked = [], locked = [];
-  sorted.forEach((i) => { (sbIsLocked(box[i]) ? locked : unlocked).push(i); });
-  return unlocked.concat(locked);
+  // 並びの優先度（上から）：①絞り込みに該当する購入済み → ②該当しない購入済み（グレー）→ ③鍵付き（ショップ未購入）
+  // どのグループの中も、選んだ並び方（番号順なら図鑑順）はそのまま保つ。絞り込みを解除すると本来の並びへ戻る。
+  // 鍵付きは絞り込みに関係なく常に一番下（購入済みが必ず先に来る）。
+  const hit = [], dim = [], locked = [];
+  sorted.forEach((i) => {
+    const p = box[i];
+    if (sbIsLocked(p)) locked.push(i);
+    else if (sbTypeMatches(p)) hit.push(i);
+    else dim.push(i);
+  });
+  return hit.concat(dim, locked);
 }
 
 function sbRenderBox() {
@@ -7853,7 +7968,7 @@ function sbRenderBox() {
   // 並びが前回と同じなら何もしない（努力値を変えた直後などは stats が変わるので、並びの署名で判定する）。
   {
     const order = sbBoxOrder();
-    const sig = sbState.sortKey + ':' + (sbState.sortOpt.noEv ? 1 : 0) + (sbState.sortOpt.mega ? 1 : 0) + ':' + order.join(',');
+    const sig = sbState.sortKey + ':' + (sbState.sortOpt.noEv ? 1 : 0) + (sbState.sortOpt.mega ? 1 : 0) + ':' + (sbState.typeFilter || '-') + ':' + order.join(',');
     if (grid.dataset.orderSig !== sig) {
       const byIdx = new Map();
       Array.from(grid.children).forEach((c) => byIdx.set(parseInt(c.dataset.boxIdx, 10), c));
@@ -7873,6 +7988,8 @@ function sbRenderBox() {
     cells[ci].classList.toggle('selected', sbState.selected === p);
     cells[ci].classList.toggle('in-party', sbState.party.includes(p));
     cells[ci].classList.toggle('locked', sbIsLocked(p));
+    // 絞り込みに該当しない購入済みのマスはグレーにする（鍵付きは従来の黒いシルエット表示のままで、二重に灰色にしない）
+    cells[ci].classList.toggle('tf-dim', !sbIsLocked(p) && !sbTypeMatches(p));
     // 色違いが切り替わったマスだけ画像を差し替える（300匹ぶんを作り直さない）。
     // 画像パスはマスに覚えさせておき、現在の姿と違うときだけ更新する。
     const want = spritePath(p);
@@ -7892,6 +8009,23 @@ function sbRenderBox() {
   const sel = $('sb-sort-select');
   if (sel && sel.value !== sbState.sortKey) sel.value = sbState.sortKey;
   sbRenderSortOpts();
+  sbRenderTypeFilterBtn();
+}
+// タイプ絞り込みボタンの見た目を現在の状態に合わせる（設定中はタイプのアイコン＋名前で強調、未設定は「タイプ絞込」）
+function sbRenderTypeFilterBtn() {
+  const btn = $('sb-type-filter-btn');
+  if (!btn) return;
+  const f = sbState.typeFilter;
+  const ico = $('sb-type-filter-ico');
+  const label = $('sb-type-filter-label');
+  btn.classList.toggle('active', !!f);
+  if (f) {
+    ico.innerHTML = `<img src="./type${TYPE_ID[f]}.png" alt="" onerror="this.style.display='none'">`;
+    label.textContent = typeJp(f);
+  } else {
+    ico.innerHTML = '';
+    label.textContent = 'タイプ絞込';
+  }
 }
 // 並び替えオプション（努力値なし／メガを考慮する）のチェック状態を反映する。
 // 番号順・タイプ順では意味がないので、そのときは薄くして押せなくする（チェックの状態自体は保持する）。
@@ -7947,12 +8081,57 @@ function sbRefreshLockState() {
   sbRenderSortOpts();
 })();
 
+// タイプ絞り込みポップアップ：20タイプのボタンを作り、選択／解除／とじる を処理する。
+// 選んだら即座に反映して保存（ポップアップは開いたまま＝続けて別タイプを試せる。とじるで閉じる）。
+// 同じタイプをもう一度押すと解除。
+(function sbSetupTypeFilter() {
+  const btn = $('sb-type-filter-btn');
+  const overlay = $('sb-tf-overlay');
+  const grid = $('sb-tf-grid');
+  const clearBtn = $('sb-tf-clear');
+  const closeBtn = $('sb-tf-close');
+  if (!btn || !overlay || !grid) return;
+
+  grid.innerHTML = SB_TYPE_FILTER_KEYS.map((k) =>
+    `<button type="button" class="sb-tf-item" data-tf="${k}"><img src="./type${TYPE_ID[k]}.png" alt="" onerror="this.style.display='none'"><span>${typeJp(k)}</span></button>`
+  ).join('');
+
+  const refresh = () => {
+    Array.from(grid.children).forEach((c) => c.classList.toggle('selected', c.dataset.tf === sbState.typeFilter));
+    clearBtn.disabled = !sbState.typeFilter;
+  };
+  const apply = (k) => {
+    sbState.typeFilter = k || null;
+    sbSaveTypeFilter(sbState.typeFilter);
+    // 絞り込みを変えたら、いま見ている個体が該当外になっても詳細は残す（パーティ編成の確認を邪魔しない）。
+    // ボックスだけ並べ直して先頭へ戻す（sbRenderBox が署名の変化を検知してスクロールを先頭に戻す）。
+    sbRenderBox();
+    refresh();
+  };
+  const open = () => { refresh(); overlay.classList.add('show'); };
+  const close = () => overlay.classList.remove('show');
+
+  btn.addEventListener('click', open);
+  closeBtn.addEventListener('click', close);
+  clearBtn.addEventListener('click', () => apply(null));
+  grid.addEventListener('click', (e) => {
+    const it = e.target.closest('[data-tf]');
+    if (!it) return;
+    apply(sbState.typeFilter === it.dataset.tf ? null : it.dataset.tf);   // 同じタイプをもう一度＝解除
+  });
+  // 枠の外（暗い背景）をタップしても閉じる
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  sbRenderTypeFilterBtn();
+})();
+
 // タップはグリッドに1つだけ付ける（イベント委譲）
 $('sb-box-grid').addEventListener('click', (e) => {
   const cell = e.target.closest('[data-box-idx]');
   if (!cell) return;
   const p = sbState.box[parseInt(cell.dataset.boxIdx, 10)];
   if (sbIsLocked(p)) return; // 未購入：触れても何も起きない
+  // タイプ絞り込みに該当しないマスも触れても何も起きない（ただし既にパーティにいる個体は、外せなくならないよう操作を許す）
+  if (!sbTypeMatches(p) && !sbState.party.includes(p)) return;
   sbOnBoxTap(p);
 });
 
@@ -7967,6 +8146,11 @@ function sbOnBoxTap(p) {
     sbState.selected = p;
   } else if (sbState.selected === p) {
     // 2回目のタップ：パーティに追加
+    // バランス調整等で削除・変更された特性/技を持ったままだと、直すまで選出できない
+    if (sbHasInvalidLoadout(p)) {
+      askAlert('現在使えない特性・技（❌表示）を覚えたままです。トレーニング画面で直してから パーティに加えてください。');
+      return;
+    }
     const empty = sbFirstEmptySlot();   // 空いている最初の枠へ入れる（途中に空きがあればそこ）
     if (empty >= 0) {
       while (sbState.party.length < empty) sbState.party.push(null);   // 穴あき配列にならないよう null で埋める
@@ -8224,9 +8408,9 @@ function sbRenderDetail() {
     return `<div class="sb-stat${natCls}"><span class="k">${ico}<span class="kt">${label}</span></span><span class="v">${v}</span><span class="bar"><i style="width:${pct}%"></i></span><span class="ev">${ev}</span></div>`;
   }).join('');
   const moves = p.moves.slice(0, 4).map((m) => `
-    <div class="sb-move">
+    <div class="sb-move${sbIsMoveInvalid(p, m) ? ' sb-invalid' : ''}">
       ${typeIconHtml(m.type).replace('move-row-type-icon', 'mi')}
-      <span class="mn">${m.name}</span>
+      <span class="mn">${sbMoveLabel(p, m)}</span>
       <span class="pp">PP ${m.maxPp}</span>
     </div>`).join('');
   // X/Y両方のメガシンカを持つポケモンは、選んである方を名前の頭に小さく添える（対戦中の表記と同じ「Xリザードン」形式）
@@ -8248,7 +8432,7 @@ function sbRenderDetail() {
       </div>
       ${shinyBtn}
     </div>
-    <div class="sb-d-ability"><span class="lb">特性</span><span>${abilityJp(viewAbility)}</span></div>
+    <div class="sb-d-ability${(!megaPreview && sbIsAbilityInvalid(p)) ? ' sb-invalid' : ''}"><span class="lb">特性</span><span>${megaPreview ? abilityJp(viewAbility) : sbAbilityLabel(p, viewAbility)}</span></div>
     <div class="sb-stats">${stats}</div>
     <div class="sb-moves">${moves}</div>
     <div class="sb-d-actions">
@@ -8429,6 +8613,13 @@ $('npc-team-scroller').addEventListener('click', async (e) => {
     npcTeamToast(members.length === 0 ? `${pt.name}は 保存されていません` : `${pt.name}は ${members.length}匹しかいません（6匹必要です）`);
     return;
   }
+  // 現在使えない特性・技（❌表示）を持ったポケモンが1匹でもいると、直すまでこのパーティーは使えない
+  const invalidOnes = members.filter((p) => sbHasInvalidLoadout(p));
+  if (invalidOnes.length > 0) {
+    const names = invalidOnes.map((p) => p.species.name).join('、');
+    npcTeamToast(`${pt.name}：${names}が 現在使えない特性・技のままです`);
+    return;
+  }
   const ok = await askConfirm(`${pt.name}を つかいますか？`);
   if (!ok) return;
   const initial = debugPendingBossSkipWinStreak;
@@ -8555,7 +8746,16 @@ $('np-list').addEventListener('click', (e) => {
 $('np-btn-ok').addEventListener('click', () => {
   if (npcTeamState.picks.length !== NPC_PICK_COUNT) return;
   // 選んだ順に並べて手持ちにする（並び替え画面は挟まず、そのままバトルへ）
-  state.playerTeam = npcTeamState.picks.map((i) => npcTeamState.source[i]);
+  const team = npcTeamState.picks.map((i) => npcTeamState.source[i]);
+  // 二重の安全策：ここまで来る前に startNpcTeamRun 側でブロックしているはずだが、
+  // 万一すり抜けても現在使えない特性・技のままではバトルへ進めない
+  const invalidOnes = team.filter((p) => sbHasInvalidLoadout(p));
+  if (invalidOnes.length > 0) {
+    const names = invalidOnes.map((p) => p.species.name).join('、');
+    npcTeamToast(`${names}が 現在使えない特性・技のままです`);
+    return;
+  }
+  state.playerTeam = team;
   startNextCpuBattle();
 });
 
@@ -9005,10 +9205,11 @@ function trRenderMovesAndTraits(p) {
     // 威力・命中は戦闘中の技メニューと同じ書式（威力:xx　命中:xx）。変化技や必中は「-」
     const power = (m.power === null || m.power === undefined) ? '-' : m.power;
     const acc = (m.accuracy === null || m.accuracy === undefined || m.accuracy >= 999) ? '-' : m.accuracy;
-    return `<button type="button" class="tr-move" data-slot="${slot}">
+    const invalid = sbIsMoveInvalid(p, m);
+    return `<button type="button" class="tr-move${invalid ? ' sb-invalid' : ''}" data-slot="${slot}">
       <span class="tico" style="background:${color}">${ic}</span>
       <span class="mbody">
-        <span class="mtop"><span class="mn">${m.name}</span><span class="pp">${m.maxPp}</span></span>
+        <span class="mtop"><span class="mn">${sbMoveLabel(p, m)}</span><span class="pp">${m.maxPp}</span></span>
         <span class="mdet">威力:${power}\u3000命中:${acc}</span>
       </span>
     </button>`;
@@ -9028,7 +9229,9 @@ function trRenderNaturePill() {
   $('tr-nature').textContent = trNatureText(trNatureDraft);
 }
 function trRenderAbilityPill() {
-  $('tr-ability').textContent = abilityJp(trAbilityDraft);
+  const el = $('tr-ability');
+  el.textContent = sbAbilityLabel(trTarget, trAbilityDraft);
+  el.classList.toggle('sb-invalid', !!(trTarget && sbIsAbilityInvalid({ species: trTarget.species, ability: trAbilityDraft })));
 }
 // メガ先（X/Y）の行：X/Y両方のメガシンカを持つポケモン（リザードン・ライチュウ等）だけ表示する。
 // ここで選んだ方に、対戦中このポケモンがメガシンカする時のフォームが固定される。
