@@ -8719,7 +8719,25 @@ function npcPickRender() {
   $('np-btn-ok').classList.toggle('show', n === NPC_PICK_COUNT);
 }
 
+// 直前のバトルでメガシンカしたポケモンが、選出画面にメガ姿のまま出てこないよう戻す。
+// npcTeamState.source は state.playerTeam と同じオブジェクト参照を共有しているため、
+// バトル中の megaEvolve() がそのままここにも影響してしまう。実際のメガ解除（ステータス再計算含む）
+// は resetPokeForBattle と同じロジックのため、それを流用する。
+function demegaNpcPickSource() {
+  npcTeamState.source.forEach((p) => {
+    if (p.isMega && p.megaOriginalSpecies) {
+      p.species = p.megaOriginalSpecies;
+      p.ability = p.megaOriginalAbility;
+      recalcMegaStats(p, p.species.baseStats);
+    }
+    p.isMega = false;
+    p.megaOriginalSpecies = null;
+    p.megaOriginalAbility = null;
+  });
+}
+
 function openNpcPick() {
+  demegaNpcPickSource();
   npcPickRender();
   showScreen('npc-pick');
 }
