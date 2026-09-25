@@ -1018,602 +1018,1497 @@ function updateAineechuForm(poke, logFn) {
 // { forms: { X: {...}, Y: {...} } } の形で2つのフォームデータを持たせる。
 // フォームの決定は選出時点（createRandomPokemon）で50/50抽選して確定する。
 const MEGA_EVOLUTION_DATA = {
-  12: {
-    type1: 'bug', type2: 'fighting',
-    ability: 115,
-    baseStats: { hp: 80, atk: 185, def: 115, spa: 40, spd: 105, spe: 75 },
-  },
-18: {
-    type1: 'normal', type2: 'flying',
-    ability: 69,
-    baseStats: { hp: 80, atk: 80, def: 80, spa: 145, spd: 80, spe: 121 },
-  },
-34: {
-    type1: 'fighting', type2: 'psychic',
-    ability: 25,
-    baseStats: { hp: 60, atk: 100, def: 85, spa: 80, spd: 85, spe: 100 },
-  },
-41: {
-    type1: 'dark', type2: 'shine',
-    ability: 125,
-    baseStats: { hp: 65, atk: 160, def: 60, spa: 85, spd: 70, spe: 125 },
-  },
-43: {
-    type1: 'steel', type2: 'flying',
-    ability: 45,
-    baseStats: { hp: 100, atk: 140, def: 110, spa: 40, spd: 100, spe: 110 },
-  },
-48: {
-    type1: 'fire', type2: 'ground',
-    ability: 66,
-    baseStats: { hp: 100, atk: 145, def: 100, spa: 145, spd: 105, spe: 20 },
-  },
-56: {
-    type1: 'fire', type2: 'dark',
-    ability: 96,
-    baseStats: { hp: 100, atk: 100, def: 100, spa: 150, spd: 100, spe: 115 },
-  },
-60: {
-    type1: 'water', type2: 'dark',
-    ability: 75,
-    baseStats: { hp: 100, atk: 155, def: 109, spa: 60, spd: 130, spe: 91 },
-  },
-15: {
-    type1: 'bug', type2: 'poison',
-    ability: 68,
-    baseStats: { hp: 40, atk: 165, def: 40, spa: 0, spd: 80, spe: 152 },
-  },
-1054: {
-    type1: 'bug', type2: 'ground',
-    ability: 124,
-    baseStats: { hp: 70, atk: 145, def: 85, spa: 20, spd: 105, spe: 125 },
-  },
-   1057: {
-    type1: 'steel', type2: 'electric',
-    ability: 155,
-    baseStats: { hp: 80, atk: 30, def: 83, spa: 220, spd: 86, spe: 151 },
-  },
-468: { // メガフシギバナ
-    type1: 'grass', type2: 'poison',
-    ability: 33,
-    baseStats: { hp: 80, atk: 130, def: 123, spa: 132, spd: 120, spe: 80 },
-  },
-  471: { // メガカメックス
-    type1: 'water', type2: null,
-    ability: 88,
-    baseStats: { hp: 79, atk: 103, def: 120, spa: 145, spd: 115, spe: 78 },
-  },
-  204: { // メガピクシー
-    type1: 'fairy', type2: 'flying',
-    ability: 125,
-    baseStats: { hp: 95, atk: 80, def: 113, spa: 135, spd: 120, spe: 70 },
-  },
-  100: { // メガフーディン
-    type1: 'psychic', type2: null,
-    ability: 76,
-    baseStats: { hp: 55, atk: 50, def: 75, spa: 175, spd: 105, spe: 150 },
-  },
-  451: { // メガヤドラン
-    type1: 'water', type2: 'psychic',
-    ability: 4,
-    baseStats: { hp: 95, atk: 75, def: 180, spa: 130, spd: 80, spe: 30 },
-  },
-  228: { // メガゲンガー
-    type1: 'ghost', type2: 'poison',
-    ability: 121,
-    baseStats: { hp: 60, atk: 65, def: 80, spa: 170, spd: 95, spe: 130 },
-  },
-  188: { // メガガルーラ
-    type1: 'normal', type2: null,
-    ability: 139,
-    baseStats: { hp: 105, atk: 140, def: 100, spa: 60, spd: 100, spe: 100 },
-  },
-  73: { // メガスターミー
-    type1: 'water', type2: 'psychic',
-    ability: 25,
-    baseStats: { hp: 60, atk: 100, def: 105, spa: 130, spd: 105, spe: 120 },
-  },
-  352: { // メガカイロス
-    type1: 'bug', type2: 'flying',
-    ability: 141,
-    baseStats: { hp: 65, atk: 155, def: 120, spa: 65, spd: 90, spe: 95 },
-  },
-  207: { // メガプテラ
-    type1: 'rock', type2: 'flying',
-    ability: 70,
-    baseStats: { hp: 80, atk: 135, def: 85, spa: 70, spd: 95, spe: 150 },
-  },
-  81: { // メガカイリュー
-    type1: 'dragon', type2: 'flying',
-    ability: 64,
-    baseStats: { hp: 91, atk: 144, def: 115, spa: 145, spd: 105, spe: 100 },
-  },
-
-  // ---- 第2世代 ----
-  123: { // メガハガネール
-    type1: 'steel', type2: 'ground',
-    ability: 93,
-    baseStats: { hp: 75, atk: 135, def: 230, spa: 25, spd: 95, spe: 20 },
-  },
-  174: { // メガハッサム
-    type1: 'bug', type2: 'steel',
-    ability: 53,
-    baseStats: { hp: 70, atk: 150, def: 130, spa: 65, spd: 100, spe: 75 },
-  },
-  97: { // メガバンギラス
-    type1: 'rock', type2: 'dark',
-    ability: 31,
-    baseStats: { hp: 100, atk: 164, def: 140, spa: 95, spd: 110, spe: 71 },
-  },
-
-  // ---- 第3世代 ----
-  291: { // メガクチート
-    type1: 'steel', type2: 'fairy',
-    ability: 25,
-    baseStats: { hp: 50, atk: 105, def: 125, spa: 55, spd: 95, spe: 50 },
-  },
-  577: { // メガライボルト
-    type1: 'electric', type2: null,
-    ability: 16,
-    baseStats: { hp: 70, atk: 135, def: 80, spa: 135, spd: 80, spe: 135 },
-  },
-  102: { // メガサメハダー
-    type1: 'water', type2: 'dark',
-    ability: 87,
-    baseStats: { hp: 70, atk: 140, def: 80, spa: 80, spd: 65, spe: 105 },
-  },
-  344: { // メガチルタリス
-    type1: 'dragon', type2: 'fairy',
-    ability: 62,
-    baseStats: { hp: 75, atk: 130, def: 110, spa: 130, spd: 110, spe: 80 },
-  },
-  242: { // メガジュペッタ
-    type1: 'ghost', type2: null,
-    ability: 149,
-    baseStats: { hp: 64, atk: 155, def: 105, spa: 43, spd: 80, spe: 98 },
-  },
-  363: { // メガオニゴーリ
-    type1: 'ice', type2: null,
-    ability: 80,
-    baseStats: { hp: 80, atk: 120, def: 80, spa: 120, spd: 80, spe: 100 },
-  },
-  317: { // メガボーマンダ
-    type1: 'dragon', type2: 'flying',
-    ability: 141,
-    baseStats: { hp: 95, atk: 145, def: 130, spa: 120, spd: 90, spe: 99 },
-  },
-  456: { // メガメタグロス
-    type1: 'steel', type2: 'psychic',
-    ability: 70,
-    baseStats: { hp: 80, atk: 105, def: 150, spa: 95, spd: 110, spe: 110 },
-  },
-
-  // ---- 第4世代 ----
-  215: { // メガムクホーク
-    type1: 'fighting', type2: 'flying',
-    ability: 65,
-    baseStats: { hp: 85, atk: 140, def: 100, spa: 60, spd: 90, spe: 110 },
-  },
-  366: { // メガミミロップ
-    type1: 'normal', type2: 'fighting',
-    ability: 89,
-    baseStats: { hp: 65, atk: 156, def: 94, spa: 54, spd: 96, spe: 135 },
-  },
-  329: { // メガガブリアス
-    type1: 'dragon', type2: 'ground',
-    ability: 93,
-    baseStats: { hp: 108, atk: 170, def: 115, spa: 120, spd: 95, spe: 72 },
-  },
-  351: { // メガユキノオー
-    type1: 'grass', type2: 'ice',
-    ability: 57,
-    baseStats: { hp: 90, atk: 132, def: 105, spa: 132, spd: 105, spe: 60 },
-  },
-
-  // ---- 第5世代 ----
-  364: { // メガユキメノコ
-    type1: 'ice', type2: 'ghost',
-    ability: 57,
-    baseStats: { hp: 70, atk: 80, def: 70, spa: 140, spd: 100, spe: 120 },
-  },
-  325: { // メガペンドラー
-    type1: 'bug', type2: 'poison',
-    ability: 4,
-    baseStats: { hp: 60, atk: 150, def: 149, spa: 75, spd: 89, spe: 72 },
-  },
-  309: { // メガシャンデラ
-    type1: 'ghost', type2: 'fire',
-    ability: 123,
-    baseStats: { hp: 60, atk: 75, def: 110, spa: 175, spd: 110, spe: 90 },
-  },
-  189: { // メガタイレーツ
-    type1: 'fighting', type2: null,
-    ability: 98,
-    baseStats: { hp: 65, atk: 137, def: 135, spa: 70, spd: 85, spe: 103 },
-  },
-
-  // ---- 第6世代 ----
-  381: { // メガブリガロン
-    type1: 'grass', type2: 'fighting',
-    ability: 116,
-    baseStats: { hp: 88, atk: 137, def: 172, spa: 74, spd: 115, spe: 44 },
-  },
-  384: { // メガマフォクシー
-    type1: 'fire', type2: 'psychic',
-    ability: 19,
-    baseStats: { hp: 75, atk: 69, def: 72, spa: 159, spd: 125, spe: 134 },
-  },
-  387: { // メガゲッコウガ
-    type1: 'water', type2: 'dark',
-    ability: 142,
-    baseStats: { hp: 72, atk: 125, def: 77, spa: 133, spd: 81, spe: 142 },
-  },
-  268: { // メガカエンジシ
-    type1: 'fire', type2: 'normal',
-    ability: 133,
-    baseStats: { hp: 86, atk: 88, def: 102, spa: 129, spd: 86, spe: 126 },
-  },
-  270: { // メガニャオニクス
-    type1: 'psychic', type2: null,
-    ability: 118,
-    baseStats: { hp: 74, atk: 48, def: 76, spa: 153, spd: 101, spe: 124 },
-  },
-  356: { // メガカラマネロ
-    type1: 'dark', type2: 'psychic',
-    ability: 65,
-    baseStats: { hp: 82, atk: 122, def: 88, spa: 120, spd: 120, spe: 98 },
-  },
-  358: { // メガガメノデス
-    type1: 'rock', type2: 'fighting',
-    ability: 70,
-    baseStats: { hp: 72, atk: 140, def: 130, spa: 64, spd: 106, spe: 109 },
-  },
-  89: { // メガドラミドロ
-    type1: 'poison', type2: 'dragon',
-    ability: 107,
-    baseStats: { hp: 65, atk: 135, def: 105, spa: 135, spd: 163, spe: 24 },
-  },
-  256: { // メガルチャブル
-    type1: 'fighting', type2: 'flying',
-    ability: 69,
-    baseStats: { hp: 78, atk: 147, def: 100, spa: 74, spd: 93, spe: 118 },
-  },
-
-  // ---- 第7世代 ----
-  549: { // メガグソクムシャ
-    type1: 'bug', type2: 'steel',
-    ability: 70,
-    baseStats: { hp: 155, atk: 120, def: 145, spa: 40, spd: 90, spe: 30 },
-  },
-
-  // ---- 第9世代 ----
-  62: { // メガスコヴィラン
-    type1: 'grass', type2: 'fire',
-    ability: 140,
-    baseStats: { hp: 65, atk: 138, def: 85, spa: 138, spd: 85, spe: 75 },
-  },
-  525: { // メガキラフロル
-    type1: 'rock', type2: 'poison',
-    ability: 68,
-    baseStats: { hp: 83, atk: 90, def: 125, spa: 120, spd: 116, spe: 101 },
-  },
-  464: {
-    type1: 'dragon', type2: 'ice',
-    ability: 14,
-    baseStats: { hp: 15, atk: 175, def: 117, spa: 105, spd: 101, spe: 67 },
-  },
-296: { // メガチリーン
-    type1: 'psychic', type2: 'steel',
-    ability: 138,
-    baseStats: { hp: 75, atk: 50, def: 120, spa: 135, spd: 120, spe: 65 },
-  },
-   239: {
-    type1: 'steel', type2: null,
-    ability: 77,
-    baseStats: { hp: 100, atk: 140, def: 230, spa: 0, spd: 80, spe: 50 },
-  },
-  505: {
-    type1: 'dark', type2: 'ghost',
-    ability: 125,
-    baseStats: { hp: 100, atk: 85, def: 155, spa: 85, spd: 155, spe: 0 },
-  },
-   585: {
-    type1: 'normal', type2: 'fairy',
-    ability: 91,
-    baseStats: { hp: 100, atk: 40, def: 126, spa: 120, spd: 126, spe: 66 },
-  },
-   513: {
-    type1: 'ground', type2: 'steel',
-    ability: 75,
-    baseStats: { hp: 100, atk: 165, def: 100, spa: 0, spd: 65, spe: 103 },
-  },
-  151: {
-    type1: 'grass', type2: 'poison',
-    ability: 104,
-    baseStats: { hp: 100, atk: 145, def: 55, spa: 145, spd: 75, spe: 110 },
-  },
-
-347: {
-    type1: 'steel', type2: 'electric',
-    ability: 117,
-    baseStats: { hp: 110, atk: 65, def: 90, spa: 175, spd: 134, spe: 96 },
-  },
-   360: {
-    type1: 'water', type2: 'dragon',
-    ability: 88,
-    baseStats: { hp: 70, atk: 20, def: 80, spa: 180, spd: 100, spe: 125 },
-  },
-   1009: {
-    type1: 'fire', type2: 'fairy',
-    ability: 150,
-    baseStats: { hp: 110, atk: 145, def: 100, spa: 40, spd: 98, spe: 107 },
-  },
-   1023: {
-    type1: 'dark', type2: 'flying',
-    ability: 144,
-    baseStats: { hp: 68, atk: 172, def: 58, spa: 88, spd: 109, spe: 145 },
-  },
-   1024: {
-    type1: 'fighting', type2: 'steel',
-    ability: 68,
-    baseStats: { hp: 70, atk: 60, def: 100, spa: 155, spd: 90, spe: 120 },
-  },
-   1025: {
-    type1: 'poison', type2: 'dragon',
-    ability: 147,
-    baseStats: { hp: 70, atk: 120, def: 110, spa: 150, spd: 150, spe: 100 },
-  },
-   1026: {
-    type1: 'dark', type2: 'ghost',
-    ability: 151,
-    baseStats: { hp: 95, atk: 55, def: 145, spa: 145, spd: 55, spe: 120 },
-  },
-
-
-   1003: {
-    type1: 'bug', type2: 'rock',
-    ability: 32,
-    baseStats: { hp: 60, atk: 150, def: 200, spa: 110, spd: 70, spe: 0 },
-  },
-   1004: {
-    type1: 'dark', type2: 'psychic',
-    ability: 53,
-    baseStats: { hp: 75, atk: 61, def: 80, spa: 150, spd: 130, spe: 109 },
-  },
-   1005: {
-    type1: 'ghost', type2: 'ground',
-    ability: 121,
-    baseStats: { hp: 65, atk: 160, def: 110, spa: 60, spd: 100, spe: 75 },
-  },
-   1006: {
-    type1: 'shine', type2: 'flying',
-    ability: 139,
-    baseStats: { hp: 128, atk: 58, def: 62, spa: 128, spd: 129, spe: 145 },
-  },
-   557: {
-    type1: 'ground', type2: 'rock',
-    ability: 31,
-    baseStats: { hp: 125, atk: 165, def: 125, spa: 55, spd: 55, spe: 45 },
-  },
-   254: {
-    type1: 'dark', type2: 'fairy',
-    ability: 127,
-    baseStats: { hp: 145, atk: 40, def: 70, spa: 140, spd: 145, spe: 95 },
-  },
-   255: {
-    type1: 'dark', type2: 'fighting',
-    ability: 126,
-    baseStats: { hp: 65, atk: 160, def: 40, spa: 160, spd: 40, spe: 115 },
-  },
-   349: {
-    type1: 'dark', type2: 'fighting',
-    ability: 88,
-    baseStats: { hp: 100, atk: 65, def: 100, spa: 130, spd: 100, spe: 90 },
-  },
-   70: {
-    type1: 'normal', type2: 'dragon',
-    ability: 56,
-    baseStats: { hp: 120, atk: 130, def: 90, spa: 130, spd: 75, spe: 20 },
-  },
-   486: {
-    type1: 'bug', type2: 'poison',
-    ability: 142,
-    baseStats: { hp: 80, atk: 45, def: 130, spa: 140, spd: 100, spe: 45 },
-  },
-  9: {
-    type1: 'water', type2: 'ground',
-    ability: 23,
-    baseStats: { hp: 80, atk: 150, def: 110, spa: 95, spd: 110, spe: 70 },
-  },
-1015: {
-    type1: 'electric', type2: 'dragon',
-    ability: 75,
-    baseStats: { hp: 90, atk: 95, def: 105, spa: 165, spd: 110, spe: 45 },
-  },
-   1016: {
-    type1: 'grass', type2: 'dragon',
-    ability: 9,
-    baseStats: { hp: 70, atk: 150, def: 75, spa: 150, spd: 85, spe: 145 },
-  },
-   1017: {
-    type1: 'fire', type2: 'fighting',
-    ability: 3,
-    baseStats: { hp: 100, atk: 100, def: 100, spa: 100, spd: 100, spe: 100 },
-  },
-   1018: {
-    type1: 'electric', type2: null,
-    ability: 135,
-    baseStats: { hp: 100, atk: 135, def: 80, spa: 145, spd: 90, spe: 80 },
-  },
-   1019: {
-    type1: 'fighting', type2: 'dark',
-    ability: 16,
-    baseStats: { hp: 100, atk: 130, def: 135, spa: 55, spd: 135, spe: 68 },
-  },
-   1020: {
-    type1: 'ghost', type2: 'ground',
-    ability: 69,
-    baseStats: { hp: 100, atk: 160, def: 104, spa: 50, spd: 115, spe: 65 },
-  },
-   1021: {
-    type1: 'ice', type2: 'fighting',
-    ability: 89,
-    baseStats: { hp: 100, atk: 157, def: 122, spa: 62, spd: 107, spe: 33 },
-  },
-139: {
-    type1: 'ground', type2: 'flying',
-    ability: 126,
-    baseStats: { hp: 80, atk: 145, def: 130, spa: 4, spd: 110, spe: 156 },
-  },
-   171: {
-    type1: 'fire', type2: 'ghost',
-    ability: 143,
-    baseStats: { hp: 75, atk: 165, def: 100, spa: 70, spd: 120, spe: 95 },
-  },
-   177: {
-    type1: 'water', type2: 'sound',
-    ability: 120,
-    baseStats: { hp: 100, atk: 135, def: 80, spa: 135, spd: 109, spe: 106 },
-  },
-   197: {
-    type1: 'bug', type2: 'steel',
-    ability: 4,
-    baseStats: { hp: 100, atk: 150, def: 150, spa: 20, spd: 83, spe: 30 },
-  },
-   322: {
-    type1: 'dragon', type2: 'sound',
-    ability: 146,
-    baseStats: { hp: 85, atk: 140, def: 100, spa: 177, spd: 90, spe: 123 },
-  },
-   441: {
-    type1: 'dragon', type2: null,
-    ability: 145,
-    baseStats: { hp: 75, atk: 155, def: 110, spa: 60, spd: 100, spe: 95 },
-  },
-   489: {
-    type1: 'steel', type2: 'sound',
-    ability: 148,
-    baseStats: { hp: 80, atk: 139, def: 120, spa: 100, spd: 125, spe: 97 },
-  },
-   508: {
-    type1: 'ghost', type2: 'flying',
-    ability: 144,
-    baseStats: { hp: 210, atk: 40, def: 50, spa: 200, spd: 50, spe: 110 },
-  },
-   282: {
-    type1: 'fire', type2: 'flying',
-    ability: 84,
-    baseStats: { hp: 90, atk: 160, def: 100, spa: 160, spd: 90, spe: 120 },
-  },
-11: {
-    type1: 'bug', type2: 'electric',
-    ability: 135,
-    baseStats: { hp: 95, atk: 110, def: 70, spa: 130, spd: 110, spe: 95 },
-  },
-   36: {
-    type1: 'grass', type2: 'shine',
-    ability: 147,
-    baseStats: { hp: 110, atk: 130, def: 110, spa: 120, spd: 120, spe: 100 },
-  },
-   78: {
-    type1: 'water', type2: 'electric',
-    ability: 73,
-    baseStats: { hp: 120, atk: 40, def: 70, spa: 150, spd: 100, spe: 100 },
-  },
-   91: {
-    type1: 'dark', type2: 'ice',
-    ability: 53,
-    baseStats: { hp: 100, atk: 150, def: 85, spa: 40, spd: 125, spe: 135 },
-  },
-   285: {
-    type1: 'ghost', type2: null,
-    ability: 105,
-    baseStats: { hp: 60, atk: 110, def: 160, spa: 110, spd: 180, spe: 30 },
-  },
-1027: {
-    type1: 'grass', type2: 'fairy',
-    ability: 152,
-    baseStats: { hp: 80, atk: 52, def: 145, spa: 143, spd: 125, spe: 80 },
-  },
-   1028: {
-    type1: 'water', type2: 'dragon',
-    ability: 82,
-    baseStats: { hp: 85, atk: 165, def: 120, spa: 79, spd: 93, spe: 88 },
-  },
-   1029: {
-    type1: 'fire', type2: 'fighting',
-    ability: 75,
-    baseStats: { hp: 130, atk: 158, def: 75, spa: 80, spd: 110, spe: 75 },
-  },
-   1030: {
-    type1: 'dragon', type2: 'fairy',
-    ability: 138,
-    baseStats: { hp: 80, atk: 140, def: 80, spa: 140, spd: 100, spe: 80 },
-  },
-476: {
-    type1: 'fire', type2: null,
-    ability: 3,
-    baseStats: { hp: 105, atk: 150, def: 70, spa: 100, spd: 100, spe: 135 },
-  },
-32 : {
-    type1: 'grass', type2: 'poison',
-    ability: 53,
-    baseStats: { hp: 80, atk: 90, def: 80, spa: 155, spd: 149, spe: 96 },
-  },
-   1032: {
-    type1: 'electric', type2: 'fire',
-    ability: 133,
-    baseStats: { hp: 90, atk: 140, def: 102, spa: 140, spd: 88, spe: 85 },
-  },
-   1034: {
-    type1: 'dark', type2: null,
-    ability: 102,
-    baseStats: { hp: 80, atk: 140, def: 80, spa: 140, spd: 80, spe: 90 },
-  },
-  1037 : {
-    type1: 'dark', type2: 'sound',
-    ability: 64,
-    baseStats: { hp: 110, atk: 161, def: 92, spa: 59, spd: 70, spe: 138 },
-  },
-  1038 : {
-    type1: 'ghost', type2: 'psychic',
-    ability: 121,
-    baseStats: { hp: 95, atk: 94, def: 95, spa: 80, spd: 100, spe: 116 },
-  },
-   1039: {
-    type1: 'dragon', type2: 'psychic',
-    ability: 65,
-    baseStats: { hp: 100, atk: 122, def: 115, spa: 128, spd: 95, spe: 100 },
-  },
-    50: {
-    forms: {
-      X: {
-        type1: 'electric', type2: null,
-        ability: 117,
-        baseStats: { hp: 25, atk: 135, def: 95, spa: 90, spd: 95, spe: 110 },
+  "6": {
+    "forms": {
+      "X": {
+        "type1": "fire",
+        "type2": "dragon",
+        "ability": 70,
+        "baseStats": {
+          "hp": 78,
+          "atk": 130,
+          "def": 111,
+          "spa": 130,
+          "spd": 85,
+          "spe": 100
+        }
       },
-      Y: {
-        type1: 'electric', type2: null,
-        ability: 69,
-        baseStats: { hp: 70, atk: 100, def: 65, spa: 160, spd: 80, spe: 130 },
-      },
- },
-},
-6: {
-    forms: {
-      X: {
-        type1: 'fire', type2: 'dragon',
-        ability: 70,
-        baseStats: { hp: 78, atk: 130, def: 111, spa: 130, spd: 85, spe: 100 },
-      },
-      Y: {
-        type1: 'fire', type2: 'flying',
-        ability: 46,
-        baseStats: { hp: 78, atk: 104, def: 88, spa: 149, spd: 115, spe: 100 },
-      },
-    },
+      "Y": {
+        "type1": "fire",
+        "type2": "flying",
+        "ability": 46,
+        "baseStats": {
+          "hp": 78,
+          "atk": 104,
+          "def": 88,
+          "spa": 149,
+          "spd": 115,
+          "spe": 100
+        }
+      }
+    }
   },
-};
+  "9": {
+    "type1": "water",
+    "type2": "ground",
+    "ability": 23,
+    "baseStats": {
+      "hp": 80,
+      "atk": 150,
+      "def": 110,
+      "spa": 125,
+      "spd": 110,
+      "spe": 70
+    }
+  },
+  "11": {
+    "type1": "bug",
+    "type2": "electric",
+    "ability": 135,
+    "baseStats": {
+      "hp": 95,
+      "atk": 110,
+      "def": 70,
+      "spa": 130,
+      "spd": 110,
+      "spe": 95
+    }
+  },
+  "12": {
+    "type1": "bug",
+    "type2": "fighting",
+    "ability": 115,
+    "baseStats": {
+      "hp": 80,
+      "atk": 185,
+      "def": 115,
+      "spa": 40,
+      "spd": 105,
+      "spe": 75
+    }
+  },
+  "15": {
+    "type1": "bug",
+    "type2": "poison",
+    "ability": 68,
+    "baseStats": {
+      "hp": 40,
+      "atk": 165,
+      "def": 40,
+      "spa": 0,
+      "spd": 80,
+      "spe": 152
+    }
+  },
+  "18": {
+    "type1": "normal",
+    "type2": "flying",
+    "ability": 69,
+    "baseStats": {
+      "hp": 80,
+      "atk": 80,
+      "def": 80,
+      "spa": 169,
+      "spd": 80,
+      "spe": 121
+    }
+  },
+  "32": {
+    "type1": "grass",
+    "type2": "poison",
+    "ability": 53,
+    "baseStats": {
+      "hp": 80,
+      "atk": 80,
+      "def": 90,
+      "spa": 155,
+      "spd": 149,
+      "spe": 96
+    }
+  },
+  "34": {
+    "type1": "fighting",
+    "type2": "psychic",
+    "ability": 25,
+    "baseStats": {
+      "hp": 60,
+      "atk": 100,
+      "def": 85,
+      "spa": 80,
+      "spd": 85,
+      "spe": 100
+    }
+  },
+  "36": {
+    "type1": "grass",
+    "type2": "shine",
+    "ability": 147,
+    "baseStats": {
+      "hp": 110,
+      "atk": 130,
+      "def": 110,
+      "spa": 130,
+      "spd": 120,
+      "spe": 100
+    }
+  },
+  "41": {
+    "type1": "dark",
+    "type2": "shine",
+    "ability": 125,
+    "baseStats": {
+      "hp": 65,
+      "atk": 160,
+      "def": 60,
+      "spa": 85,
+      "spd": 70,
+      "spe": 125
+    }
+  },
+  "43": {
+    "type1": "steel",
+    "type2": "flying",
+    "ability": 45,
+    "baseStats": {
+      "hp": 100,
+      "atk": 140,
+      "def": 110,
+      "spa": 40,
+      "spd": 100,
+      "spe": 110
+    }
+  },
+  "48": {
+    "type1": "fire",
+    "type2": "ground",
+    "ability": 66,
+    "baseStats": {
+      "hp": 100,
+      "atk": 145,
+      "def": 100,
+      "spa": 145,
+      "spd": 105,
+      "spe": 20
+    }
+  },
+  "50": {
+    "forms": {
+      "X": {
+        "type1": "electric",
+        "type2": null,
+        "ability": 117,
+        "baseStats": {
+          "hp": 25,
+          "atk": 135,
+          "def": 95,
+          "spa": 90,
+          "spd": 95,
+          "spe": 110
+        }
+      },
+      "Y": {
+        "type1": "electric",
+        "type2": null,
+        "ability": 69,
+        "baseStats": {
+          "hp": 70,
+          "atk": 100,
+          "def": 65,
+          "spa": 160,
+          "spd": 80,
+          "spe": 130
+        }
+      }
+    }
+  },
+  "56": {
+    "type1": "fire",
+    "type2": "dark",
+    "ability": 96,
+    "baseStats": {
+      "hp": 100,
+      "atk": 85,
+      "def": 100,
+      "spa": 165,
+      "spd": 100,
+      "spe": 115
+    }
+  },
+  "60": {
+    "type1": "water",
+    "type2": "dark",
+    "ability": 75,
+    "baseStats": {
+      "hp": 100,
+      "atk": 155,
+      "def": 109,
+      "spa": 60,
+      "spd": 130,
+      "spe": 91
+    }
+  },
+  "62": {
+    "type1": "grass",
+    "type2": "fire",
+    "ability": 140,
+    "baseStats": {
+      "hp": 65,
+      "atk": 138,
+      "def": 85,
+      "spa": 138,
+      "spd": 85,
+      "spe": 75
+    }
+  },
+  "70": {
+    "type1": "normal",
+    "type2": "dragon",
+    "ability": 56,
+    "baseStats": {
+      "hp": 120,
+      "atk": 130,
+      "def": 90,
+      "spa": 130,
+      "spd": 75,
+      "spe": 20
+    }
+  },
+  "73": {
+    "type1": "water",
+    "type2": "psychic",
+    "ability": 25,
+    "baseStats": {
+      "hp": 60,
+      "atk": 100,
+      "def": 105,
+      "spa": 130,
+      "spd": 105,
+      "spe": 120
+    }
+  },
+  "78": {
+    "type1": "water",
+    "type2": "electric",
+    "ability": 73,
+    "baseStats": {
+      "hp": 120,
+      "atk": 40,
+      "def": 70,
+      "spa": 150,
+      "spd": 100,
+      "spe": 100
+    }
+  },
+  "81": {
+    "type1": "dragon",
+    "type2": "flying",
+    "ability": 64,
+    "baseStats": {
+      "hp": 91,
+      "atk": 144,
+      "def": 115,
+      "spa": 145,
+      "spd": 105,
+      "spe": 100
+    }
+  },
+  "89": {
+    "type1": "poison",
+    "type2": "dragon",
+    "ability": 107,
+    "baseStats": {
+      "hp": 65,
+      "atk": 135,
+      "def": 105,
+      "spa": 135,
+      "spd": 163,
+      "spe": 24
+    }
+  },
+  "91": {
+    "type1": "dark",
+    "type2": "ice",
+    "ability": 53,
+    "baseStats": {
+      "hp": 100,
+      "atk": 150,
+      "def": 85,
+      "spa": 40,
+      "spd": 125,
+      "spe": 135
+    }
+  },
+  "97": {
+    "type1": "rock",
+    "type2": "dark",
+    "ability": 31,
+    "baseStats": {
+      "hp": 100,
+      "atk": 164,
+      "def": 140,
+      "spa": 95,
+      "spd": 110,
+      "spe": 71
+    }
+  },
+  "100": {
+    "type1": "psychic",
+    "type2": null,
+    "ability": 76,
+    "baseStats": {
+      "hp": 55,
+      "atk": 50,
+      "def": 75,
+      "spa": 175,
+      "spd": 105,
+      "spe": 150
+    }
+  },
+  "102": {
+    "type1": "water",
+    "type2": "dark",
+    "ability": 87,
+    "baseStats": {
+      "hp": 70,
+      "atk": 140,
+      "def": 80,
+      "spa": 80,
+      "spd": 65,
+      "spe": 105
+    }
+  },
+  "123": {
+    "type1": "steel",
+    "type2": "ground",
+    "ability": 93,
+    "baseStats": {
+      "hp": 75,
+      "atk": 135,
+      "def": 230,
+      "spa": 25,
+      "spd": 95,
+      "spe": 20
+    }
+  },
+  "139": {
+    "type1": "ground",
+    "type2": "flying",
+    "ability": 126,
+    "baseStats": {
+      "hp": 80,
+      "atk": 145,
+      "def": 130,
+      "spa": 4,
+      "spd": 110,
+      "spe": 156
+    }
+  },
+  "151": {
+    "type1": "grass",
+    "type2": "poison",
+    "ability": 104,
+    "baseStats": {
+      "hp": 100,
+      "atk": 145,
+      "def": 55,
+      "spa": 145,
+      "spd": 75,
+      "spe": 110
+    }
+  },
+  "171": {
+    "type1": "fire",
+    "type2": "ghost",
+    "ability": 143,
+    "baseStats": {
+      "hp": 75,
+      "atk": 155,
+      "def": 100,
+      "spa": 80,
+      "spd": 120,
+      "spe": 95
+    }
+  },
+  "174": {
+    "type1": "bug",
+    "type2": "steel",
+    "ability": 53,
+    "baseStats": {
+      "hp": 70,
+      "atk": 150,
+      "def": 130,
+      "spa": 65,
+      "spd": 100,
+      "spe": 75
+    }
+  },
+  "177": {
+    "type1": "water",
+    "type2": "sound",
+    "ability": 120,
+    "baseStats": {
+      "hp": 100,
+      "atk": 135,
+      "def": 80,
+      "spa": 135,
+      "spd": 109,
+      "spe": 106
+    }
+  },
+  "188": {
+    "type1": "normal",
+    "type2": null,
+    "ability": 139,
+    "baseStats": {
+      "hp": 105,
+      "atk": 140,
+      "def": 100,
+      "spa": 60,
+      "spd": 100,
+      "spe": 100
+    }
+  },
+  "189": {
+    "type1": "fighting",
+    "type2": null,
+    "ability": 98,
+    "baseStats": {
+      "hp": 65,
+      "atk": 137,
+      "def": 135,
+      "spa": 70,
+      "spd": 85,
+      "spe": 103
+    }
+  },
+  "197": {
+    "type1": "bug",
+    "type2": "steel",
+    "ability": 4,
+    "baseStats": {
+      "hp": 100,
+      "atk": 150,
+      "def": 150,
+      "spa": 20,
+      "spd": 83,
+      "spe": 30
+    }
+  },
+  "204": {
+    "type1": "fairy",
+    "type2": "flying",
+    "ability": 125,
+    "baseStats": {
+      "hp": 95,
+      "atk": 80,
+      "def": 113,
+      "spa": 135,
+      "spd": 120,
+      "spe": 70
+    }
+  },
+  "207": {
+    "type1": "rock",
+    "type2": "flying",
+    "ability": 70,
+    "baseStats": {
+      "hp": 80,
+      "atk": 135,
+      "def": 85,
+      "spa": 70,
+      "spd": 95,
+      "spe": 150
+    }
+  },
+  "215": {
+    "type1": "fighting",
+    "type2": "flying",
+    "ability": 65,
+    "baseStats": {
+      "hp": 85,
+      "atk": 140,
+      "def": 100,
+      "spa": 60,
+      "spd": 90,
+      "spe": 110
+    }
+  },
+  "228": {
+    "type1": "ghost",
+    "type2": "poison",
+    "ability": 121,
+    "baseStats": {
+      "hp": 60,
+      "atk": 65,
+      "def": 80,
+      "spa": 170,
+      "spd": 95,
+      "spe": 130
+    }
+  },
+  "239": {
+    "type1": "steel",
+    "type2": null,
+    "ability": 77,
+    "baseStats": {
+      "hp": 100,
+      "atk": 140,
+      "def": 230,
+      "spa": 0,
+      "spd": 80,
+      "spe": 50
+    }
+  },
+  "242": {
+    "type1": "ghost",
+    "type2": null,
+    "ability": 149,
+    "baseStats": {
+      "hp": 64,
+      "atk": 155,
+      "def": 105,
+      "spa": 43,
+      "spd": 80,
+      "spe": 98
+    }
+  },
+  "254": {
+    "type1": "dark",
+    "type2": "fairy",
+    "ability": 127,
+    "baseStats": {
+      "hp": 145,
+      "atk": 40,
+      "def": 70,
+      "spa": 140,
+      "spd": 145,
+      "spe": 95
+    }
+  },
+  "255": {
+    "type1": "dark",
+    "type2": "fighting",
+    "ability": 126,
+    "baseStats": {
+      "hp": 65,
+      "atk": 160,
+      "def": 40,
+      "spa": 160,
+      "spd": 40,
+      "spe": 115
+    }
+  },
+  "256": {
+    "type1": "fighting",
+    "type2": "flying",
+    "ability": 69,
+    "baseStats": {
+      "hp": 78,
+      "atk": 147,
+      "def": 100,
+      "spa": 74,
+      "spd": 93,
+      "spe": 118
+    }
+  },
+  "268": {
+    "type1": "fire",
+    "type2": "normal",
+    "ability": 133,
+    "baseStats": {
+      "hp": 86,
+      "atk": 88,
+      "def": 102,
+      "spa": 129,
+      "spd": 86,
+      "spe": 126
+    }
+  },
+  "270": {
+    "type1": "psychic",
+    "type2": null,
+    "ability": 118,
+    "baseStats": {
+      "hp": 74,
+      "atk": 48,
+      "def": 76,
+      "spa": 153,
+      "spd": 101,
+      "spe": 124
+    }
+  },
+  "282": {
+    "type1": "fire",
+    "type2": "flying",
+    "ability": 84,
+    "baseStats": {
+      "hp": 90,
+      "atk": 160,
+      "def": 100,
+      "spa": 160,
+      "spd": 90,
+      "spe": 120
+    }
+  },
+  "285": {
+    "type1": "ghost",
+    "type2": null,
+    "ability": 105,
+    "baseStats": {
+      "hp": 60,
+      "atk": 110,
+      "def": 160,
+      "spa": 110,
+      "spd": 180,
+      "spe": 30
+    }
+  },
+  "291": {
+    "type1": "steel",
+    "type2": "fairy",
+    "ability": 25,
+    "baseStats": {
+      "hp": 50,
+      "atk": 105,
+      "def": 125,
+      "spa": 55,
+      "spd": 95,
+      "spe": 50
+    }
+  },
+  "296": {
+    "type1": "psychic",
+    "type2": "steel",
+    "ability": 138,
+    "baseStats": {
+      "hp": 75,
+      "atk": 50,
+      "def": 120,
+      "spa": 135,
+      "spd": 120,
+      "spe": 65
+    }
+  },
+  "309": {
+    "type1": "ghost",
+    "type2": "fire",
+    "ability": 123,
+    "baseStats": {
+      "hp": 60,
+      "atk": 75,
+      "def": 110,
+      "spa": 175,
+      "spd": 110,
+      "spe": 90
+    }
+  },
+  "317": {
+    "type1": "dragon",
+    "type2": "flying",
+    "ability": 141,
+    "baseStats": {
+      "hp": 95,
+      "atk": 145,
+      "def": 130,
+      "spa": 120,
+      "spd": 90,
+      "spe": 99
+    }
+  },
+  "322": {
+    "type1": "dragon",
+    "type2": "sound",
+    "ability": 146,
+    "baseStats": {
+      "hp": 85,
+      "atk": 140,
+      "def": 100,
+      "spa": 177,
+      "spd": 90,
+      "spe": 123
+    }
+  },
+  "325": {
+    "type1": "bug",
+    "type2": "poison",
+    "ability": 4,
+    "baseStats": {
+      "hp": 60,
+      "atk": 150,
+      "def": 149,
+      "spa": 75,
+      "spd": 89,
+      "spe": 72
+    }
+  },
+  "329": {
+    "type1": "dragon",
+    "type2": "ground",
+    "ability": 93,
+    "baseStats": {
+      "hp": 108,
+      "atk": 170,
+      "def": 115,
+      "spa": 120,
+      "spd": 95,
+      "spe": 72
+    }
+  },
+  "344": {
+    "type1": "dragon",
+    "type2": "fairy",
+    "ability": 62,
+    "baseStats": {
+      "hp": 75,
+      "atk": 130,
+      "def": 110,
+      "spa": 130,
+      "spd": 110,
+      "spe": 80
+    }
+  },
+  "347": {
+    "type1": "steel",
+    "type2": "electric",
+    "ability": 117,
+    "baseStats": {
+      "hp": 110,
+      "atk": 65,
+      "def": 90,
+      "spa": 175,
+      "spd": 134,
+      "spe": 96
+    }
+  },
+  "349": {
+    "type1": "dark",
+    "type2": "fighting",
+    "ability": 88,
+    "baseStats": {
+      "hp": 100,
+      "atk": 65,
+      "def": 100,
+      "spa": 130,
+      "spd": 100,
+      "spe": 90
+    }
+  },
+  "351": {
+    "type1": "grass",
+    "type2": "ice",
+    "ability": 57,
+    "baseStats": {
+      "hp": 90,
+      "atk": 132,
+      "def": 105,
+      "spa": 132,
+      "spd": 105,
+      "spe": 60
+    }
+  },
+  "352": {
+    "type1": "bug",
+    "type2": "flying",
+    "ability": 141,
+    "baseStats": {
+      "hp": 65,
+      "atk": 155,
+      "def": 120,
+      "spa": 65,
+      "spd": 90,
+      "spe": 95
+    }
+  },
+  "356": {
+    "type1": "dark",
+    "type2": "psychic",
+    "ability": 65,
+    "baseStats": {
+      "hp": 82,
+      "atk": 122,
+      "def": 88,
+      "spa": 120,
+      "spd": 120,
+      "spe": 98
+    }
+  },
+  "358": {
+    "type1": "rock",
+    "type2": "fighting",
+    "ability": 70,
+    "baseStats": {
+      "hp": 72,
+      "atk": 140,
+      "def": 130,
+      "spa": 64,
+      "spd": 106,
+      "spe": 109
+    }
+  },
+  "360": {
+    "type1": "water",
+    "type2": "dragon",
+    "ability": 88,
+    "baseStats": {
+      "hp": 70,
+      "atk": 20,
+      "def": 80,
+      "spa": 180,
+      "spd": 100,
+      "spe": 125
+    }
+  },
+  "363": {
+    "type1": "ice",
+    "type2": null,
+    "ability": 80,
+    "baseStats": {
+      "hp": 80,
+      "atk": 120,
+      "def": 80,
+      "spa": 120,
+      "spd": 80,
+      "spe": 100
+    }
+  },
+  "364": {
+    "type1": "ice",
+    "type2": "ghost",
+    "ability": 57,
+    "baseStats": {
+      "hp": 70,
+      "atk": 80,
+      "def": 70,
+      "spa": 140,
+      "spd": 100,
+      "spe": 120
+    }
+  },
+  "366": {
+    "type1": "normal",
+    "type2": "fighting",
+    "ability": 89,
+    "baseStats": {
+      "hp": 65,
+      "atk": 156,
+      "def": 94,
+      "spa": 54,
+      "spd": 96,
+      "spe": 135
+    }
+  },
+  "381": {
+    "type1": "grass",
+    "type2": "fighting",
+    "ability": 116,
+    "baseStats": {
+      "hp": 88,
+      "atk": 137,
+      "def": 172,
+      "spa": 74,
+      "spd": 115,
+      "spe": 44
+    }
+  },
+  "384": {
+    "type1": "fire",
+    "type2": "psychic",
+    "ability": 19,
+    "baseStats": {
+      "hp": 75,
+      "atk": 69,
+      "def": 72,
+      "spa": 159,
+      "spd": 125,
+      "spe": 134
+    }
+  },
+  "387": {
+    "type1": "water",
+    "type2": "dark",
+    "ability": 142,
+    "baseStats": {
+      "hp": 72,
+      "atk": 125,
+      "def": 77,
+      "spa": 133,
+      "spd": 81,
+      "spe": 142
+    }
+  },
+  "441": {
+    "type1": "dragon",
+    "type2": null,
+    "ability": 145,
+    "baseStats": {
+      "hp": 75,
+      "atk": 155,
+      "def": 110,
+      "spa": 60,
+      "spd": 100,
+      "spe": 95
+    }
+  },
+  "451": {
+    "type1": "water",
+    "type2": "psychic",
+    "ability": 4,
+    "baseStats": {
+      "hp": 95,
+      "atk": 75,
+      "def": 180,
+      "spa": 130,
+      "spd": 80,
+      "spe": 30
+    }
+  },
+  "456": {
+    "type1": "steel",
+    "type2": "psychic",
+    "ability": 70,
+    "baseStats": {
+      "hp": 80,
+      "atk": 105,
+      "def": 150,
+      "spa": 95,
+      "spd": 110,
+      "spe": 110
+    }
+  },
+  "464": {
+    "type1": "dragon",
+    "type2": "ice",
+    "ability": 14,
+    "baseStats": {
+      "hp": 15,
+      "atk": 175,
+      "def": 117,
+      "spa": 105,
+      "spd": 101,
+      "spe": 67
+    }
+  },
+  "468": {
+    "type1": "grass",
+    "type2": "poison",
+    "ability": 33,
+    "baseStats": {
+      "hp": 80,
+      "atk": 130,
+      "def": 123,
+      "spa": 132,
+      "spd": 120,
+      "spe": 80
+    }
+  },
+  "471": {
+    "type1": "water",
+    "type2": null,
+    "ability": 88,
+    "baseStats": {
+      "hp": 79,
+      "atk": 103,
+      "def": 120,
+      "spa": 145,
+      "spd": 115,
+      "spe": 78
+    }
+  },
+  "476": {
+    "type1": "fire",
+    "type2": null,
+    "ability": 3,
+    "baseStats": {
+      "hp": 105,
+      "atk": 150,
+      "def": 70,
+      "spa": 100,
+      "spd": 100,
+      "spe": 135
+    }
+  },
+  "486": {
+    "type1": "bug",
+    "type2": "poison",
+    "ability": 142,
+    "baseStats": {
+      "hp": 80,
+      "atk": 45,
+      "def": 130,
+      "spa": 140,
+      "spd": 100,
+      "spe": 45
+    }
+  },
+  "489": {
+    "type1": "steel",
+    "type2": "sound",
+    "ability": 148,
+    "baseStats": {
+      "hp": 80,
+      "atk": 139,
+      "def": 120,
+      "spa": 100,
+      "spd": 125,
+      "spe": 97
+    }
+  },
+  "505": {
+    "type1": "dark",
+    "type2": "ghost",
+    "ability": 125,
+    "baseStats": {
+      "hp": 100,
+      "atk": 85,
+      "def": 155,
+      "spa": 85,
+      "spd": 155,
+      "spe": 0
+    }
+  },
+  "508": {
+    "type1": "ghost",
+    "type2": "flying",
+    "ability": 144,
+    "baseStats": {
+      "hp": 210,
+      "atk": 40,
+      "def": 50,
+      "spa": 200,
+      "spd": 50,
+      "spe": 110
+    }
+  },
+  "513": {
+    "type1": "ground",
+    "type2": "steel",
+    "ability": 75,
+    "baseStats": {
+      "hp": 100,
+      "atk": 165,
+      "def": 100,
+      "spa": 0,
+      "spd": 65,
+      "spe": 103
+    }
+  },
+  "525": {
+    "type1": "rock",
+    "type2": "poison",
+    "ability": 68,
+    "baseStats": {
+      "hp": 83,
+      "atk": 90,
+      "def": 125,
+      "spa": 120,
+      "spd": 116,
+      "spe": 101
+    }
+  },
+  "549": {
+    "type1": "bug",
+    "type2": "steel",
+    "ability": 70,
+    "baseStats": {
+      "hp": 155,
+      "atk": 120,
+      "def": 145,
+      "spa": 40,
+      "spd": 90,
+      "spe": 30
+    }
+  },
+  "557": {
+    "type1": "ground",
+    "type2": "rock",
+    "ability": 31,
+    "baseStats": {
+      "hp": 125,
+      "atk": 165,
+      "def": 125,
+      "spa": 55,
+      "spd": 55,
+      "spe": 45
+    }
+  },
+  "577": {
+    "type1": "electric",
+    "type2": null,
+    "ability": 16,
+    "baseStats": {
+      "hp": 70,
+      "atk": 135,
+      "def": 80,
+      "spa": 135,
+      "spd": 80,
+      "spe": 135
+    }
+  },
+  "585": {
+    "type1": "normal",
+    "type2": "fairy",
+    "ability": 91,
+    "baseStats": {
+      "hp": 100,
+      "atk": 40,
+      "def": 126,
+      "spa": 120,
+      "spd": 126,
+      "spe": 66
+    }
+  },
+  "1003": {
+    "type1": "bug",
+    "type2": "rock",
+    "ability": 32,
+    "baseStats": {
+      "hp": 60,
+      "atk": 150,
+      "def": 200,
+      "spa": 110,
+      "spd": 70,
+      "spe": 0
+    }
+  },
+  "1004": {
+    "type1": "dark",
+    "type2": "psychic",
+    "ability": 53,
+    "baseStats": {
+      "hp": 75,
+      "atk": 61,
+      "def": 80,
+      "spa": 150,
+      "spd": 130,
+      "spe": 109
+    }
+  },
+  "1005": {
+    "type1": "ghost",
+    "type2": "ground",
+    "ability": 121,
+    "baseStats": {
+      "hp": 65,
+      "atk": 160,
+      "def": 110,
+      "spa": 60,
+      "spd": 100,
+      "spe": 75
+    }
+  },
+  "1006": {
+    "type1": "shine",
+    "type2": "flying",
+    "ability": 139,
+    "baseStats": {
+      "hp": 128,
+      "atk": 58,
+      "def": 62,
+      "spa": 128,
+      "spd": 129,
+      "spe": 145
+    }
+  },
+  "1009": {
+    "type1": "fire",
+    "type2": "fairy",
+    "ability": 150,
+    "baseStats": {
+      "hp": 110,
+      "atk": 145,
+      "def": 100,
+      "spa": 40,
+      "spd": 98,
+      "spe": 107
+    }
+  },
+  "1015": {
+    "type1": "electric",
+    "type2": "dragon",
+    "ability": 75,
+    "baseStats": {
+      "hp": 90,
+      "atk": 95,
+      "def": 105,
+      "spa": 165,
+      "spd": 110,
+      "spe": 45
+    }
+  },
+  "1016": {
+    "type1": "grass",
+    "type2": "dragon",
+    "ability": 9,
+    "baseStats": {
+      "hp": 70,
+      "atk": 150,
+      "def": 75,
+      "spa": 150,
+      "spd": 85,
+      "spe": 145
+    }
+  },
+  "1017": {
+    "type1": "fire",
+    "type2": "fighting",
+    "ability": 3,
+    "baseStats": {
+      "hp": 100,
+      "atk": 100,
+      "def": 100,
+      "spa": 100,
+      "spd": 100,
+      "spe": 100
+    }
+  },
+  "1018": {
+    "type1": "electric",
+    "type2": null,
+    "ability": 135,
+    "baseStats": {
+      "hp": 100,
+      "atk": 135,
+      "def": 80,
+      "spa": 145,
+      "spd": 90,
+      "spe": 80
+    }
+  },
+  "1019": {
+    "type1": "fighting",
+    "type2": "dark",
+    "ability": 16,
+    "baseStats": {
+      "hp": 100,
+      "atk": 130,
+      "def": 135,
+      "spa": 55,
+      "spd": 135,
+      "spe": 68
+    }
+  },
+  "1020": {
+    "type1": "ghost",
+    "type2": "ground",
+    "ability": 69,
+    "baseStats": {
+      "hp": 100,
+      "atk": 160,
+      "def": 104,
+      "spa": 50,
+      "spd": 115,
+      "spe": 65
+    }
+  },
+  "1021": {
+    "type1": "ice",
+    "type2": "fighting",
+    "ability": 89,
+    "baseStats": {
+      "hp": 100,
+      "atk": 157,
+      "def": 122,
+      "spa": 62,
+      "spd": 107,
+      "spe": 33
+    }
+  },
+  "1023": {
+    "type1": "dark",
+    "type2": "flying",
+    "ability": 144,
+    "baseStats": {
+      "hp": 68,
+      "atk": 172,
+      "def": 58,
+      "spa": 88,
+      "spd": 109,
+      "spe": 145
+    }
+  },
+  "1024": {
+    "type1": "fighting",
+    "type2": "steel",
+    "ability": 68,
+    "baseStats": {
+      "hp": 70,
+      "atk": 60,
+      "def": 100,
+      "spa": 155,
+      "spd": 90,
+      "spe": 120
+    }
+  },
+  "1025": {
+    "type1": "poison",
+    "type2": "dragon",
+    "ability": 147,
+    "baseStats": {
+      "hp": 70,
+      "atk": 120,
+      "def": 110,
+      "spa": 150,
+      "spd": 150,
+      "spe": 100
+    }
+  },
+  "1026": {
+    "type1": "dark",
+    "type2": "ghost",
+    "ability": 151,
+    "baseStats": {
+      "hp": 95,
+      "atk": 55,
+      "def": 145,
+      "spa": 145,
+      "spd": 55,
+      "spe": 120
+    }
+  },
+  "1027": {
+    "type1": "grass",
+    "type2": "fairy",
+    "ability": 152,
+    "baseStats": {
+      "hp": 80,
+      "atk": 52,
+      "def": 145,
+      "spa": 143,
+      "spd": 125,
+      "spe": 80
+    }
+  },
+  "1028": {
+    "type1": "water",
+    "type2": "dragon",
+    "ability": 82,
+    "baseStats": {
+      "hp": 85,
+      "atk": 165,
+      "def": 120,
+      "spa": 79,
+      "spd": 93,
+      "spe": 88
+    }
+  },
+  "1029": {
+    "type1": "fire",
+    "type2": "fighting",
+    "ability": 75,
+    "baseStats": {
+      "hp": 130,
+      "atk": 158,
+      "def": 75,
+      "spa": 80,
+      "spd": 110,
+      "spe": 75
+    }
+  },
+  "1030": {
+    "type1": "dragon",
+    "type2": "fairy",
+    "ability": 138,
+    "baseStats": {
+      "hp": 80,
+      "atk": 140,
+      "def": 80,
+      "spa": 140,
+      "spd": 100,
+      "spe": 80
+    }
+  },
+  "1032": {
+    "type1": "electric",
+    "type2": "fire",
+    "ability": 133,
+    "baseStats": {
+      "hp": 90,
+      "atk": 145,
+      "def": 102,
+      "spa": 145,
+      "spd": 88,
+      "spe": 85
+    }
+  },
+  "1034": {
+    "type1": "dark",
+    "type2": null,
+    "ability": 102,
+    "baseStats": {
+      "hp": 80,
+      "atk": 140,
+      "def": 80,
+      "spa": 140,
+      "spd": 80,
+      "spe": 90
+    }
+  },
+  "1037": {
+    "type1": "dark",
+    "type2": "sound",
+    "ability": 64,
+    "baseStats": {
+      "hp": 110,
+      "atk": 141,
+      "def": 92,
+      "spa": 79,
+      "spd": 70,
+      "spe": 138
+    }
+  },
+  "1038": {
+    "type1": "ghost",
+    "type2": "psychic",
+    "ability": 121,
+    "baseStats": {
+      "hp": 95,
+      "atk": 84,
+      "def": 95,
+      "spa": 90,
+      "spd": 100,
+      "spe": 116
+    }
+  },
+  "1039": {
+    "type1": "dragon",
+    "type2": "psychic",
+    "ability": 65,
+    "baseStats": {
+      "hp": 100,
+      "atk": 122,
+      "def": 115,
+      "spa": 128,
+      "spd": 95,
+      "spe": 100
+    }
+  },
+  "1054": {
+    "type1": "bug",
+    "type2": "ground",
+    "ability": 124,
+    "baseStats": {
+      "hp": 70,
+      "atk": 145,
+      "def": 85,
+      "spa": 20,
+      "spd": 105,
+      "spe": 125
+    }
+  },
+  "1057": {
+    "type1": "steel",
+    "type2": "electric",
+    "ability": 155,
+    "baseStats": {
+      "hp": 80,
+      "atk": 30,
+      "def": 83,
+      "spa": 220,
+      "spd": 86,
+      "spe": 151
+    }
+  }
+}
 
 // 指定したポケモンのメガ進化データを取得する。
 // フォーム違い（forms.X/forms.Y）がある場合、poke.megaForm（既に決まっていればそれ、
