@@ -17707,6 +17707,1164 @@ function spawnFlamethrowerSpecial(particles, w, h, info) {
 }
 
 // ============================================================
+// だいもんじ：火球を相手へ撃ち込み、着弾点に炎が「大」の字を描いて燃え広がる演出
+// 原作（ダイパ以降のバトル演出）の象徴である「大の字」を再現する。
+// 構成：①口元に火球が生まれる（チャージ）
+//       ②火球が尾を引きながら相手へ飛ぶ
+//       ③着弾の閃光と同時に、炎が「大」の字の4画（横棒→縦棒→左払い→右払い）を順に走る
+//       ④「大」が揺らめきながら燃え盛る（この間に相手へダメージが入る体感）
+//       ⑤ 大の字が爆ぜて火の粉が四散し、黒煙が立ち上る余韻
+// 「大」の字のシルエットが一目で読めること、火線の先端が明るく後ろが赤い温度階調がキモ。
+//
+// info = { from:{x,y}, to:{x,y}, scale }  ※ playSpecialTypeEffect が実測して渡す。
+// ============================================================
+const DAIMONJI_CHARGE_MS = 340;    // 口元に火球が生まれる
+const DAIMONJI_FLY_MS = 300;       // 火球が相手へ飛ぶ
+const DAIMONJI_HIT_MS = DAIMONJI_CHARGE_MS + DAIMONJI_FLY_MS;   // 着弾（大の字の描き始め）
+const DAIMONJI_DRAW_MS = 300;      // 「大」の4画を描き切るまで
+const DAIMONJI_BURN_MS = 520;      // 「大」が燃え盛る
+const DAIMONJI_FADE_MS = 360;      // 爆ぜて消える
+const DAIMONJI_BURST_MS = DAIMONJI_HIT_MS + DAIMONJI_DRAW_MS + DAIMONJI_BURN_MS;  // 爆散の瞬間
+const DAIMONJI_END_MS = DAIMONJI_BURST_MS + DAIMONJI_FADE_MS + 200;
+
+function spawnDaimonjiSpecial(particles, w, h, info) {
+  const from = (info && info.from) || { x: w * 0.28, y: h * 0.68 };
+  const to = (info && info.to) || { x: w * 0.72, y: h * 0.32 };
+  const S = (info && info.scale) || 1;
+  const R = Math.max(w, h);
+
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const mouth = { x: from.x + ux * 30 * S, y: from.y + uy * 30 * S };
+
+  // ---- 「大」の字の4画（着弾点 to を中心とした座標） ----
+  // 実際の「大」の構造：横棒を縦線が貫き、その交点から左右へ両足が払われる。
+  // 相手スプライトを覆う大きさ。縮小画面でも比率が保たれるよう S で拡縮する。
+  const K = 58 * S;   // 「大」の基準サイズ（半幅）
+  const cx = to.x, cy = to.y;
+  // 「大」の字形：横棒は幅広く、縦の頭は横棒からわずかに出る程度、
+  // 両足は交点から大きく開いて安定した三角形のシルエットを作る（縦に間延びさせない）。
+  const BAR_Y = cy - K * 0.34;      // 横棒の高さ（字の上1/3あたり）
+  const TOP_Y = cy - K * 1.02;      // 縦の頭の先端（横棒の上にはっきり出す）
+  const FOOT_Y = cy + K * 0.86;     // 両足の先端
+  const FOOT_DX = K * 1.12;         // 両足の開き（横棒の幅と同程度に広げる）
+  // 筆順どおり時間順に描く：①横棒 ②縦棒 ③左払い ④右払い
+  //   ①横棒   ：左から右へ一直線（幅広）
+  //   ②縦棒   ：頭の先端から横棒を貫いて交点まで一気に引く
+  //   ③左払い ：交点から左下へ大きく払う
+  //   ④右払い ：交点から右下へ大きく払う
+  const JX = cx, JY = BAR_Y + K * 0.10;   // 両足の付け根（横棒のすぐ下の交点）
+  const STROKES = [
+    { x0: cx - K * 1.22, y0: BAR_Y, x1: cx + K * 1.22, y1: BAR_Y, w: 19 * S, t0: 0.00, t1: 0.30 },
+    { x0: cx,            y0: TOP_Y, x1: cx,            y1: JY,    w: 19 * S, t0: 0.24, t1: 0.50 },
+    { x0: JX,            y0: JY,    x1: cx - FOOT_DX,  y1: FOOT_Y, w: 21 * S, t0: 0.44, t1: 0.74 },
+    { x0: JX,            y0: JY,    x1: cx + FOOT_DX,  y1: FOOT_Y, w: 21 * S, t0: 0.68, t1: 1.00 },
+  ];
+
+  // 大の字全体の強度（描画→燃焼→爆散で減衰）。msは演出開始からの絶対時刻。
+  function daimonjiStrength(ms) {
+    if (ms < DAIMONJI_HIT_MS) return 0;
+    if (ms < DAIMONJI_BURST_MS) return 1;
+    const f = (ms - DAIMONJI_BURST_MS) / DAIMONJI_FADE_MS;
+    return Math.pow(1 - clamp01(f), 1.5);
+  }
+  // 各画がどこまで描かれたか（0〜1）。先端が伸びていく表現に使う。
+  function strokeProgress(st, ms) {
+    const p = (ms - DAIMONJI_HIT_MS) / DAIMONJI_DRAW_MS;
+    return easeOutCubic(clamp01((p - st.t0) / (st.t1 - st.t0)));
+  }
+
+  // ---- 幕0：口元に火の粉と火球の種が集まる ----
+  particles.push({
+    maxLife: DAIMONJI_CHARGE_MS + 40,
+    blend: 'lighter',
+    draw(ctx, t) {
+      const a = Math.sin(Math.PI * clamp01(t)) * 0.7;
+      const r = lerp(6 * S, 26 * S, easeOutCubic(t));
+      const g = ctx.createRadialGradient(mouth.x, mouth.y, 0, mouth.x, mouth.y, r);
+      g.addColorStop(0, rgba('#fff8d0', a));
+      g.addColorStop(0.45, rgba('#ffb347', a * 0.85));
+      g.addColorStop(1, 'rgba(255,80,20,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(mouth.x, mouth.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  for (let i = 0; i < 12; i++) {
+    const a0 = (i / 12) * Math.PI * 2 + rand(-0.25, 0.25);
+    const r0 = rand(30, 56) * S;
+    const seed = rand(0, 100);
+    particles.push({
+      delay: rand(0, 170),
+      maxLife: rand(170, 240),
+      blend: 'lighter',
+      draw(ctx, t) {
+        if (t >= 1) return;
+        const rr = lerp(r0, 3 * S, easeInCubic(t));
+        const spin = a0 + t * 3.2;
+        const x = mouth.x + Math.cos(spin) * rr;
+        const y = mouth.y + Math.sin(spin) * rr * 0.8;
+        const a = clamp01(t * 4) * (1 - Math.max(0, (t - 0.85) / 0.15));
+        const size = (2.2 + 1.8 * Math.abs(noise1(t * 10, seed))) * S;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, size * 2.4);
+        g.addColorStop(0, rgba('#ffe9a0', a));
+        g.addColorStop(0.5, rgba('#ff9a3a', a * 0.7));
+        g.addColorStop(1, 'rgba(255,80,20,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, size * 2.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
+  // ---- 幕1：火球が尾を引きながら相手へ飛ぶ ----
+  particles.push({
+    delay: DAIMONJI_CHARGE_MS,
+    maxLife: DAIMONJI_FLY_MS,
+    blend: 'lighter',
+    draw(ctx, t) {
+      const e = easeInCubic(t) * 0.35 + t * 0.65;   // 徐々に加速
+      // 尾（過去の位置に小さな火の玉を並べる）
+      for (let k = 7; k >= 0; k--) {
+        const tt = clamp01(e - k * 0.035);
+        const x = lerp(mouth.x, to.x, tt);
+        const y = lerp(mouth.y, to.y, tt);
+        const fade = 1 - k / 8;
+        const r = (17 - k * 1.5) * S;
+        const a = 0.75 * fade;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, rgba(k === 0 ? '#ffffff' : '#ffd98a', a));
+        g.addColorStop(0.45, rgba('#ff7a1a', a * 0.85));
+        g.addColorStop(1, 'rgba(255,50,10,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  });
+  // 火球から後方へ散る火の粉
+  for (let i = 0; i < 20; i++) {
+    const tAt = rand(0.05, 0.95);
+    const side = rand(-1, 1);
+    const size = rand(1.6, 3.0) * S;
+    const col = pick(['#ffe9a0', '#ffb347', '#ff7a1a']);
+    particles.push({
+      delay: DAIMONJI_CHARGE_MS + tAt * DAIMONJI_FLY_MS,
+      maxLife: rand(160, 260),
+      blend: 'lighter',
+      draw(ctx, t) {
+        if (t >= 1) return;
+        const base = lerp(mouth.x, to.x, tAt * 0.7 + 0.15);
+        const baseY = lerp(mouth.y, to.y, tAt * 0.7 + 0.15);
+        const x = base - ux * 30 * S * t + -uy * side * 14 * S;
+        const y = baseY - uy * 30 * S * t + ux * side * 14 * S + t * 10 * S;
+        ctx.fillStyle = rgba(col, (1 - t) * 0.9);
+        ctx.beginPath();
+        ctx.arc(x, y, size * (1 - t * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
+  // ---- 幕2：着弾の閃光（大の字が走り出す合図） ----
+  particles.push({
+    delay: DAIMONJI_HIT_MS,
+    maxLife: 300,
+    blend: 'lighter',
+    draw(ctx, t) {
+      const a = (1 - t) * 0.95;
+      const r = lerp(10 * S, 74 * S, easeOutQuint(t));
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, rgba('#ffffff', a));
+      g.addColorStop(0.3, rgba('#ffe9a0', a * 0.95));
+      g.addColorStop(0.65, rgba('#ff7a1a', a * 0.7));
+      g.addColorStop(1, 'rgba(255,50,10,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  // ---- 幕2〜3：「大」の字の炎（4画をそれぞれ多層の火線として描く） ----
+  // 各画を、太い赤→中間のオレンジ→細い白黄の3層でソフトブロブを並べて描き、
+  // 火線の先端（描き進んでいる側）ほど明るく、根元ほど赤く落ち着く温度階調にする。
+  const BODY_LAYERS = [
+    { wMul: 1.00, aMul: 0.34, col0: '#ff7a1a', col1: '#ff2e0e' },
+    { wMul: 0.66, aMul: 0.60, col0: '#ffd98a', col1: '#ff5a1a' },
+    { wMul: 0.34, aMul: 0.90, col0: '#ffffff', col1: '#ffd98a' },
+  ];
+  STROKES.forEach((st, si) => {
+    const seedA = rand(0, 100), seedB = rand(0, 100);
+    const sx = st.x1 - st.x0, sy = st.y1 - st.y0;
+    const sl = Math.hypot(sx, sy) || 1;
+    const snx = -sy / sl, sny = sx / sl;    // 画に垂直な方向（揺らぎ用）
+    particles.push({
+      delay: DAIMONJI_HIT_MS,
+      maxLife: DAIMONJI_END_MS - DAIMONJI_HIT_MS,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const ms = DAIMONJI_HIT_MS + t * (DAIMONJI_END_MS - DAIMONJI_HIT_MS);
+        const k = daimonjiStrength(ms);
+        if (k <= 0.02) return;
+        const prog = strokeProgress(st, ms);
+        if (prog <= 0) return;
+        const time = ms / 1000;
+        const N = 40;
+        BODY_LAYERS.forEach((L, li) => {
+          for (let i = 0; i < N; i++) {
+            const kk = (i + 0.5) / N;
+            if (kk > prog) break;
+            const px = lerp(st.x0, st.x1, kk);
+            const py = lerp(st.y0, st.y1, kk);
+            // 火の揺らぎ：画に垂直方向にゆらゆら、時間で乱流
+            const jit = noise1(kk * 6 + time * 9 + si * 5, seedA + li * 3) * st.w * 0.28;
+            const x = px + snx * jit;
+            const y = py + sny * jit - Math.abs(noise1(kk * 5 + time * 7, seedB + li)) * 4 * S;
+            // 先端が明るい：描いている最中は先頭付近を強調。描き終えた後は全体が均一に燃える。
+            const drawing = ms < DAIMONJI_HIT_MS + DAIMONJI_DRAW_MS + 60;
+            const headBoost = drawing ? clamp01(1 - (prog - kk) * 3.2) : 0;
+            const flick = 0.85 + Math.abs(noise1(kk * 8 + time * 12, seedB + li)) * 0.3;
+            const size = st.w * L.wMul * (0.9 + Math.abs(noise1(kk * 6 + time * 10, seedA + li)) * 0.3)
+                       * (0.8 + headBoost * 0.35);
+            const a = k * L.aMul * flick * (0.72 + headBoost * 0.5) * 0.62;
+            const g = ctx.createRadialGradient(x, y, 0, x, y, size);
+            g.addColorStop(0, rgba(L.col0, a));
+            g.addColorStop(0.42, rgba(L.col1, a * 0.85));
+            g.addColorStop(1, 'rgba(255,60,0,0)');
+            ctx.fillStyle = g;
+            ctx.beginPath();
+            ctx.arc(x, y, size, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        });
+      }
+    });
+  });
+
+  // 大の字全体を包む、うっすらとした熱のオーラ（燃え盛りの間だけ）
+  particles.push({
+    delay: DAIMONJI_HIT_MS + DAIMONJI_DRAW_MS * 0.5,
+    maxLife: DAIMONJI_END_MS - DAIMONJI_HIT_MS - DAIMONJI_DRAW_MS * 0.5,
+    blend: 'lighter',
+    draw(ctx, t) {
+      const ms = DAIMONJI_HIT_MS + DAIMONJI_DRAW_MS * 0.5 + t * (DAIMONJI_END_MS - DAIMONJI_HIT_MS - DAIMONJI_DRAW_MS * 0.5);
+      const k = daimonjiStrength(ms);
+      if (k <= 0.02) return;
+      const pulse = 0.85 + 0.15 * Math.sin(ms * 0.03);
+      const r = K * 1.55 * pulse;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, rgba('#ff9a3a', k * 0.26));
+      g.addColorStop(0.6, rgba('#ff5a1a', k * 0.14));
+      g.addColorStop(1, 'rgba(255,40,10,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  // 火線から立ち上る火の粉（燃焼中、各画の上から湧き上がる）
+  for (let i = 0; i < 42; i++) {
+    const st = STROKES[i % STROKES.length];
+    const along = rand(0.05, 0.95);
+    const startAt = DAIMONJI_HIT_MS + DAIMONJI_DRAW_MS * st.t0 + rand(0, DAIMONJI_DRAW_MS + DAIMONJI_BURN_MS - 60);
+    const drift = rand(-14, 14) * S;
+    const rise = rand(26, 66) * S;
+    const size = rand(1.6, 3.4) * S;
+    const col = pick(['#ffe9a0', '#ffb347', '#ff7a1a', '#ff4d2e']);
+    const seed = rand(0, 100);
+    particles.push({
+      delay: startAt,
+      maxLife: rand(300, 480),
+      blend: 'lighter',
+      draw(ctx, t) {
+        if (t >= 1) return;
+        const bx = lerp(st.x0, st.x1, along);
+        const by = lerp(st.y0, st.y1, along);
+        const e = easeOutCubic(t);
+        const x = bx + drift * e + noise1(t * 5 + seed, seed) * 8 * S;
+        const y = by - rise * e;
+        const a = (1 - t) * 0.92;
+        ctx.fillStyle = rgba(col, a);
+        ctx.shadowColor = rgba('#ff9a3a', 0.9);
+        ctx.shadowBlur = 6 * S;
+        ctx.beginPath();
+        ctx.arc(x, y, size * (1 - t * 0.45), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
+  // ---- 幕4：大の字が爆ぜる（爆散の瞬間） ----
+  particles.push({
+    delay: DAIMONJI_BURST_MS,
+    maxLife: 380,
+    blend: 'lighter',
+    draw(ctx, t) {
+      const a = (1 - t) * 0.9;
+      const r = lerp(14 * S, 92 * S, easeOutQuint(t));
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, rgba('#ffffff', a));
+      g.addColorStop(0.28, rgba('#ffe9a0', a * 0.95));
+      g.addColorStop(0.62, rgba('#ff7a1a', a * 0.7));
+      g.addColorStop(1, 'rgba(255,50,10,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  for (let i = 0; i < 3; i++) {
+    particles.push({
+      delay: DAIMONJI_BURST_MS + i * 55,
+      maxLife: 340 - i * 40,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const r = lerp(12 * S, R * (0.13 + i * 0.055), easeOutQuint(t));
+        const a = (1 - t) * (0.8 - i * 0.15);
+        ctx.strokeStyle = rgba(i === 0 ? '#ffe9a0' : '#ff7a1a', a);
+        ctx.lineWidth = (6 - i) * (1 - t * 0.5);
+        ctx.shadowColor = rgba('#ff9a3a', 0.9);
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    });
+  }
+  // 大の字の火線が砕けたように、線上から放射状に火の粒が弾ける
+  for (let i = 0; i < 40; i++) {
+    const st = STROKES[i % STROKES.length];
+    const along = rand(0, 1);
+    const ox = lerp(st.x0, st.x1, along);
+    const oy = lerp(st.y0, st.y1, along);
+    const ang = Math.atan2(oy - cy, ox - cx) + rand(-0.7, 0.7);
+    const sp = rand(34, 130) * S;
+    const sz = rand(2, 4.6) * S;
+    const col = pick(['#ffe9a0', '#ffb347', '#ff4d2e']);
+    const grav = rand(0.5, 1.2);
+    const seed = rand(0, 100);
+    particles.push({
+      delay: DAIMONJI_BURST_MS + rand(0, 60),
+      maxLife: rand(340, 560),
+      blend: 'lighter',
+      draw(ctx, t) {
+        const e = easeOutCubic(t);
+        const x = ox + Math.cos(ang) * sp * e;
+        const y = oy + Math.sin(ang) * sp * e * 0.85 + grav * t * t * h * 0.06;
+        const flick = 0.5 + Math.abs(noise1(t * 20 + seed, seed)) * 0.5;
+        const a = (1 - t) * 0.95 * flick;
+        ctx.fillStyle = rgba(col, a);
+        ctx.shadowColor = rgba('#ff9a3a', 0.9);
+        ctx.shadowBlur = 6 * S;
+        ctx.beginPath();
+        ctx.arc(x, y, sz * (1 - t * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+  // 黒煙が立ち上る余韻
+  for (let i = 0; i < 10; i++) {
+    const ox = rand(-30, 30) * S;
+    const oy = rand(-30, 30) * S;
+    const size = rand(26, 46) * S;
+    const seed = rand(0, 100);
+    particles.push({
+      delay: DAIMONJI_BURST_MS + 80 + rand(0, 200),
+      maxLife: rand(500, 700),
+      draw(ctx, t) {
+        const rise = easeOutCubic(t);
+        const x = cx + ox + noise1(t * 4 + seed, seed) * 16 * S;
+        const y = cy + oy - rise * 42 * S;
+        const a = (t < 0.15 ? t / 0.15 : (1 - Math.max(0, (t - 0.4) / 0.6))) * 0.4;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, size);
+        g.addColorStop(0, rgba('#2a1812', a));
+        g.addColorStop(1, 'rgba(20,12,10,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+}
+
+// ============================================================
+// だいちのちから：相手の足元の地面が黄金色に発光してひび割れ、
+// 地中から噴き上がる大地のエネルギーが相手を下から突き上げる演出。
+// 原作の効果テキスト「相手の足下へ大地の力を放出する」を再現する。
+// じしん（画面全体が揺れる広域演出）とは対照的に、相手の足元一点に
+// 力を集中させる「局所噴出」が持ち味。
+// 構成：①相手の足元に大地の力が集まり、じわりと黄金色に発光する（予兆）
+//       ②足元の地面にクモの巣状の亀裂が走り、亀裂から光が漏れる
+//       ③亀裂の中心から閃光と共に大地のエネルギーが噴き上がり、
+//         相手を包むように土色〜黄金色の柱が突き上がる
+//       ④岩の破片と土煙が四方へ弾け、相手の足元に地割れの跡が残る余韻
+// 「足元中心の局所演出」「亀裂から漏れる黄金の光」「下から突き上げる噴出」がキモ。
+//
+// info = { from:{x,y}, to:{x,y}, scale }  ※ playSpecialTypeEffect が実測して渡す。
+// ============================================================
+const EARTHPOWER_OMEN_MS = 300;     // ①足元が発光し始める予兆
+const EARTHPOWER_CRACK_MS = 260;    // ②地面に亀裂が走る
+const EARTHPOWER_ERUPT_MS = 420;    // ③大地のエネルギーが噴き上がる
+const EARTHPOWER_SETTLE_MS = 520;   // ④破片・土煙が収まる余韻
+const EARTHPOWER_CRACK_START_MS = EARTHPOWER_OMEN_MS;
+const EARTHPOWER_ERUPT_START_MS = EARTHPOWER_CRACK_START_MS + EARTHPOWER_CRACK_MS;
+const EARTHPOWER_SETTLE_START_MS = EARTHPOWER_ERUPT_START_MS + EARTHPOWER_ERUPT_MS;
+const EARTHPOWER_END_MS = EARTHPOWER_SETTLE_START_MS + EARTHPOWER_SETTLE_MS + 200;
+// 「着弾」＝大地のエネルギーが噴き上がって相手にダメージが入る体感タイミング
+const EARTHPOWER_HIT_MS = EARTHPOWER_ERUPT_START_MS;
+
+function spawnEarthPowerSpecial(particles, w, h, info) {
+  const to = (info && info.to) || { x: w * 0.7, y: h * 0.72 };
+  const S = (info && info.scale) || 1;
+  // 相手の足元＝スプライト中心よりやや下。じしんの土色パレットと合わせつつ、
+  // だいちのちから特有の黄金〜橙のエネルギー色を主役にする。
+  const gx = to.x, gy = to.y + 26 * S;
+  const R = Math.max(w, h);
+
+  // ---- ①予兆：足元の地面がじわりと黄土色に発光する ----
+  particles.push({
+    maxLife: EARTHPOWER_OMEN_MS + 60,
+    blend: 'lighter',
+    draw(ctx, t) {
+      const e = easeOutCubic(t);
+      const a = Math.sin(Math.PI * clamp01(t)) * 0.5;
+      const rx = lerp(10 * S, 46 * S, e);
+      const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, rx);
+      g.addColorStop(0, rgba('#ffe28a', a));
+      g.addColorStop(0.5, rgba('#d9a53c', a * 0.7));
+      g.addColorStop(1, 'rgba(120,80,20,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(gx, gy, rx, rx * 0.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  // 予兆中、足元から立ち上る小さな土の粒（地中で何かが蠢く気配）
+  for (let i = 0; i < 10; i++) {
+    const a0 = rand(0, Math.PI * 2);
+    const r0 = rand(8, 30) * S;
+    const seed = rand(0, 100);
+    particles.push({
+      delay: rand(40, EARTHPOWER_OMEN_MS - 40),
+      maxLife: rand(140, 220),
+      blend: 'lighter',
+      draw(ctx, t) {
+        if (t >= 1) return;
+        const rr = r0 * (1 - easeInCubic(t) * 0.6);
+        const x = gx + Math.cos(a0) * rr;
+        const y = gy + Math.sin(a0) * rr * 0.4 - t * 10 * S;
+        const a = clamp01(t * 4) * (1 - Math.max(0, (t - 0.7) / 0.3));
+        const size = (2 + Math.abs(noise1(t * 8, seed))) * S;
+        ctx.fillStyle = rgba('#d9a53c', a * 0.8);
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
+  // ---- ②地面にクモの巣状の亀裂が走る ----
+  // 中心(gx,gy)から放射状に亀裂を伸ばし、さらに同心円状の亀裂で繋いで
+  // 「クモの巣」らしいネットワーク構造にする。
+  const CRACK_N = 8;
+  const crackPaths = [];
+  for (let i = 0; i < CRACK_N; i++) {
+    const ang = (i / CRACK_N) * Math.PI * 2 + rand(-0.15, 0.15);
+    const len = rand(38, 62) * S;
+    const segs = 5;
+    const path = [[gx, gy]];
+    let cx = gx, cy = gy;
+    for (let s = 1; s <= segs; s++) {
+      const k = s / segs;
+      cx = gx + Math.cos(ang) * len * k + rand(-4, 4) * S;
+      cy = gy + Math.sin(ang) * len * k * 0.55 + rand(-3, 3) * S;   // 縦を潰して足元の地面らしい楕円状に
+      path.push([cx, cy]);
+    }
+    crackPaths.push(path);
+    particles.push({
+      delay: EARTHPOWER_CRACK_START_MS + rand(0, 100),
+      maxLife: EARTHPOWER_END_MS - EARTHPOWER_CRACK_START_MS,
+      path,
+      draw(ctx, t) {
+        const ms = t * this.maxLife;
+        const grow = clamp01(ms / 220);
+        const cut = Math.max(2, Math.floor(this.path.length * easeOutCubic(grow)));
+        // 亀裂が走った後は、噴出フェーズの間ずっと明るく発光し続け、余韻でゆっくり消える
+        const eruptStart = EARTHPOWER_ERUPT_START_MS - EARTHPOWER_CRACK_START_MS;
+        const settleStart = EARTHPOWER_SETTLE_START_MS - EARTHPOWER_CRACK_START_MS;
+        let glow;
+        if (ms < eruptStart) glow = 0.5;
+        else if (ms < settleStart) glow = 1;
+        else glow = Math.max(0, 1 - (ms - settleStart) / (EARTHPOWER_SETTLE_MS + 200));
+        ctx.save();
+        ctx.strokeStyle = rgba('#3a2510', 0.85);
+        ctx.lineWidth = 3.5 * S;
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        this.path.slice(0, cut).forEach(([px, py], k) => k === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py));
+        ctx.stroke();
+        ctx.strokeStyle = rgba('#ffcf5a', glow * 0.9);
+        ctx.lineWidth = 1.6 * S;
+        ctx.shadowColor = rgba('#ffcf5a', 0.9);
+        ctx.shadowBlur = 8 * S * glow;
+        ctx.beginPath();
+        this.path.slice(0, cut).forEach(([px, py], k) => k === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py));
+        ctx.stroke();
+        ctx.restore();
+      }
+    });
+  }
+  // 亀裂同士を繋ぐ同心円状の割れ目（クモの巣の横糸）
+  for (let ring = 0; ring < 2; ring++) {
+    const rr = (26 + ring * 20) * S;
+    particles.push({
+      delay: EARTHPOWER_CRACK_START_MS + 80 + ring * 60,
+      maxLife: EARTHPOWER_END_MS - EARTHPOWER_CRACK_START_MS - 80 - ring * 60,
+      draw(ctx, t) {
+        const ms = t * this.maxLife;
+        const grow = easeOutCubic(clamp01(ms / 200));
+        const eruptStart = EARTHPOWER_ERUPT_START_MS - EARTHPOWER_CRACK_START_MS - 80 - ring * 60;
+        const settleStart = EARTHPOWER_SETTLE_START_MS - EARTHPOWER_CRACK_START_MS - 80 - ring * 60;
+        let glow;
+        if (ms < eruptStart) glow = 0.4;
+        else if (ms < settleStart) glow = 0.9;
+        else glow = Math.max(0, 0.9 - (ms - settleStart) / (EARTHPOWER_SETTLE_MS + 200));
+        ctx.save();
+        ctx.strokeStyle = rgba('#4a3016', 0.6);
+        ctx.lineWidth = 2 * S;
+        ctx.beginPath();
+        ctx.ellipse(gx, gy, rr * grow, rr * grow * 0.42, 0, 0, Math.PI * 2 * grow);
+        ctx.stroke();
+        ctx.strokeStyle = rgba('#ffcf5a', glow * 0.5);
+        ctx.lineWidth = 1 * S;
+        ctx.beginPath();
+        ctx.ellipse(gx, gy, rr * grow, rr * grow * 0.42, 0, 0, Math.PI * 2 * grow);
+        ctx.stroke();
+        ctx.restore();
+      }
+    });
+  }
+
+  // ---- ③大地のエネルギーが噴き上がる：着弾の閃光 ----
+  particles.push({
+    delay: EARTHPOWER_HIT_MS,
+    maxLife: 340,
+    blend: 'lighter',
+    draw(ctx, t) {
+      const a = (1 - t) * 0.9;
+      const r = lerp(10 * S, 70 * S, easeOutQuint(t));
+      const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, r);
+      g.addColorStop(0, rgba('#fff6d0', a));
+      g.addColorStop(0.3, rgba('#ffcf5a', a * 0.95));
+      g.addColorStop(0.65, rgba('#c8781e', a * 0.7));
+      g.addColorStop(1, 'rgba(140,80,20,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.ellipse(gx, gy, r, r * 0.55, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  // 複数の光る土柱が、相手の足元を囲むように時間差で噴き上がる
+  const PILLAR_N = 8;
+  for (let i = 0; i < PILLAR_N; i++) {
+    const ang = (i / PILLAR_N) * Math.PI * 2 + rand(-0.2, 0.2);
+    const orbitR = rand(14, 36) * S;
+    const px0 = gx + Math.cos(ang) * orbitR;
+    const py0 = gy + Math.sin(ang) * orbitR * 0.45;
+    const height = rand(66, 108) * S;
+    const width = rand(10, 17) * S;
+    const delay = EARTHPOWER_ERUPT_START_MS + rand(0, 160);
+    particles.push({
+      delay,
+      maxLife: EARTHPOWER_ERUPT_MS + 220,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const rise = easeOutQuint(clamp01(t / 0.45));
+        const settle = t > 0.55 ? Math.sin((t - 0.55) / 0.45 * Math.PI) * 3 * S : 0;
+        const h0 = height * rise;
+        const alpha = 1 - Math.max(0, (t - 0.68) / 0.32);
+        const gtop = py0 - h0;
+        ctx.save();
+        ctx.translate(settle, 0);
+        // 土色の柱本体
+        const grad = ctx.createLinearGradient(px0 - width / 2, 0, px0 + width / 2, 0);
+        grad.addColorStop(0, rgba('#5c3f1e', alpha * 0.9));
+        grad.addColorStop(0.5, rgba('#c8781e', alpha));
+        grad.addColorStop(1, rgba('#5c3f1e', alpha * 0.9));
+        ctx.fillStyle = grad;
+        ctx.fillRect(px0 - width / 2, gtop, width, h0 + 16 * S);
+        // 内側の黄金の発光コア
+        const coreGrad = ctx.createLinearGradient(px0 - width * 0.3, 0, px0 + width * 0.3, 0);
+        coreGrad.addColorStop(0, 'rgba(255,207,90,0)');
+        coreGrad.addColorStop(0.5, rgba('#ffe28a', alpha * 0.9));
+        coreGrad.addColorStop(1, 'rgba(255,207,90,0)');
+        ctx.fillStyle = coreGrad;
+        ctx.fillRect(px0 - width * 0.3, gtop, width * 0.6, h0 + 12 * S);
+        // 頂部の光る破片ハイライト
+        ctx.fillStyle = rgba('#fff6d0', alpha);
+        ctx.beginPath();
+        ctx.moveTo(px0 - width / 2, gtop);
+        ctx.lineTo(px0, gtop - 12 * S * rise);
+        ctx.lineTo(px0 + width / 2, gtop);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    });
+    // 各柱の根元から砂煙が弾ける
+    particles.push({
+      delay,
+      maxLife: 300,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const alpha = (1 - t) * 0.6;
+        const r = lerp(4 * S, 22 * S, easeOutCubic(t));
+        const g = ctx.createRadialGradient(px0, py0, 0, px0, py0, r);
+        g.addColorStop(0, rgba('#ffcf5a', alpha));
+        g.addColorStop(1, 'rgba(160,120,60,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.ellipse(px0, py0, r, r * 0.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
+  // 噴出中、亀裂の隙間から次々と光の粒が吹き上がる
+  for (let i = 0; i < 30; i++) {
+    const ang = rand(0, Math.PI * 2);
+    const r0 = rand(6, 40) * S;
+    const riseH = rand(30, 78) * S;
+    const size = rand(1.8, 3.6) * S;
+    const col = pick(['#ffe28a', '#ffcf5a', '#d9a53c']);
+    const seed = rand(0, 100);
+    particles.push({
+      delay: EARTHPOWER_ERUPT_START_MS + rand(0, EARTHPOWER_ERUPT_MS - 60),
+      maxLife: rand(280, 440),
+      blend: 'lighter',
+      draw(ctx, t) {
+        if (t >= 1) return;
+        const e = easeOutCubic(t);
+        const x = gx + Math.cos(ang) * r0 + noise1(t * 6 + seed, seed) * 6 * S;
+        const y = gy + Math.sin(ang) * r0 * 0.45 - riseH * e;
+        const a = (1 - t) * 0.9;
+        ctx.fillStyle = rgba(col, a);
+        ctx.shadowColor = rgba('#ffcf5a', 0.9);
+        ctx.shadowBlur = 6 * S;
+        ctx.beginPath();
+        ctx.arc(x, y, size * (1 - t * 0.4), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
+  // ---- ④余韻：岩の破片が四方へ弾け、土煙が舞ってからゆっくり収まる ----
+  for (let i = 0; i < 26; i++) {
+    const ang = rand(0, Math.PI * 2);
+    const sp = rand(30, 100) * S;
+    const sz = rand(2, 5) * S;
+    const col = pick(['#8a6530', '#c79a5b', '#5c3f1e', '#ffcf5a']);
+    const grav = rand(0.6, 1.3);
+    const rot0 = rand(0, Math.PI * 2);
+    particles.push({
+      delay: EARTHPOWER_ERUPT_START_MS + 60 + rand(0, 220),
+      maxLife: rand(360, 580),
+      draw(ctx, t) {
+        const e = easeOutCubic(t);
+        const x = gx + Math.cos(ang) * sp * e;
+        const y = gy + Math.sin(ang) * sp * e * 0.5 - sp * 0.25 * e * (1 - e) + grav * t * t * h * 0.05;
+        const a = (1 - t) * 0.95;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(rot0 + t * 5);
+        ctx.fillStyle = rgba(col, a);
+        ctx.fillRect(-sz / 2, -sz / 2, sz, sz);
+        ctx.restore();
+      }
+    });
+  }
+  // 土煙が舞い上がって薄れていく余韻
+  for (let i = 0; i < 8; i++) {
+    const ox = rand(-30, 30) * S;
+    const oy = rand(-10, 10) * S;
+    const size = rand(24, 42) * S;
+    const seed = rand(0, 100);
+    particles.push({
+      delay: EARTHPOWER_SETTLE_START_MS - 60 + rand(0, 160),
+      maxLife: rand(460, 640),
+      draw(ctx, t) {
+        const rise = easeOutCubic(t);
+        const x = gx + ox + noise1(t * 4 + seed, seed) * 14 * S;
+        const y = gy + oy - rise * 30 * S;
+        const a = (t < 0.15 ? t / 0.15 : (1 - Math.max(0, (t - 0.4) / 0.6))) * 0.38;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, size);
+        g.addColorStop(0, rgba('#8a6530', a));
+        g.addColorStop(1, 'rgba(90,65,30,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+  // 地割れの跡（最後まで残るうっすらとした裂け目のシルエット）
+  particles.push({
+    delay: EARTHPOWER_SETTLE_START_MS,
+    maxLife: EARTHPOWER_END_MS - EARTHPOWER_SETTLE_START_MS,
+    draw(ctx, t) {
+      const a = (1 - t) * 0.35;
+      ctx.save();
+      ctx.strokeStyle = rgba('#3a2510', a);
+      ctx.lineWidth = 2 * S;
+      crackPaths.forEach((path) => {
+        ctx.beginPath();
+        path.forEach(([px, py], k) => k === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py));
+        ctx.stroke();
+      });
+      ctx.restore();
+    }
+  });
+}
+
+// ============================================================
+// ルクシオンエア（オリジナル・でんきタイプ、りゅうせいぐんのでんき版）
+// 相手を包み込む「雷を帯びた竜巻」が荒れ狂う、りゅうせいぐんに匹敵する大技演出。
+// 構成：①空が紫がかった黒雲に覆われ、稲妻が奥で明滅する（暗雲の予兆）
+//       ②自分の足元から放電が立ち上り、周囲の空気を吸い込みながら帯電していく（チャージ）
+//       ③相手の足元から黄色い竜巻が巻き起こり、渦を巻きながら相手を包み込むように立ち上がる
+//       ④竜巻の内部を無数のジグザグ稲妻が駆け巡り、外周にも放電の輪が纏わりつく（本体：竜巻＋雷）
+//       ⑤竜巻が収束すると同時に中心で巨大な放電が爆発し、閃光と衝撃波が全方位に走る
+//       ⑥余韻：静電気の火花と千切れた暗雲の残骸が舞って消える
+// りゅうせいぐん（複数幕・多層グラデーション・派手な大爆発）の構成密度を踏襲しつつ、
+// 10まんボルトのジグザグ稲妻（drawBolt）を竜巻内部で多数走らせて「電気を帯びた竜巻」にする。
+// 配色は 黄〜白（電撃の芯）× 紫がかった暗雲・風（竜巻の外殻）のコントラストで統一する。
+//
+// info = { from:{x,y}, to:{x,y}, scale }  ※ playSpecialTypeEffect が実測して渡す。
+// ============================================================
+const LUXIONAIR_OMEN_MS = 340;        // ①暗雲が立ち込め、奥で稲妻が明滅する予兆
+const LUXIONAIR_CHARGE_MS = 340;      // ②自分の足元が帯電し、風を吸い込み始める
+const LUXIONAIR_FORM_MS = 360;        // ③相手の足元から竜巻が巻き起こり立ち上がる
+const LUXIONAIR_RAGE_MS = 620;        // ④竜巻の中で雷が荒れ狂う本体フェーズ
+const LUXIONAIR_BURST_MS = 460;       // ⑤収束と同時に中心で大放電が爆発
+const LUXIONAIR_SETTLE_MS = 520;      // ⑥静電気の火花・暗雲の残骸が舞う余韻
+
+const LUXIONAIR_CHARGE_START_MS = LUXIONAIR_OMEN_MS;
+const LUXIONAIR_FORM_START_MS = LUXIONAIR_CHARGE_START_MS + LUXIONAIR_CHARGE_MS;
+const LUXIONAIR_RAGE_START_MS = LUXIONAIR_FORM_START_MS + LUXIONAIR_FORM_MS;
+const LUXIONAIR_BURST_START_MS = LUXIONAIR_RAGE_START_MS + LUXIONAIR_RAGE_MS;
+const LUXIONAIR_SETTLE_START_MS = LUXIONAIR_BURST_START_MS + LUXIONAIR_BURST_MS;
+const LUXIONAIR_END_MS = LUXIONAIR_SETTLE_START_MS + LUXIONAIR_SETTLE_MS + 200;
+// 「着弾」＝竜巻が相手を完全に包み、ダメージが入る体感タイミング
+const LUXIONAIR_HIT_MS = LUXIONAIR_FORM_START_MS;
+
+function spawnLuxionAirSpecial(particles, w, h, info) {
+  const from = (info && info.from) || { x: w * 0.28, y: h * 0.68 };
+  const to = (info && info.to) || { x: w * 0.72, y: h * 0.32 };
+  const S = (info && info.scale) || 1;
+  const R = Math.max(w, h);
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  const nx = -dy / dist, ny = dx / dist;
+
+  const tx = to.x, ty = to.y;                 // 竜巻の中心＝相手の位置
+  const groundY = ty + 30 * S;                 // 竜巻の足元
+  const TOP_Y = ty - 78 * S;                   // 竜巻の頭頂
+  const TWIST_H = groundY - TOP_Y;             // 竜巻の全高
+
+  // ---- ジグザグ稲妻ヘルパー（10まんボルトのdrawBoltを踏襲。芯＋発光＋枝分かれ）----
+  function drawBolt(ctx, p0, p1, seed, alpha, coreColor, glowColor, widthScale, withBranches) {
+    const segs = 8;
+    const pts = [p0];
+    for (let i = 1; i < segs; i++) {
+      const t = i / segs;
+      const bx = lerp(p0.x, p1.x, t);
+      const by = lerp(p0.y, p1.y, t);
+      const wob = noise1(t * 9 + seed, seed) * (1 - Math.abs(t - 0.5) * 1.1) * 20 * S;
+      const perpx = -(p1.y - p0.y), perpy = (p1.x - p0.x);
+      const pl = Math.hypot(perpx, perpy) || 1;
+      pts.push({ x: bx + (perpx / pl) * wob, y: by + (perpy / pl) * wob });
+    }
+    pts.push(p1);
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = rgba(glowColor, alpha * 0.55);
+    ctx.lineWidth = 7 * widthScale * S;
+    ctx.shadowColor = rgba(glowColor, 0.9);
+    ctx.shadowBlur = 14 * S;
+    ctx.beginPath();
+    pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    ctx.stroke();
+    ctx.strokeStyle = rgba(coreColor, alpha);
+    ctx.lineWidth = 2.4 * widthScale * S;
+    ctx.shadowBlur = 7 * S;
+    ctx.beginPath();
+    pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    ctx.stroke();
+    if (withBranches) {
+      for (let i = 2; i < pts.length - 1; i += 2) {
+        const bp = pts[i];
+        const ang = Math.atan2(pts[i + 1].y - pts[i - 1].y, pts[i + 1].x - pts[i - 1].x) + (i % 4 === 0 ? 1.1 : -1.1);
+        const len = rand(8, 18) * S;
+        ctx.lineWidth = 1.2 * widthScale * S;
+        ctx.strokeStyle = rgba(coreColor, alpha * 0.7);
+        ctx.beginPath();
+        ctx.moveTo(bp.x, bp.y);
+        ctx.lineTo(bp.x + Math.cos(ang) * len, bp.y + Math.sin(ang) * len);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  // ---- 幕0：空が紫がかった暗雲に覆われ、奥で稲妻が明滅する（暗雲の予兆）----
+  particles.push({
+    maxLife: LUXIONAIR_END_MS,
+    draw(ctx, t) {
+      const a = t < 0.05 ? t / 0.05 : (t > 0.88 ? Math.max(0, 1 - (t - 0.88) / 0.12) : 1);
+      const grad = ctx.createLinearGradient(0, 0, 0, h);
+      grad.addColorStop(0, rgba('#0c0a1a', a * 0.72));
+      grad.addColorStop(0.55, rgba('#181228', a * 0.5));
+      grad.addColorStop(1, rgba('#241a30', a * 0.28));
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+    }
+  });
+  // 遠雷（画面奥で明滅する紫がかった閃光。竜巻本体とは無関係に散発的に光る）
+  for (let i = 0; i < 5; i++) {
+    const fx = rand(w * 0.1, w * 0.9), fy = rand(h * 0.05, h * 0.35);
+    particles.push({
+      delay: rand(0, LUXIONAIR_RAGE_START_MS + LUXIONAIR_RAGE_MS),
+      maxLife: rand(90, 160),
+      blend: 'lighter',
+      draw(ctx, t) {
+        const a = Math.sin(Math.PI * t) * 0.35;
+        const g = ctx.createRadialGradient(fx, fy, 0, fx, fy, w * 0.22);
+        g.addColorStop(0, rgba('#c9a8ff', a));
+        g.addColorStop(1, 'rgba(160,120,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(fx, fy, w * 0.22, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
+  // ---- 幕1：自分の足元が帯電し、風を吸い込み始める（チャージ）----
+  particles.push({
+    delay: LUXIONAIR_CHARGE_START_MS,
+    maxLife: LUXIONAIR_CHARGE_MS + 80,
+    blend: 'lighter',
+    draw(ctx, t) {
+      if (t >= 1) return;
+      const pulse = 0.7 + Math.abs(noise1(t * 12, 5)) * 0.3;
+      const a = Math.sin(Math.PI * clamp01(t * 1.1)) * 0.6 * pulse;
+      const r = lerp(12 * S, 44 * S, easeOutCubic(t));
+      const g = ctx.createRadialGradient(from.x, from.y, 0, from.x, from.y, r);
+      g.addColorStop(0, rgba('#ffffff', a * 0.8));
+      g.addColorStop(0.4, rgba('#fff066', a * 0.7));
+      g.addColorStop(0.8, rgba('#ffd23f', a * 0.3));
+      g.addColorStop(1, 'rgba(255,210,63,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(from.x, from.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  // 自分から相手へ、風とともに吸い寄せられていく電光の粒（竜巻を呼び寄せる予備動作）
+  for (let i = 0; i < 22; i++) {
+    const t0 = rand(0, LUXIONAIR_CHARGE_MS - 40);
+    const sideOff = rand(-1, 1);
+    const seed = rand(0, 100);
+    particles.push({
+      delay: LUXIONAIR_CHARGE_START_MS + t0,
+      maxLife: LUXIONAIR_CHARGE_MS - t0 + 60,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const e = easeInCubic(t);
+        const x = lerp(from.x, tx, e) + nx * sideOff * 22 * S * (1 - e);
+        const y = lerp(from.y, ty, e) + ny * sideOff * 22 * S * (1 - e);
+        const a = clamp01(t * 3) * (1 - Math.max(0, (t - 0.8) / 0.2)) * 0.85;
+        const size = (1.8 + Math.abs(noise1(t * 8, seed)) * 1.6) * S;
+        ctx.fillStyle = rgba('#fff9c4', a);
+        ctx.shadowColor = rgba('#ffe066', 0.9);
+        ctx.shadowBlur = 6 * S;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
+  // ---- 竜巻の輪郭を高さkごとに描くヘルパー ----
+  // k=0(足元)〜1(頭頂)。時間で回転・膨張し、下は太く上はすぼまる典型的な竜巻シルエット。
+  function twistRadius(k, growth) {
+    const base = (34 + 14 * Math.sin(k * Math.PI * 0.9)) * S * growth;
+    return base * (1 - k * 0.35);
+  }
+
+  // ---- 幕2：相手の足元から竜巻が巻き起こり、渦を巻きながら立ち上がる ----
+  const twistSeedA = rand(0, 100), twistSeedB = rand(0, 100);
+  particles.push({
+    delay: LUXIONAIR_FORM_START_MS,
+    maxLife: LUXIONAIR_END_MS - LUXIONAIR_FORM_START_MS,
+    blend: 'lighter',
+    draw(ctx, t) {
+      const ms = LUXIONAIR_FORM_START_MS + t * (LUXIONAIR_END_MS - LUXIONAIR_FORM_START_MS);
+      // 竜巻の存在強度：形成で立ち上がり、暴れフェーズで最大、収束フェーズで縮んで消える
+      let growth, heightK;
+      if (ms < LUXIONAIR_RAGE_START_MS) {
+        const f = clamp01((ms - LUXIONAIR_FORM_START_MS) / LUXIONAIR_FORM_MS);
+        growth = easeOutCubic(f);
+        heightK = easeOutCubic(f);
+      } else if (ms < LUXIONAIR_BURST_START_MS) {
+        growth = 1; heightK = 1;
+      } else if (ms < LUXIONAIR_SETTLE_START_MS) {
+        const f = clamp01((ms - LUXIONAIR_BURST_START_MS) / LUXIONAIR_BURST_MS);
+        growth = 1 - easeInCubic(f) * 0.85;
+        heightK = 1 - easeInCubic(f) * 0.3;
+      } else return;
+      if (growth <= 0.02) return;
+      const time = ms / 1000;
+      const rings = 26;
+      for (let i = 0; i < rings; i++) {
+        const k = (i / rings) * heightK;
+        const r = twistRadius(k, growth);
+        if (r <= 0.5) continue;
+        const cy = groundY - TWIST_H * k;
+        const spin = time * (5.5 - k * 2.2) + k * 8 + twistSeedA;
+        const wob = noise1(k * 6 + time * 4, twistSeedB) * 6 * S * growth;
+        // 竜巻の帯（横に潰した楕円を回転位相で明滅させ、渦巻く風の層に見せる）
+        const bandA = (0.30 + 0.16 * Math.abs(Math.sin(spin))) * growth;
+        const g = ctx.createRadialGradient(tx + wob, cy, 0, tx + wob, cy, r);
+        g.addColorStop(0, 'rgba(120,90,180,0)');
+        g.addColorStop(0.55, rgba('#a08cf0', bandA * 0.7));
+        g.addColorStop(1, rgba('#5a4a8a', bandA));
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.ellipse(tx + wob, cy, r, r * 0.34, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  });
+  // 竜巻の外殻を這う、風の縦筋（螺旋状に上へ流れる線）
+  for (let i = 0; i < 14; i++) {
+    const phase0 = rand(0, Math.PI * 2);
+    const seed = rand(0, 100);
+    particles.push({
+      delay: LUXIONAIR_FORM_START_MS + rand(0, 80),
+      maxLife: LUXIONAIR_END_MS - LUXIONAIR_FORM_START_MS,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const ms = LUXIONAIR_FORM_START_MS + t * (LUXIONAIR_END_MS - LUXIONAIR_FORM_START_MS);
+        let growth, heightK;
+        if (ms < LUXIONAIR_RAGE_START_MS) {
+          const f = clamp01((ms - LUXIONAIR_FORM_START_MS) / LUXIONAIR_FORM_MS);
+          growth = easeOutCubic(f); heightK = easeOutCubic(f);
+        } else if (ms < LUXIONAIR_BURST_START_MS) {
+          growth = 1; heightK = 1;
+        } else if (ms < LUXIONAIR_SETTLE_START_MS) {
+          const f = clamp01((ms - LUXIONAIR_BURST_START_MS) / LUXIONAIR_BURST_MS);
+          growth = 1 - easeInCubic(f) * 0.85; heightK = 1 - easeInCubic(f) * 0.3;
+        } else return;
+        if (growth <= 0.02) return;
+        const time = ms / 1000;
+        const steps = 16;
+        ctx.strokeStyle = rgba('#c9baff', 0.62 * growth);
+        ctx.lineWidth = 2 * S;
+        ctx.shadowColor = rgba('#c9baff', 0.8);
+        ctx.shadowBlur = 6 * S;
+        ctx.beginPath();
+        for (let s = 0; s <= steps; s++) {
+          const k = (s / steps) * heightK;
+          const r = twistRadius(k, growth) * 0.92;
+          const spin = time * (5.5 - k * 2.2) + k * 8 + phase0;
+          const px = tx + Math.cos(spin) * r;
+          const py = groundY - TWIST_H * k;
+          if (s === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+    });
+  }
+
+  // ---- 幕3：竜巻の内部を無数のジグザグ稲妻が駆け巡る（本体：竜巻＋雷）----
+  const boltCount = 16;
+  for (let i = 0; i < boltCount; i++) {
+    const k = i / (boltCount - 1);
+    const delay = LUXIONAIR_RAGE_START_MS + k * LUXIONAIR_RAGE_MS * 0.85 + rand(-20, 20);
+    const seed = rand(0, 100);
+    const k0 = rand(0.05, 0.5), k1 = rand(0.45, 0.95);
+    const ang0 = rand(0, Math.PI * 2), ang1 = ang0 + rand(-2.4, 2.4);
+    particles.push({
+      delay,
+      maxLife: 130,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const alpha = t < 0.4 ? 1 : (1 - (t - 0.4) / 0.6);
+        const r0 = twistRadius(k0, 1) * 0.85;
+        const r1 = twistRadius(k1, 1) * 0.85;
+        const p0 = { x: tx + Math.cos(ang0) * r0, y: groundY - TWIST_H * k0 };
+        const p1 = { x: tx + Math.cos(ang1) * r1, y: groundY - TWIST_H * k1 };
+        drawBolt(ctx, p0, p1, seed, alpha, '#fffde0', '#ffe066', 0.85, true);
+      }
+    });
+  }
+  // 竜巻を貫くように、中心軸へ向かって時折り太い縦稲妻が落ちる（暴れの強調）
+  for (let i = 0; i < 4; i++) {
+    const delay = LUXIONAIR_RAGE_START_MS + 90 + i * (LUXIONAIR_RAGE_MS - 120) / 4 + rand(-15, 15);
+    const seed = rand(0, 100);
+    particles.push({
+      delay,
+      maxLife: 160,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const alpha = t < 0.3 ? 1 : (1 - (t - 0.3) / 0.7);
+        const p0 = { x: tx + rand(-6, 6) * S, y: TOP_Y };
+        const p1 = { x: tx, y: groundY };
+        drawBolt(ctx, p0, p1, seed, alpha, '#ffffff', '#fff066', 1.5, true);
+      }
+    });
+  }
+  // 竜巻の頭頂で明滅する紫〜白のコロナ（電気を帯びた風の圧力）
+  particles.push({
+    delay: LUXIONAIR_RAGE_START_MS,
+    maxLife: LUXIONAIR_RAGE_MS + 100,
+    blend: 'lighter',
+    draw(ctx, t) {
+      if (t >= 1) return;
+      const flick = 0.6 + Math.abs(noise1(t * 16, 9)) * 0.4;
+      const a = flick * 0.5;
+      const r = 30 * S;
+      const g = ctx.createRadialGradient(tx, TOP_Y, 0, tx, TOP_Y, r);
+      g.addColorStop(0, rgba('#fff9c4', a));
+      g.addColorStop(0.5, rgba('#c9a8ff', a * 0.6));
+      g.addColorStop(1, 'rgba(160,120,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(tx, TOP_Y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  // ---- 幕4：竜巻が収束すると同時に中心で巨大な放電が爆発 ----
+  particles.push({
+    delay: LUXIONAIR_BURST_START_MS,
+    maxLife: 260,
+    blend: 'lighter',
+    draw(ctx, t) {
+      const a = (1 - t) * 0.95;
+      const r = lerp(10 * S, 80 * S, easeOutQuint(t));
+      const g = ctx.createRadialGradient(tx, ty, 0, tx, ty, r);
+      g.addColorStop(0, rgba('#ffffff', a));
+      g.addColorStop(0.3, rgba('#fff066', a * 0.95));
+      g.addColorStop(0.65, rgba('#c9a8ff', a * 0.6));
+      g.addColorStop(1, 'rgba(160,120,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(tx, ty, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  // 多重の衝撃波（黄・白・紫の電撃らしいコントラスト）
+  for (let i = 0; i < 4; i++) {
+    const col = ['#ffffff', '#fff066', '#c9a8ff', '#8a6fd6'][i];
+    particles.push({
+      delay: LUXIONAIR_BURST_START_MS + i * 50,
+      maxLife: 460 - i * 36,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const r = lerp(6 * S, R * (0.32 + i * 0.1), easeOutQuint(t));
+        ctx.strokeStyle = rgba(col, (1 - t) * (0.85 - i * 0.13));
+        ctx.lineWidth = (7 - i * 1.2) * (1 - t * 0.5) * S;
+        ctx.shadowColor = rgba(col, 0.9);
+        ctx.shadowBlur = 16 * S;
+        ctx.beginPath();
+        ctx.arc(tx, ty, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    });
+  }
+  // 放射状に走る太い稲妻（爆発の瞬間、全方位へ電撃が走り抜ける）
+  for (let i = 0; i < 8; i++) {
+    const ang = (i / 8) * Math.PI * 2 + rand(-0.2, 0.2);
+    const len = rand(60, 110) * S;
+    const seed = rand(0, 100);
+    particles.push({
+      delay: LUXIONAIR_BURST_START_MS + rand(0, 40),
+      maxLife: 200,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const alpha = t < 0.35 ? 1 : (1 - (t - 0.35) / 0.65);
+        const e = easeOutQuint(clamp01(t / 0.4 + 0.3));
+        const p0 = { x: tx, y: ty };
+        const p1 = { x: tx + Math.cos(ang) * len * e, y: ty + Math.sin(ang) * len * e };
+        drawBolt(ctx, p0, p1, seed, alpha, '#fffde0', '#ffe066', 1, false);
+      }
+    });
+  }
+
+  // ---- 幕5：静電気の火花と千切れた暗雲の残骸が舞う余韻 ----
+  for (let i = 0; i < 26; i++) {
+    const ang = rand(0, Math.PI * 2);
+    const sp = rand(30, 100) * S;
+    const sz = rand(1.6, 3.4) * S;
+    const col = pick(['#fff9c4', '#fff066', '#c9a8ff']);
+    const grav = rand(0.4, 1.0);
+    const seed = rand(0, 100);
+    particles.push({
+      delay: LUXIONAIR_BURST_START_MS + 60 + rand(0, 240),
+      maxLife: rand(340, 560),
+      blend: 'lighter',
+      draw(ctx, t) {
+        const e = easeOutCubic(t);
+        const flick = 0.5 + Math.abs(noise1(t * 20 + seed, seed)) * 0.5;
+        const x = tx + Math.cos(ang) * sp * e;
+        const y = ty + Math.sin(ang) * sp * e * 0.7 + grav * t * t * h * 0.05;
+        const a = (1 - t) * 0.9 * flick;
+        ctx.fillStyle = rgba(col, a);
+        ctx.shadowColor = rgba('#ffe066', 0.9);
+        ctx.shadowBlur = 6 * S;
+        ctx.beginPath();
+        ctx.arc(x, y, sz * (1 - t * 0.4), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+  // 千切れて薄れていく暗雲の残骸（紫がかった靄）
+  for (let i = 0; i < 8; i++) {
+    const ox = rand(-34, 34) * S;
+    const oy = rand(-40, -10) * S;
+    const size = rand(24, 44) * S;
+    const seed = rand(0, 100);
+    particles.push({
+      delay: LUXIONAIR_SETTLE_START_MS - 40 + rand(0, 160),
+      maxLife: rand(420, 600),
+      draw(ctx, t) {
+        const drift = easeOutCubic(t);
+        const x = tx + ox + noise1(t * 4 + seed, seed) * 14 * S;
+        const y = ty + oy - drift * 26 * S;
+        const a = (t < 0.15 ? t / 0.15 : (1 - Math.max(0, (t - 0.4) / 0.6))) * 0.32;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, size);
+        g.addColorStop(0, rgba('#4a3a6a', a));
+        g.addColorStop(1, 'rgba(60,45,90,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+}
+
+// ============================================================
 // 10まんボルト：自分の体が帯電し、そこから相手へ電撃を放って痺れさせる演出
 // 構成：①自分の輪郭にバチバチと電気が走り、周囲に電光の粒子が渦を巻いて集まる（帯電チャージ）
 //       ②帯電がピークに達し、体全体が発光する（放出の予備動作）
@@ -19145,6 +20303,10 @@ function spawnBehemothBeamSpecial(particles, w, h, info) {
     18: spawnSignalBeamSpecial,     // 翔音セレナーデ（シグナルビームと共通演出）
     317: spawnGravelBreathSpecial,  // グラベルブレス（砂利まじりの息を、扇状の砂礫の奔流として相手へ吹きつける演出）
     132: spawnFlamethrowerSpecial,     // かえんほうしゃ
+    133: spawnDaimonjiSpecial,         // だいもんじ（火球を撃ち込み、炎が「大」の字を描いて燃え広がる）
+    216: spawnEarthPowerSpecial,       // だいちのちから（相手の足元が黄金に発光→亀裂→大地のエネルギー噴出）
+    78: spawnLuxionAirSpecial,        // ルクシオンエア（オリジナル・りゅうせいぐんのでんき版、雷を帯びた竜巻が相手を包む）
+    215: spawnEarthPowerSpecial,       // （だいちのちからと共通演出）
     138: spawnFireWhirlwindSpecial,  // かさいせんぷう
     499: spawnFireWhirlwindSpecial,  // やけのはら（かさいせんぷうと共通演出）
     72: spawnThunderboltSpecial,     // 10まんボルト
@@ -19195,7 +20357,7 @@ function spawnBehemothBeamSpecial(particles, w, h, info) {
   198: spawnThornBindSpecial,     // いばらがため（オリジナル・足元から茨が絡みつき、力を吸い取る／HP75%ドレイン）
   };
   // 攻撃側スプライト→防御側スプライトの座標が必要な（飛翔型の）専用演出の技ID。
-  const FLIGHT_MOVE_IDS = [312,123,63,66, 153,156,157,353,354,355,253,254,273,277,315,132,233,332,317, 318, 72, 75, 76, 13, 18, 32, 33, 37, 173, 112, 113, 117, 292, 300, 103, 172, 175, 61, 222, 124, 7, 24, 25, 28, 284, 348, 227, 218, 139, 198, 43, 333, 334, 335, 338];
+  const FLIGHT_MOVE_IDS = [312,123,63,66, 153,156,157,353,354,355,253,254,273,277,315,78,132,133,215,216,233,332,317, 318, 72, 75, 76, 13, 18, 32, 33, 37, 173, 112, 113, 117, 292, 300, 103, 172, 175, 61, 222, 124, 7, 24, 25, 28, 284, 348, 227, 218, 139, 198, 43, 333, 334, 335, 338];
   const SPECIAL_DURATION_MS = {
     480: 1900,
     483: 1900,
@@ -19224,6 +20386,10 @@ function spawnBehemothBeamSpecial(particles, w, h, info) {
     18: SIGNALBEAM_END_MS + 420,           // 翔音セレナーデ（シグナルビームと共通）
     317: GRAVELBREATH_END_MS + 560,        // 砂礫が届き終わった後、砂煙が晴れるまで
     132: FLAMETHROWER_END_MS + 220,   // かえんほうしゃ
+    133: DAIMONJI_END_MS,             // だいもんじ：大の字が爆ぜた後の火の粉・黒煙が消えるまで
+    216: EARTHPOWER_END_MS,            // だいちのちから：地割れの跡と土煙が消えるまで
+    78: LUXIONAIR_END_MS,               // ルクシオンエア：静電気の火花と暗雲の残骸が消えるまで
+    215: EARTHPOWER_END_MS,            // （だいちのちからと共通演出）
     138: 2000,  // かさいせんぷう
     499: 2000,  // やけのはら（かさいせんぷうと共通）
     72: THUNDERBOLT_END_MS,   // 10まんボルト
@@ -19777,6 +20943,43 @@ SPECIAL_IMPACT_FX[355] = {
     { color: '#ff7a1a', peakAlpha: 0.28, durationMs: 420, delay: FLAMETHROWER_HIT_MS + 30 },
   ],
   shakes: [],
+};
+SPECIAL_IMPACT_FX[133] = {
+  flashes: [
+    { color: '#ffffff', peakAlpha: 0.7,  durationMs: 240, delay: DAIMONJI_HIT_MS },
+    { color: '#ff7a1a', peakAlpha: 0.26, durationMs: 420, delay: DAIMONJI_HIT_MS + 30 },
+    { color: '#fff3c4', peakAlpha: 0.6,  durationMs: 260, delay: DAIMONJI_BURST_MS },
+    { color: '#ff5a1a', peakAlpha: 0.32, durationMs: 460, delay: DAIMONJI_BURST_MS + 30 },
+  ],
+  shakes: [
+    { ampPx: 9,  durationMs: 260, freq: 30, delay: DAIMONJI_HIT_MS },
+    { ampPx: 22, durationMs: 460, freq: 32, delay: DAIMONJI_BURST_MS },
+  ],
+};
+SPECIAL_IMPACT_FX[216] = {
+  flashes: [
+    { color: '#ffcf5a', peakAlpha: 0.28, durationMs: 220, delay: EARTHPOWER_CRACK_START_MS },
+    { color: '#fff6d0', peakAlpha: 0.75, durationMs: 260, delay: EARTHPOWER_HIT_MS },
+    { color: '#c8781e', peakAlpha: 0.34, durationMs: 460, delay: EARTHPOWER_HIT_MS + 30 },
+  ],
+  shakes: [
+    { ampPx: 4,  durationMs: 200, freq: 22, delay: EARTHPOWER_CRACK_START_MS },
+    { ampPx: 20, durationMs: 480, freq: 28, delay: EARTHPOWER_HIT_MS },
+  ],
+};
+SPECIAL_IMPACT_FX[215] = SPECIAL_IMPACT_FX[216];
+SPECIAL_IMPACT_FX[78] = {
+  flashes: [
+    { color: '#c9a8ff', peakAlpha: 0.22, durationMs: 260, delay: LUXIONAIR_FORM_START_MS },
+    { color: '#fff066', peakAlpha: 0.3,  durationMs: 200, delay: LUXIONAIR_RAGE_START_MS + 180 },
+    { color: '#ffffff', peakAlpha: 0.85, durationMs: 260, delay: LUXIONAIR_BURST_START_MS },
+    { color: '#8a6fd6', peakAlpha: 0.34, durationMs: 480, delay: LUXIONAIR_BURST_START_MS + 30 },
+  ],
+  shakes: [
+    { ampPx: 5,  durationMs: 220, freq: 24, delay: LUXIONAIR_FORM_START_MS },
+    { ampPx: 8,  durationMs: LUXIONAIR_RAGE_MS, freq: 40, delay: LUXIONAIR_RAGE_START_MS },
+    { ampPx: 24, durationMs: 520, freq: 30, delay: LUXIONAIR_BURST_START_MS },
+  ],
 };
 // れいとうビーム：着弾で白〜淡青の冷色フラッシュのみ（シェイクなし）
 SPECIAL_IMPACT_FX[233] = {
