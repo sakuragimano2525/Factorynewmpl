@@ -158,6 +158,51 @@ function resetMegaUnlocks() {
 // のACHIEVEMENTS配列にあるidの文字列と一致させること）。乱入ボスとしての登場・撃破時の
 // 実績解除（intrusion_1032など）・メガ解放は INTRUSION_BOSS_IDS に入っているため
 // このオブジェクトへの追記状況に関わらず既に有効。
+// ---- シークレットコードで解放する隠しポケモン ----
+// HIDDEN_SPECIES_ACHIEVEMENT（実績で解放）とは別に、ホーム画面右上⚙️の
+// ID入力欄に特定のシークレットコードを入力すると解放される隠しポケモン枠。
+// 実績と同じく、解放するまでは通常の抽選プール（getFinalSpeciesIds）に含まれず、
+// トレーナー（NPC）も使ってこず、図鑑ボックスにも「？？？」＋🔒でしか表示されない。
+// 新しいコード解放ポケモンを増やす場合は、HIDDEN_SPECIES_SECRET_CODE に
+// ID→コード文字列の対応を追記するだけでよい（コードは大文字小文字を区別しない）。
+const HIDDEN_SPECIES_SECRET_CODE = {
+  1057: 'OR1GAM1TUK1',
+};
+const HIDDEN_SPECIES_SECRET_CODE_STORAGE_KEY = 'pokeriere_secret_code_unlocked_v1';
+let _secretCodeUnlockedSet = null;
+function _loadSecretCodeUnlocked() {
+  if (_secretCodeUnlockedSet) return _secretCodeUnlockedSet;
+  _secretCodeUnlockedSet = new Set();
+  try {
+    const arr = JSON.parse(localStorage.getItem(HIDDEN_SPECIES_SECRET_CODE_STORAGE_KEY));
+    if (Array.isArray(arr)) arr.forEach((n) => _secretCodeUnlockedSet.add(Number(n)));
+  } catch (e) {}
+  return _secretCodeUnlockedSet;
+}
+function _saveSecretCodeUnlocked() {
+  try { localStorage.setItem(HIDDEN_SPECIES_SECRET_CODE_STORAGE_KEY, JSON.stringify([..._secretCodeUnlockedSet])); } catch (e) {}
+}
+// 入力された文字列が、コード解放対象のいずれかのコードと一致するか判定し、
+// 一致すればそのポケモンを解放してtrueを返す（一致しなければfalseを返す）。
+// 大文字小文字は区別しない。
+function tryUnlockHiddenSpeciesByCode(inputValue) {
+  const normalized = String(inputValue || '').trim().toUpperCase();
+  if (!normalized) return false;
+  for (const idStr of Object.keys(HIDDEN_SPECIES_SECRET_CODE)) {
+    const id = Number(idStr);
+    const code = String(HIDDEN_SPECIES_SECRET_CODE[idStr]).toUpperCase();
+    if (normalized === code) {
+      _loadSecretCodeUnlocked().add(id);
+      _saveSecretCodeUnlocked();
+      return true;
+    }
+  }
+  return false;
+}
+function isHiddenSpeciesUnlockedBySecretCode(speciesId) {
+  return _loadSecretCodeUnlocked().has(Number(speciesId));
+}
+
 const HIDDEN_SPECIES_ACHIEVEMENT = {
   2000: 'win_streak_team_11', // アリアスカル：チーム戦10連勝目のボスを倒すと解放
   1032: 'pokedex_150', 
@@ -165,23 +210,35 @@ const HIDDEN_SPECIES_ACHIEVEMENT = {
 1034: 'type_streak_normal',
 1035: 'type_streak_bug',
 1030: 'type_streak_dragon',
+1051: 'type_streak_electric',
+1052: 'type_streak_fairy',
+1053: 'type_streak_fighting',
 1036: 'type_streak_flying',
 1037: 'type_streak_dark',
 1038: 'type_streak_psychic',
 1039: 'type_streak_grass',
+1054: 'type_streak_ground',
+1025: 'type_streak_ice',
+1055: 'type_streak_water',
+1056: 'type_streak_sound',
 1040: 'type_streak_rock',
 1041: 'type_streak_ghost',
 1990: 'type_streak_poison',
 1026: 'type_streak_shine',
-1025: 'type_streak_ice',
 1024: 'type_streak_steel',
 };
-const HIDDEN_SPECIES_IDS = Object.keys(HIDDEN_SPECIES_ACHIEVEMENT).map(Number);
+const HIDDEN_SPECIES_IDS = Object.keys(HIDDEN_SPECIES_ACHIEVEMENT).map(Number)
+  .concat(Object.keys(HIDDEN_SPECIES_SECRET_CODE).map(Number));
 function isHiddenSpecies(speciesId) { return HIDDEN_SPECIES_IDS.includes(Number(speciesId)); }
-// 対応する実績が解除済みなら「解放済み」。隠しポケモンでない種族は常に解放済み扱い。
+// 対応する実績が解除済み、またはシークレットコードが入力済みなら「解放済み」。
+// 隠しポケモンでない種族は常に解放済み扱い。
 function isHiddenSpeciesUnlocked(speciesId) {
   if (!isHiddenSpecies(speciesId)) return true;
-  const achvId = HIDDEN_SPECIES_ACHIEVEMENT[Number(speciesId)];
+  const id = Number(speciesId);
+  if (Object.prototype.hasOwnProperty.call(HIDDEN_SPECIES_SECRET_CODE, id)) {
+    return isHiddenSpeciesUnlockedBySecretCode(id);
+  }
+  const achvId = HIDDEN_SPECIES_ACHIEVEMENT[id];
   return !!(window.Achievements && window.Achievements.isUnlocked(achvId));
 }
 // まだ倒していない（＝乱入候補に残っている）乱入ボスのID一覧を返す。
@@ -532,6 +589,8 @@ const POKEDEX_CUSTOM_ORDER = [
 464, // セグレイブ
 522, // ブリジュラス
 520, // カミツオロチ
+1053,
+1055,
 1034, // ムラノサヤ
 601, // ホンタイアメ
   602, // キャンリング
@@ -577,6 +636,7 @@ const POKEDEX_CUSTOM_ORDER = [
 1004, // ウィンダール
   1005, // レツタイナ
   1006, // アルトマーレ
+1054,
 1003, // エンゲイジ
   1024, // モッタイナ
   1030, // セイリュウ
@@ -587,6 +647,10 @@ const POKEDEX_CUSTOM_ORDER = [
   1039, // ウルマイカ
   1040, // マーバラス
   1041, // ジュオン
+1051,
+1052,
+1056,
+1057,
   1990, // ウーズメルス
   2000, // アリアスカル
 ];
@@ -995,6 +1059,16 @@ const MEGA_EVOLUTION_DATA = {
     type1: 'bug', type2: 'poison',
     ability: 68,
     baseStats: { hp: 40, atk: 165, def: 40, spa: 0, spd: 80, spe: 152 },
+  },
+1054: {
+    type1: 'bug', type2: 'ground',
+    ability: 124,
+    baseStats: { hp: 70, atk: 145, def: 85, spa: 20, spd: 105, spe: 125 },
+  },
+   1057: {
+    type1: 'steel', type2: 'electric',
+    ability: 155,
+    baseStats: { hp: 80, atk: 30, def: 83, spa: 220, spd: 86, spe: 151 },
   },
 468: { // メガフシギバナ
     type1: 'grass', type2: 'poison',
@@ -1687,6 +1761,22 @@ function applySenriganAbility(poke, opponent, logFn) {
   }
 }
 
+// おりがみつき：自分が場に出た時、相手の「攻撃」と「特攻」の実数値を入れ替える。
+// - 相手が既に何らかの理由で入れ替わっている場合でも、必ず「その時点の攻撃・特攻」を入れ替える
+//   （＝2回連続で発動すると元に戻る、という単純なswapでよい。一度の登場で1回だけ呼ばれる前提）。
+// - 交代してもこのポケモン（おりがみつき側）が場に居続ける限り効果は継続する。
+// - おりがみつき自身が引っ込んだり、バトルが終了したりすれば、相手の実数値は
+//   （各バトルでポケモンが毎回新規生成されるため）自動的に元の値に戻る。
+// - 相手が既にひんし等で存在しない場合は何もしない。
+function applyOrigamiTsukiAbility(poke, opponent, logFn) {
+  if (!poke || poke.fainted || poke.ability !== ABILITY.ORIGAMI_TSUKI) return;
+  if (!opponent || opponent.fainted) return;
+  const tmp = opponent.stats.atk;
+  opponent.stats.atk = opponent.stats.spa;
+  opponent.stats.spa = tmp;
+  logFn(`${poke.species.name}のおりがみつき！${opponent.species.name}の攻撃と特攻が入れ替わった！`);
+}
+
 // メガシンカで特性が変わった「その瞬間」に発動する特性効果。
 // 本家仕様：いかく（例：メガライボルト）・天候セット系（例：メガレックウザ相当のひでり等）・
 // フィールドセット系（例：メガライチュウX＝エレキメイカー）は、通常の「場に出た時」だけでなく
@@ -1709,6 +1799,8 @@ function applyMegaEvolveAbilityTrigger(poke, logFn, opponent) {
     applyRankChange(opponent, rankData, logFn);
     logFn(`${poke.species.name}のいかくが発動！`);
   }
+  // おりがみつき：メガシンカで特性がおりがみつきに変わった瞬間にも、いかく等と同様に発動する。
+  applyOrigamiTsukiAbility(poke, opponent, logFn);
   // せんりがん（例：メガジュペッタ）：メガシンカで特性がせんりがんに変わった瞬間に、
   // 相手の控えの名前を見せる。
   applySenriganAbility(poke, opponent, logFn);
@@ -2033,6 +2125,7 @@ const ABILITY = {
   MEGA_SOLAR: 152,    // メガソーラー（本家メガメガニウム）：自分が攻撃する間だけ「ひでり」と同じ効果を受ける（実際の天候は変わらない）
   HAGANE_TSUKAI: 153, // はがねつかい（オリジナル）：鋼技の威力1.2倍
   UMI_NO_RUNE: 154,   // うみのルーン（オリジナル）：水技の威力1.2倍
+  ORIGAMI_TSUKI: 155, // おりがみつき（オリジナル）：自分が場に出るたび、相手の攻撃と特攻の実数値を入れ替える
 };
 
 const KIKENYOCHI_ABILITIES = [ABILITY.KIKIKAIHI, ABILITY.KIKENYOCHI_2];
@@ -2410,6 +2503,7 @@ function applyWeatherTerrainAbilityOnSwitchIn(poke, logFn, opponent) {
     applyRankChange(opponent, rankData, logFn);
     logFn(`${poke.species.name}のいかくが発動！`);
   }
+  applyOrigamiTsukiAbility(poke, opponent, logFn);
   if (KIKENYOCHI_ABILITIES.includes(poke.ability) && opponent && !opponent.fainted) {
     const dangerousMoves = opponent.moves.filter(m => {
       if (!m) return false;

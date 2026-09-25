@@ -2801,6 +2801,7 @@ const ABILITY_DESC_BY_ID = {
 73: 'シャインタイプの技の威力が1.2倍になる',
 153: 'はがねタイプの技の威力が1.2倍になる',
 154: 'みずタイプの技の威力が1.2倍になる',
+155: '登場時、相手の攻撃と特攻を入れ替える',
 80: 'ノーマルの技がこおりになる（威力1.2倍）',
 81: 'ノーマルの技がでんきになる（威力1.2倍）',
 82: 'ノーマルの技がドラゴンになる（威力1.2倍）',
@@ -3944,6 +3945,14 @@ async function runBattleLoop() {
 // プレイヤー行動（あれば）を処理する。原作同様、CPU側の交代を選んだターンは
 // 交代してきたポケモンが技を出すことはない（交代のみでターン消費）。
 async function runCpuAction(cpuAction, playerAction) {
+  if (debugCpuMovePeekEnabled) {
+    if (cpuAction.type === 'move' && cpuAction.move) {
+      pushLogLine(`【AI確認】相手は「${cpuAction.move.name}」を選んでいる`);
+    } else if (cpuAction.type === 'switch') {
+      const target = state.cpuTeam[cpuAction.idx];
+      if (target) pushLogLine(`【AI確認】相手は「${target.species.name}」に交代しようとしている`);
+    }
+  }
   if (cpuAction.type === 'switch') {
     const outgoing = state.cpuActive;
     const newC = state.cpuTeam[cpuAction.idx];
@@ -5844,6 +5853,16 @@ async function runMultiplayerBattleHost() {
 
     msgQueue = [];
 
+    if (debugCpuMovePeekEnabled) {
+      if (guestAction.type === 'move' && guestAction.move) {
+        pushLogLine(`【AI確認】相手は「${guestAction.move.name}」を選んでいる`);
+      } else if (guestAction.type === 'switch') {
+        const target = state.cpuTeam[guestAction.idx];
+        if (target) pushLogLine(`【AI確認】相手は「${target.species.name}」に交代しようとしている`);
+      }
+    }
+
+
     if (myAction.type === 'switch') {
       const newP = state.playerTeam[myAction.idx];
       queueMessage(`${state.playerActive.species.name}、もどれ！`);
@@ -6794,6 +6813,12 @@ const DEBUG_ACHIEVEMENT_RESET_ID = '実績リセット';
 // ボックスは種族データから作り直され、パーティーはすべて空になる。
 const DEBUG_SERIOUS_RESET_ID = 'reset';
 
+// 「M1RA1」と入力すると、NPCのAI挙動確認用に、CPUがそのターン選んでいる技を
+// バトルログにこっそり表示するモードのON/OFFを切り替える（再度M1RA1で解除）。
+// 入力した本人のログにのみ表示され、通常のゲーム進行・対人戦の相手側には影響しない。
+const DEBUG_CPU_MOVE_PEEK_ID = 'M1RA1';
+let debugCpuMovePeekEnabled = false;
+
 $('btn-title-settings').addEventListener('click', () => {
   $('settings-id-input').value = '';
   $('settings-overlay').classList.add('show');
@@ -6834,6 +6859,15 @@ $('settings-confirm-btn').addEventListener('click', () => {
   if (value === DEBUG_MEGA_TEST_ID) {
     debugForcedSpeciesId = MEGA_TEST_SPECIES_ID;
     debugMegaTestPending = true;
+    return;
+  }
+  if (value === DEBUG_CPU_MOVE_PEEK_ID) {
+    debugCpuMovePeekEnabled = !debugCpuMovePeekEnabled;
+    return;
+  }
+  // シークレットコードによる隠しポケモン解放（例：「OR1GAM1TUK1」でID1057を解放）。
+  // 一致した場合は即座に永続保存され、以後は通常の抽選プール・NPC・図鑑ボックスに反映される。
+  if (typeof tryUnlockHiddenSpeciesByCode === 'function' && tryUnlockHiddenSpeciesByCode(value)) {
     return;
   }
   const m = value.match(DEBUG_FORCE_SPECIES_PATTERN);
