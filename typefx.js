@@ -9,6 +9,54 @@
 (function (global) {
   'use strict';
 
+  // ---- PC（マウス操作前提の広い画面）判定 ----
+  // スマホ・タブレットは画面が小さくcanvasの実ピクセル数も小さいため元々軽いが、
+  // PCはウィンドウが広い分、同じエフェクトでも塗りつぶし面積が増えて重くなりやすい。
+  // ここでは「タッチ操作を持たない」かつ「画面幅が広い」場合をPCとみなし、
+  // PCのときだけ以下の軽量化（shadowBlur縮小・canvas解像度の上限）を適用する。
+  // スマホ・タブレットの見た目は一切変えない。
+  function isDesktopPC() {
+    const noTouch = !('ontouchstart' in window) && (navigator.maxTouchPoints || 0) === 0;
+    const wideScreen = Math.max(window.innerWidth || 0, window.innerHeight || 0) >= 900;
+    return noTouch && wideScreen;
+  }
+  const PC_MODE = isDesktopPC();
+  // PC時、shadowBlur（発光表現。Canvas 2Dの中でも特に重い処理）の強さを抑える係数。
+  // 0にはせず光の質感は残しつつ、負荷が大きい高い値ほど強めに削る。
+  const PC_SHADOW_BLUR_SCALE = 0.55;
+  // PC時、canvasの実ピクセル解像度（描画面積）に掛ける上限倍率。
+  // devicePixelRatioは既に最大2にクランプ済みだが、PCはCSSサイズ自体が大きいため
+  // ここでも実ピクセル数に緩やかな上限を設け、描画コストを抑える。
+  const PC_CANVAS_MAX_DEVICE_PIXELS = 900 * 700; // 実ピクセル換算の目安上限（幅×高さ）
+
+  // getContext('2d') の代わりにこれを呼ぶと、PC時のみ ctx.shadowBlur への代入を
+  // 自動的に弱めた ctx を返す（スマホ・タブレットでは通常の ctx をそのまま返す）。
+  // 実装: canvasのプロトタイプ本来のshadowBlur setterを、そのctxインスタンス限定で
+  // 「渡された値 × PC_SHADOW_BLUR_SCALE を本来のsetterに渡す」ものに差し替える。
+  const __nativeShadowBlurDesc = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'shadowBlur');
+  function getFxContext2D(canvas) {
+    const ctx = canvas.getContext('2d');
+    if (!PC_MODE || !ctx || !__nativeShadowBlurDesc || !__nativeShadowBlurDesc.set || !__nativeShadowBlurDesc.get) {
+      return ctx;
+    }
+    Object.defineProperty(ctx, 'shadowBlur', {
+      get() { return __nativeShadowBlurDesc.get.call(ctx); },
+      set(v) { __nativeShadowBlurDesc.set.call(ctx, v * PC_SHADOW_BLUR_SCALE); },
+      configurable: true,
+    });
+    return ctx;
+  }
+
+  // PC時、canvasの実ピクセル数（w*dpr × h*dpr）が大きすぎる場合に、
+  // 見た目のCSSサイズ（w, h）はそのまま、実ピクセル解像度だけを抑えたdprを返す。
+  function getFxDpr(baseDpr, w, h) {
+    if (!PC_MODE) return baseDpr;
+    const devicePixels = (w * baseDpr) * (h * baseDpr);
+    if (devicePixels <= PC_CANVAS_MAX_DEVICE_PIXELS) return baseDpr;
+    const scale = Math.sqrt(PC_CANVAS_MAX_DEVICE_PIXELS / devicePixels);
+    return Math.max(0.5, baseDpr * scale);
+  }
+
   // ---- 汎用ユーティリティ ----
   function rand(min, max) { return min + Math.random() * (max - min); }
   function pick(arr) { return arr[(Math.random() * arr.length) | 0]; }
@@ -107,7 +155,7 @@
   // 毎フレーム update → draw する共通ランナー。
   // ============================================================
   function runParticleScene({ canvas, durationMs, spawn, background }) {
-    const ctx = canvas.getContext('2d');
+    const ctx = getFxContext2D(canvas);
     const w = canvas.width, h = canvas.height;
     const particles = [];
     spawn(particles, w, h);
@@ -13408,14 +13456,15 @@ function playFlareDriveOnCanvas(layerEl, defSide) {
   const spriteH = aRect.height || 120;
 
   const w = lr.width, h = lr.height;
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const baseDpr = Math.min(2, window.devicePixelRatio || 1);
+  const dpr = getFxDpr(baseDpr, w, h);
 
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
   canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;';
   layerEl.appendChild(canvas);
-  const ctx = canvas.getContext('2d');
+  const ctx = getFxContext2D(canvas);
   ctx.scale(dpr, dpr);
   ctx.imageSmoothingEnabled = false;
 
@@ -14008,14 +14057,15 @@ function playThunderDiveOnCanvas(layerEl, defSide) {
   const spriteH = aRect.height || 120;
 
   const w = lr.width, h = lr.height;
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const baseDpr = Math.min(2, window.devicePixelRatio || 1);
+  const dpr = getFxDpr(baseDpr, w, h);
 
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
   canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;';
   layerEl.appendChild(canvas);
-  const ctx = canvas.getContext('2d');
+  const ctx = getFxContext2D(canvas);
   ctx.scale(dpr, dpr);
   ctx.imageSmoothingEnabled = false;
 
@@ -14277,14 +14327,15 @@ function playOutrageOnCanvas(layerEl, defSide) {
   const S = Math.max(0.6, Math.min(1.6, spriteW / 120));
 
   const w = lr.width, h = lr.height;
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const baseDpr = Math.min(2, window.devicePixelRatio || 1);
+  const dpr = getFxDpr(baseDpr, w, h);
 
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
   canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;';
   layerEl.appendChild(canvas);
-  const ctx = canvas.getContext('2d');
+  const ctx = getFxContext2D(canvas);
   ctx.scale(dpr, dpr);
   ctx.imageSmoothingEnabled = false;
 
@@ -20249,7 +20300,8 @@ function spawnBehemothBeamSpecial(particles, w, h, info) {
     const rect = wrapEl.getBoundingClientRect();
     const w = Math.max(60, Math.round(rect.width || wrapEl.offsetWidth || 120));
     const h = Math.max(60, Math.round(rect.height || wrapEl.offsetHeight || 120));
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const baseDpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = getFxDpr(baseDpr, w, h);
 
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(w * dpr);
@@ -20264,7 +20316,7 @@ function spawnBehemothBeamSpecial(particles, w, h, info) {
     canvas.className = 'type-fx-canvas';
     wrapEl.appendChild(canvas);
 
-    const ctx = canvas.getContext('2d');
+    const ctx = getFxContext2D(canvas);
     ctx.scale(dpr, dpr);
 
     const duration = (big ? BIG_DURATION_MS[moveType] : DURATION_MS[moveType]) || 420;
@@ -21121,7 +21173,8 @@ const spawn = SPECIAL_SCENES[moveId];
     const rect = wrapEl.getBoundingClientRect();
     const w = Math.max(60, Math.round(rect.width || wrapEl.offsetWidth || 300));
     const h = Math.max(60, Math.round(rect.height || wrapEl.offsetHeight || 300));
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const baseDpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = getFxDpr(baseDpr, w, h);
 
     const canvas = document.createElement('canvas');
     canvas.width = Math.round(w * dpr);
@@ -21135,7 +21188,7 @@ const spawn = SPECIAL_SCENES[moveId];
     canvas.className = 'special-fx-canvas';
     wrapEl.appendChild(canvas);
 
-    const ctx = canvas.getContext('2d');
+    const ctx = getFxContext2D(canvas);
     ctx.scale(dpr, dpr);
 
     // シェイク対象は special-fx-layer の親（画面全体＝battle-field）を優先的に使う。
