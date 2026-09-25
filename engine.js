@@ -83,7 +83,7 @@ const BOSS_ONLY_SPECIES_ID = BOSS_ONLY_SPECIES_IDS[0]; // 後方互換用（メ�
 // （隠しポケモンの実績が未解除でも）サプライズ的にNPCの3匹目として登場する。
 // 乱入で倒された場合は他の乱入ボスと全く同じ扱い＝intrusion_実績解除・メガ解放候補・以後乱入に出ない。
 const INTRUSION_BOSS_IDS = [
-  171, 32,36, 91, 322, 347, 360, 1009, 1023, 1024, 1025, 1026, 476, 1030,
+  171, 32,36, 91, 1054,1057,322, 347, 360, 1009, 1023, 1024, 1025, 1026, 476, 1030,
   1032, 1034, 1037, 1038, 1039,
 ];
 function intrusionAchievementId(speciesId) { return 'intrusion_' + speciesId; }
