@@ -3900,6 +3900,23 @@ async function runBattleLoop() {
     queueTurnDivider(state.turnNumber);
     await drainMessages();
 
+    if (debugCpuMovePeekEnabled && !state.cpuActive.fainted) {
+      // 【AI確認】プレイヤーがまだ何も選んでいない時点でのCPU行動を仮計算し、
+      // 先読み表示する（表示専用の呼び出し。乱数を消費するが、実際の技決定は
+      // 従来どおりプレイヤーの行動確定後に呼び直す chooseCpuAction の結果を使うため、
+      // 実戦のAI挙動・結果には影響しない）。
+      // ただし「ふいうち」等、相手の行動タイプを見て判定する技は、プレイヤー未選択状態
+      // （行動なし扱い）で評価されるため、実際に選ばれる技と食い違う場合がある。
+      const peekAction = chooseCpuAction(state.cpuActive, state.playerActive, state.cpuTeam, state.megaEvolutionEnabled, null);
+      if (peekAction.type === 'move' && peekAction.move) {
+        pushLogLine(`【AI確認】相手は「${peekAction.move.name}」を選んでいる`);
+      } else if (peekAction.type === 'switch') {
+        const target = state.cpuTeam[peekAction.idx];
+        if (target) pushLogLine(`【AI確認】相手は「${target.species.name}」に交代しようとしている`);
+      }
+      await drainMessages();
+    }
+
     const playerAction = await waitForPlayerAction();
 
     if (playerAction.type === 'switch') {
@@ -3945,14 +3962,8 @@ async function runBattleLoop() {
 // プレイヤー行動（あれば）を処理する。原作同様、CPU側の交代を選んだターンは
 // 交代してきたポケモンが技を出すことはない（交代のみでターン消費）。
 async function runCpuAction(cpuAction, playerAction) {
-  if (debugCpuMovePeekEnabled) {
-    if (cpuAction.type === 'move' && cpuAction.move) {
-      pushLogLine(`【AI確認】相手は「${cpuAction.move.name}」を選んでいる`);
-    } else if (cpuAction.type === 'switch') {
-      const target = state.cpuTeam[cpuAction.idx];
-      if (target) pushLogLine(`【AI確認】相手は「${target.species.name}」に交代しようとしている`);
-    }
-  }
+  // 【AI確認】表示はターン開始時（waitForPlayerActionの直前）の先読み表示に一本化済み。
+  // ここでの実行時表示は行わない（同じターン内で二重に出てしまうため）。
   if (cpuAction.type === 'switch') {
     const outgoing = state.cpuActive;
     const newC = state.cpuTeam[cpuAction.idx];
@@ -5830,6 +5841,26 @@ async function runMultiplayerBattleHost() {
     queueTurnDivider(state.turnNumber);
     await drainMessages();
 
+    // 【AI確認】ホスト自身がまだ技を選んでいる最中でも、参加側（ゲスト）が
+    // 先に行動を確定させていればその時点で検知してログに出す（リアルタイム先読み表示）。
+    // waitForOpponentAction とは別の「値を消費しない」リスナーを使うため、
+    // 本来のターン進行（お互いの行動が揃ってから処理する部分）には影響しない。
+    let debugPeekShown = false;
+    let unsubDebugPeek = null;
+    if (debugCpuMovePeekEnabled) {
+      unsubDebugPeek = Net.peekOpponentAction((raw) => {
+        if (debugPeekShown) return;
+        debugPeekShown = true;
+        if (raw && raw.type === 'move') {
+          const move = state.cpuActive.moves.find((m) => m.id === raw.moveId);
+          if (move) pushLogLine(`【AI確認】相手は「${move.name}」を選んでいる`);
+        } else if (raw && raw.type === 'switch') {
+          const target = state.cpuTeam[raw.idx];
+          if (target) pushLogLine(`【AI確認】相手は「${target.species.name}」に交代しようとしている`);
+        }
+      });
+    }
+
     const myAction = await waitForPlayerAction();
     await Net.sendAction(myAction);
     showOpponentWaitingBadge();
@@ -5844,6 +5875,7 @@ async function runMultiplayerBattleHost() {
       }, 200);
     });
     hideOpponentWaitingBadge();
+    if (unsubDebugPeek) unsubDebugPeek();
     if (guestRaw === '__surrender__') {
       if (unsubSurrender) unsubSurrender();
       await endMultiplayerBattleHost(true, true);
@@ -5853,7 +5885,9 @@ async function runMultiplayerBattleHost() {
 
     msgQueue = [];
 
-    if (debugCpuMovePeekEnabled) {
+    // 上のリアルタイム先読みで既に表示済みの場合は、ここでの重複表示は行わない。
+    // （自分の選択の方が早く終わり、先読みリスナーが発火しなかった場合のみここで表示する）
+    if (debugCpuMovePeekEnabled && !debugPeekShown) {
       if (guestAction.type === 'move' && guestAction.move) {
         pushLogLine(`【AI確認】相手は「${guestAction.move.name}」を選んでいる`);
       } else if (guestAction.type === 'switch') {

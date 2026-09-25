@@ -542,6 +542,26 @@ const Net = {
     this._unsubs.push(() => ref.off('value', handler));
   },
 
+  /* ---- 【AI確認】用：相手の行動を「消費せず」覗き見するリスナー ----
+     waitForOpponentAction は値を読んだ瞬間に null へリセットしてしまう
+     （本来のターン進行ロジックが二重に拾わないようにするため）ので、
+     自分がまだ行動選択中の間に相手の行動を先読み表示したい用途には使えない。
+     このリスナーは値を読むだけで消費（set(null)）しないため、本来の
+     waitForOpponentAction の動作とは干渉しない。 */
+  peekOpponentAction(cb) {
+    if (!this.roomRef) return () => {};
+    const path = this.isHost ? 'battle/guestAction' : 'battle/hostAction';
+    const ref = this.roomRef.child(path);
+    const handler = (snap) => {
+      const data = snap.val();
+      if (data) cb(data);
+    };
+    ref.on('value', handler);
+    const unsub = () => ref.off('value', handler);
+    this._unsubs.push(unsub);
+    return unsub;
+  },
+
   /* ---- ホスト → ゲストへのイベント送信 ---- */
   async pushEvents(events) {
     if (!this.roomRef || !this.isHost) return;
