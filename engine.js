@@ -4069,13 +4069,13 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     }
     if (move.id === 318 || move.id === 495) {
       setHazard(move.id, attacker.side, logFn);
-      if (!suppressSecondary) applyRankChange(attacker, move.selfRank, logFn);
-      if (!suppressSecondary) applyStatus(attacker, move.selfStatus, logFn);
+      applyRankChange(attacker, move.selfRank, logFn);
+      applyStatus(attacker, move.selfStatus, logFn);
       return;
     }
     if (move.id === 477) {
-      if (!suppressSecondary) applyRankChange(attacker, move.selfRank, logFn);
-      if (!suppressSecondary) applyStatus(attacker, move.selfStatus, logFn);
+      applyRankChange(attacker, move.selfRank, logFn);
+      applyStatus(attacker, move.selfStatus, logFn);
       attacker.pendingSwitchOut = true;
       attacker.batonPass = {
         ranks: { ...attacker.ranks },
@@ -4130,10 +4130,13 @@ logFn(`${attacker.species.name}の${move.name}！`, {
       }
     }
 
-    if (!suppressSecondary) applyRankChange(attacker, move.selfRank, logFn, null, defender);
-    if (!suppressSecondary) applyRankChange(defender, move.oppRank, logFn, null, attacker);
-    if (!suppressSecondary) applyStatus(attacker, move.selfStatus, logFn);
-    if (!suppressSecondary) applyStatus(defender, move.oppStatus, logFn, effectiveAbilityId(attacker));
+    // ちからずく（suppressSecondary）は「攻撃技の追加効果」を消す代わりに威力を上げる特性であり、
+    // マグナライズ・つるぎのまい等の変化技そのものの効果（selfRank/oppRank/selfStatus/oppStatus）を
+    // 消してしまうのは誤り。ここは move.category === 'status' 専用ブロックなので常に無視して適用する。
+    applyRankChange(attacker, move.selfRank, logFn, null, defender);
+    applyRankChange(defender, move.oppRank, logFn, null, attacker);
+    applyStatus(attacker, move.selfStatus, logFn);
+    applyStatus(defender, move.oppStatus, logFn, effectiveAbilityId(attacker));
     // 技を使った本人（attacker）のlastUsedMoveIdを記録（アンコール・ひややかパンチ用）
     attacker.lastUsedMoveId = move.id;
     return;

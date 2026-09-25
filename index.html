@@ -5922,6 +5922,10 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
   .tr-mid > .tr-col:first-child{ position:relative; z-index:50; }   /* 下の能力補正・特性より前面に出し、調整バーが隠れないようにする */
   .tr-mid{ position:relative; z-index:50; }
   .tr-low{ position:relative; z-index:1; }
+  /* 性格・特性・技・型セレクトのオーバーレイは、努力値/技パネル(.tr-mid, z-index:50)より
+     さらに前面に出す（PCでは.tr-midにz-indexが付くため、オーバーレイ側も明示的に上げないと
+     努力値・技のパネルの下に埋もれてしまう） */
+  .tr-nature-overlay, .tr-ability-overlay, .tr-move-overlay, .tr-pre-overlay{ z-index:60; }
   .tr-mid > .tr-col:first-child .tr-panel{ overflow:visible; border-radius:6px; }
   .tr-mid > .tr-col:first-child .tr-panel-head{ border-radius:6px 6px 0 0; }
   .tr-adjust{
