@@ -6819,6 +6819,15 @@ const DEBUG_SERIOUS_RESET_ID = 'reset';
 const DEBUG_CPU_MOVE_PEEK_ID = 'M1RA1';
 let debugCpuMovePeekEnabled = false;
 
+// 救済用：「JIMENSERINA」と入力すると、じめんタイプ統一（type_streak_ground）の実績を
+// 直接解除する。メガシンカでタイプが変わるポケモン（例：じめん→あく）が編成に入っていたせいで
+// 判定がぶれ、5連勝を達成していたのに実績がつかなかったケースの救済用（engine.js側の
+// isPartyOfType は編成時点の素のタイプで固定判定するよう修正済みだが、修正前に既に
+// 連勝していた人はやり直しになってしまうため、個別に解除できるようにしておく）。
+const DEBUG_UNLOCK_TYPE_STREAK_ID = {
+  'JIMENSERINA': 'ground',
+};
+
 $('btn-title-settings').addEventListener('click', () => {
   $('settings-id-input').value = '';
   $('settings-overlay').classList.add('show');
@@ -6863,6 +6872,11 @@ $('settings-confirm-btn').addEventListener('click', () => {
   }
   if (value === DEBUG_CPU_MOVE_PEEK_ID) {
     debugCpuMovePeekEnabled = !debugCpuMovePeekEnabled;
+    return;
+  }
+  if (Object.prototype.hasOwnProperty.call(DEBUG_UNLOCK_TYPE_STREAK_ID, value)) {
+    const type = DEBUG_UNLOCK_TYPE_STREAK_ID[value];
+    if (window.Achievements) window.Achievements.unlock('type_streak_' + type);
     return;
   }
   // シークレットコードによる隠しポケモン解放（例：「OR1GAM1TUK1」でID1057を解放）。

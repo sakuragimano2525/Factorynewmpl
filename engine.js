@@ -278,13 +278,16 @@ const TypeStreak = (() => {
     } catch (e) {}
     return [];
   }
-  // 6匹のパーティ（GAME_DATA.speciesのtype1/type2を持つオブジェクト配列）が、
-  // 指定タイプ1本で統一されているか（type1かtype2のどちらかにそのタイプを持てばOK、
-  // 全員がそのタイプを持っていること）。
+  // 6匹のパーティが、指定タイプ1本で統一されているか
+  // （type1かtype2のどちらかにそのタイプを持てばOK、全員がそのタイプを持っていること）。
+  // 判定は必ず「素のフォーム」の種族データ（GAME_DATA.species[speciesId]）で行う。
+  // p.species はバトル中にメガシンカが発動すると type1/type2 ごとメガ後の姿へ書き換わるため、
+  // そのまま使うと「メガ後にタイプが変わるポケモン（例：じめん→あく）」を編成した時に、
+  // 発動したかどうかでこの試合の判定がぶれてしまう。編成時点の素のタイプで固定して統一を判定する。
   function isPartyOfType(team, type) {
     if (!Array.isArray(team) || team.length < 6) return false;
     return team.every((p) => {
-      const sp = p && (p.species || GAME_DATA.species[p.speciesId]);
+      const sp = p && GAME_DATA.species[p.speciesId];
       if (!sp) return false;
       return sp.type1 === type || sp.type2 === type;
     });
