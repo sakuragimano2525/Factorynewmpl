@@ -4277,6 +4277,7 @@ function resetPokeForBattle(poke) {
   poke.changedType = null;
   poke.hengenjizaiType = null;
   poke.hengenjizaiUsed = false;
+  poke.origamiTsukiSwapped = false;
   poke.typeLockTurns = 0;
   poke.typeLockType = null;
   poke.lastUsedMoveId = null;

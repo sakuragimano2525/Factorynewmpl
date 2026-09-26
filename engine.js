@@ -2634,6 +2634,9 @@ function megaEvolve(poke) {
   });
   poke.ability = data.ability;
   recalcMegaStats(poke, data.baseStats);
+  // メガシンカによる種族値からの再計算で、おりがみつきによる攻撃/特攻の入れ替え（半減込み）が
+  // 消えてしまわないよう、入れ替え済みだった場合はここで再適用する。
+  reapplyOrigamiTsukiIfNeeded(poke, null);
   poke.isMega = true;
   // 本家ルール：1回の戦闘でこのサイドはもう他のポケモンをメガシンカさせられない。
   if (poke.side === 'player') battleField.megaUsedPlayer = true;
@@ -2668,6 +2671,10 @@ function applySenriganAbility(poke, opponent, logFn) {
 // - 相手が既にひんし等で存在しない場合は何もしない。
 // - 隠し効果：入れ替える前に、攻撃・特攻のうち低い方を半分にしてから入れ替える
 //   （同値の場合は両方とも半分にする）。ログには出さない。
+// - opponent.origamiTsukiSwapped に true を立てておく。これは、相手が後からメガシンカして
+//   recalcMegaStats が種族値からatk/spaを再計算し直した際、この入れ替え効果が消えてしまわない
+//   よう、megaEvolve側で再適用するために使う目印（隠し効果なのでログには出さない）。
+//   一度立てたら、おりがみつき側がひんし・退場してもバトル終了まで解除しない。
 function applyOrigamiTsukiAbility(poke, opponent, logFn) {
   if (!poke || poke.fainted || poke.ability !== ABILITY.ORIGAMI_TSUKI) return;
   if (!opponent || opponent.fainted) return;
@@ -2678,7 +2685,23 @@ function applyOrigamiTsukiAbility(poke, opponent, logFn) {
   else spa = Math.floor(spa / 2);
   opponent.stats.atk = spa;
   opponent.stats.spa = atk;
+  opponent.origamiTsukiSwapped = true;
   logFn(`${poke.species.name}のおりがみつき！${opponent.species.name}の攻撃と特攻が入れ替わった！`);
+}
+
+// おりがみつきで入れ替え済みの相手が、後からメガシンカ等で実数値を種族値から再計算し直した
+// 場合に、入れ替え効果が消えないよう同じ入れ替え・半減処理を再適用する。
+// 一度入れ替わったら、おりがみつき側がひんし・退場していようとバトル終了までずっと
+// 入れ替わったまま（poke自身がひんしから復帰する仕様は無いので、実質バトル中ずっと維持される）。
+function reapplyOrigamiTsukiIfNeeded(poke, logFn) {
+  if (!poke || !poke.origamiTsukiSwapped) return;
+  let atk = poke.stats.atk;
+  let spa = poke.stats.spa;
+  if (atk === spa) { atk = Math.floor(atk / 2); spa = Math.floor(spa / 2); }
+  else if (atk < spa) atk = Math.floor(atk / 2);
+  else spa = Math.floor(spa / 2);
+  poke.stats.atk = spa;
+  poke.stats.spa = atk;
 }
 
 // メガシンカで特性が変わった「その瞬間」に発動する特性効果。
