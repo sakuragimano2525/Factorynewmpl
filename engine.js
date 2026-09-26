@@ -1026,9 +1026,9 @@ const MEGA_EVOLUTION_DATA = {
         "ability": 70,
         "baseStats": {
           "hp": 78,
-          "atk": 130,
+          "atk": 120,
           "def": 111,
-          "spa": 130,
+          "spa": 120,
           "spd": 85,
           "spe": 100
         }
@@ -1039,9 +1039,9 @@ const MEGA_EVOLUTION_DATA = {
         "ability": 46,
         "baseStats": {
           "hp": 78,
-          "atk": 104,
+          "atk": 94,
           "def": 88,
-          "spa": 149,
+          "spa": 139,
           "spd": 115,
           "spe": 100
         }
@@ -1054,9 +1054,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 23,
     "baseStats": {
       "hp": 80,
-      "atk": 150,
+      "atk": 140,
       "def": 110,
-      "spa": 125,
+      "spa": 115,
       "spd": 110,
       "spe": 70
     }
@@ -1067,9 +1067,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 135,
     "baseStats": {
       "hp": 95,
-      "atk": 110,
+      "atk": 100,
       "def": 70,
-      "spa": 130,
+      "spa": 120,
       "spd": 110,
       "spe": 95
     }
@@ -1080,9 +1080,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 115,
     "baseStats": {
       "hp": 80,
-      "atk": 185,
+      "atk": 175,
       "def": 115,
-      "spa": 40,
+      "spa": 30,
       "spd": 105,
       "spe": 75
     }
@@ -1092,8 +1092,8 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "poison",
     "ability": 68,
     "baseStats": {
-      "hp": 40,
-      "atk": 165,
+      "hp": 97,
+      "atk": 175,
       "def": 40,
       "spa": 0,
       "spd": 80,
@@ -1106,9 +1106,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 69,
     "baseStats": {
       "hp": 80,
-      "atk": 80,
+      "atk": 70,
       "def": 80,
-      "spa": 169,
+      "spa": 159,
       "spd": 80,
       "spe": 121
     }
@@ -1119,9 +1119,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 53,
     "baseStats": {
       "hp": 80,
-      "atk": 80,
+      "atk": 70,
       "def": 90,
-      "spa": 155,
+      "spa": 145,
       "spd": 149,
       "spe": 96
     }
@@ -1132,9 +1132,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 25,
     "baseStats": {
       "hp": 60,
-      "atk": 100,
+      "atk": 90,
       "def": 85,
-      "spa": 80,
+      "spa": 70,
       "spd": 85,
       "spe": 100
     }
@@ -1145,9 +1145,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 147,
     "baseStats": {
       "hp": 110,
-      "atk": 130,
+      "atk": 120,
       "def": 110,
-      "spa": 130,
+      "spa": 120,
       "spd": 120,
       "spe": 100
     }
@@ -1158,9 +1158,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 125,
     "baseStats": {
       "hp": 65,
-      "atk": 160,
+      "atk": 150,
       "def": 60,
-      "spa": 85,
+      "spa": 75,
       "spd": 70,
       "spe": 125
     }
@@ -1171,9 +1171,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 45,
     "baseStats": {
       "hp": 100,
-      "atk": 140,
+      "atk": 130,
       "def": 110,
-      "spa": 40,
+      "spa": 30,
       "spd": 100,
       "spe": 110
     }
@@ -1184,9 +1184,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 66,
     "baseStats": {
       "hp": 100,
-      "atk": 145,
+      "atk": 135,
       "def": 100,
-      "spa": 145,
+      "spa": 135,
       "spd": 105,
       "spe": 20
     }
@@ -1199,9 +1199,9 @@ const MEGA_EVOLUTION_DATA = {
         "ability": 117,
         "baseStats": {
           "hp": 25,
-          "atk": 135,
+          "atk": 125,
           "def": 95,
-          "spa": 90,
+          "spa": 80,
           "spd": 95,
           "spe": 110
         }
@@ -1212,9 +1212,9 @@ const MEGA_EVOLUTION_DATA = {
         "ability": 69,
         "baseStats": {
           "hp": 70,
-          "atk": 100,
+          "atk": 90,
           "def": 65,
-          "spa": 160,
+          "spa": 150,
           "spd": 80,
           "spe": 130
         }
@@ -1227,9 +1227,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 96,
     "baseStats": {
       "hp": 100,
-      "atk": 85,
+      "atk": 75,
       "def": 100,
-      "spa": 165,
+      "spa": 155,
       "spd": 100,
       "spe": 115
     }
@@ -1240,9 +1240,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 75,
     "baseStats": {
       "hp": 100,
-      "atk": 155,
+      "atk": 145,
       "def": 109,
-      "spa": 60,
+      "spa": 50,
       "spd": 130,
       "spe": 91
     }
@@ -1252,10 +1252,10 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "fire",
     "ability": 140,
     "baseStats": {
-      "hp": 65,
-      "atk": 138,
-      "def": 85,
-      "spa": 138,
+      "hp": 70,
+      "atk": 128,
+      "def": 95,
+      "spa": 128,
       "spd": 85,
       "spe": 75
     }
@@ -1266,9 +1266,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 56,
     "baseStats": {
       "hp": 120,
-      "atk": 130,
+      "atk": 135,
       "def": 90,
-      "spa": 130,
+      "spa": 135,
       "spd": 75,
       "spe": 20
     }
@@ -1278,7 +1278,7 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "psychic",
     "ability": 25,
     "baseStats": {
-      "hp": 60,
+      "hp": 70,
       "atk": 100,
       "def": 105,
       "spa": 130,
@@ -1292,9 +1292,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 73,
     "baseStats": {
       "hp": 120,
-      "atk": 40,
+      "atk": 30,
       "def": 70,
-      "spa": 150,
+      "spa": 140,
       "spd": 100,
       "spe": 100
     }
@@ -1305,9 +1305,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 64,
     "baseStats": {
       "hp": 91,
-      "atk": 144,
+      "atk": 134,
       "def": 115,
-      "spa": 145,
+      "spa": 135,
       "spd": 105,
       "spe": 100
     }
@@ -1318,9 +1318,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 107,
     "baseStats": {
       "hp": 65,
-      "atk": 135,
+      "atk": 125,
       "def": 105,
-      "spa": 135,
+      "spa": 125,
       "spd": 163,
       "spe": 24
     }
@@ -1331,9 +1331,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 53,
     "baseStats": {
       "hp": 100,
-      "atk": 150,
+      "atk": 140,
       "def": 85,
-      "spa": 40,
+      "spa": 30,
       "spd": 125,
       "spe": 135
     }
@@ -1343,11 +1343,11 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "dark",
     "ability": 31,
     "baseStats": {
-      "hp": 100,
-      "atk": 164,
+      "hp": 80,
+      "atk": 154,
       "def": 140,
-      "spa": 95,
-      "spd": 110,
+      "spa": 85,
+      "spd": 80,
       "spe": 71
     }
   },
@@ -1357,9 +1357,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 76,
     "baseStats": {
       "hp": 55,
-      "atk": 50,
+      "atk": 40,
       "def": 75,
-      "spa": 175,
+      "spa": 165,
       "spd": 105,
       "spe": 150
     }
@@ -1370,22 +1370,22 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 87,
     "baseStats": {
       "hp": 70,
-      "atk": 140,
+      "atk": 130,
       "def": 80,
-      "spa": 80,
-      "spd": 65,
-      "spe": 105
+      "spa": 70,
+      "spd": 80,
+      "spe": 125
     }
   },
   "123": {
     "type1": "steel",
     "type2": "ground",
-    "ability": 93,
+    "ability": 66,
     "baseStats": {
       "hp": 75,
-      "atk": 135,
+      "atk": 125,
       "def": 230,
-      "spa": 25,
+      "spa": 15,
       "spd": 95,
       "spe": 20
     }
@@ -1396,9 +1396,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 126,
     "baseStats": {
       "hp": 80,
-      "atk": 145,
+      "atk": 135,
       "def": 130,
-      "spa": 4,
+      "spa": 0,
       "spd": 110,
       "spe": 156
     }
@@ -1409,9 +1409,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 104,
     "baseStats": {
       "hp": 100,
-      "atk": 145,
+      "atk": 135,
       "def": 55,
-      "spa": 145,
+      "spa": 135,
       "spd": 75,
       "spe": 110
     }
@@ -1422,9 +1422,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 143,
     "baseStats": {
       "hp": 75,
-      "atk": 155,
+      "atk": 145,
       "def": 100,
-      "spa": 80,
+      "spa": 70,
       "spd": 120,
       "spe": 95
     }
@@ -1435,9 +1435,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 53,
     "baseStats": {
       "hp": 70,
-      "atk": 150,
+      "atk": 140,
       "def": 130,
-      "spa": 65,
+      "spa": 55,
       "spd": 100,
       "spe": 75
     }
@@ -1448,9 +1448,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 120,
     "baseStats": {
       "hp": 100,
-      "atk": 135,
+      "atk": 125,
       "def": 80,
-      "spa": 135,
+      "spa": 125,
       "spd": 109,
       "spe": 106
     }
@@ -1461,9 +1461,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 139,
     "baseStats": {
       "hp": 105,
-      "atk": 140,
+      "atk": 130,
       "def": 100,
-      "spa": 60,
+      "spa": 50,
       "spd": 100,
       "spe": 100
     }
@@ -1474,9 +1474,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 98,
     "baseStats": {
       "hp": 65,
-      "atk": 137,
+      "atk": 127,
       "def": 135,
-      "spa": 70,
+      "spa": 60,
       "spd": 85,
       "spe": 103
     }
@@ -1487,9 +1487,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 4,
     "baseStats": {
       "hp": 100,
-      "atk": 150,
+      "atk": 140,
       "def": 150,
-      "spa": 20,
+      "spa": 10,
       "spd": 83,
       "spe": 30
     }
@@ -1500,9 +1500,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 125,
     "baseStats": {
       "hp": 95,
-      "atk": 80,
+      "atk": 70,
       "def": 113,
-      "spa": 135,
+      "spa": 125,
       "spd": 120,
       "spe": 70
     }
@@ -1513,9 +1513,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 70,
     "baseStats": {
       "hp": 80,
-      "atk": 135,
+      "atk": 125,
       "def": 85,
-      "spa": 70,
+      "spa": 60,
       "spd": 95,
       "spe": 150
     }
@@ -1526,9 +1526,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 65,
     "baseStats": {
       "hp": 85,
-      "atk": 140,
+      "atk": 130,
       "def": 100,
-      "spa": 60,
+      "spa": 50,
       "spd": 90,
       "spe": 110
     }
@@ -1539,9 +1539,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 121,
     "baseStats": {
       "hp": 60,
-      "atk": 65,
+      "atk": 55,
       "def": 80,
-      "spa": 170,
+      "spa": 160,
       "spd": 95,
       "spe": 130
     }
@@ -1552,7 +1552,7 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 77,
     "baseStats": {
       "hp": 100,
-      "atk": 140,
+      "atk": 130,
       "def": 230,
       "spa": 0,
       "spd": 80,
@@ -1565,9 +1565,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 149,
     "baseStats": {
       "hp": 64,
-      "atk": 155,
+      "atk": 145,
       "def": 105,
-      "spa": 43,
+      "spa": 33,
       "spd": 80,
       "spe": 98
     }
@@ -1578,9 +1578,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 127,
     "baseStats": {
       "hp": 145,
-      "atk": 40,
+      "atk": 30,
       "def": 70,
-      "spa": 140,
+      "spa": 130,
       "spd": 145,
       "spe": 95
     }
@@ -1591,9 +1591,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 126,
     "baseStats": {
       "hp": 65,
-      "atk": 160,
+      "atk": 150,
       "def": 40,
-      "spa": 160,
+      "spa": 150,
       "spd": 40,
       "spe": 115
     }
@@ -1604,9 +1604,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 69,
     "baseStats": {
       "hp": 78,
-      "atk": 147,
+      "atk": 137,
       "def": 100,
-      "spa": 74,
+      "spa": 64,
       "spd": 93,
       "spe": 118
     }
@@ -1617,9 +1617,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 133,
     "baseStats": {
       "hp": 86,
-      "atk": 88,
+      "atk": 78,
       "def": 102,
-      "spa": 129,
+      "spa": 119,
       "spd": 86,
       "spe": 126
     }
@@ -1630,9 +1630,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 118,
     "baseStats": {
       "hp": 74,
-      "atk": 48,
+      "atk": 38,
       "def": 76,
-      "spa": 153,
+      "spa": 143,
       "spd": 101,
       "spe": 124
     }
@@ -1643,9 +1643,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 84,
     "baseStats": {
       "hp": 90,
-      "atk": 160,
+      "atk": 150,
       "def": 100,
-      "spa": 160,
+      "spa": 150,
       "spd": 90,
       "spe": 120
     }
@@ -1656,9 +1656,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 105,
     "baseStats": {
       "hp": 60,
-      "atk": 110,
+      "atk": 100,
       "def": 160,
-      "spa": 110,
+      "spa": 100,
       "spd": 180,
       "spe": 30
     }
@@ -1669,9 +1669,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 25,
     "baseStats": {
       "hp": 50,
-      "atk": 105,
+      "atk": 115,
       "def": 125,
-      "spa": 55,
+      "spa": 45,
       "spd": 95,
       "spe": 50
     }
@@ -1682,9 +1682,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 138,
     "baseStats": {
       "hp": 75,
-      "atk": 50,
+      "atk": 40,
       "def": 120,
-      "spa": 135,
+      "spa": 125,
       "spd": 120,
       "spe": 65
     }
@@ -1695,7 +1695,7 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 123,
     "baseStats": {
       "hp": 60,
-      "atk": 75,
+      "atk": 65,
       "def": 110,
       "spa": 175,
       "spd": 110,
@@ -1708,9 +1708,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 141,
     "baseStats": {
       "hp": 95,
-      "atk": 145,
+      "atk": 135,
       "def": 130,
-      "spa": 120,
+      "spa": 110,
       "spd": 90,
       "spe": 99
     }
@@ -1721,9 +1721,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 146,
     "baseStats": {
       "hp": 85,
-      "atk": 140,
+      "atk": 130,
       "def": 100,
-      "spa": 177,
+      "spa": 167,
       "spd": 90,
       "spe": 123
     }
@@ -1734,9 +1734,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 4,
     "baseStats": {
       "hp": 60,
-      "atk": 150,
+      "atk": 140,
       "def": 149,
-      "spa": 75,
+      "spa": 65,
       "spd": 89,
       "spe": 72
     }
@@ -1747,9 +1747,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 93,
     "baseStats": {
       "hp": 108,
-      "atk": 170,
+      "atk": 160,
       "def": 115,
-      "spa": 120,
+      "spa": 110,
       "spd": 95,
       "spe": 72
     }
@@ -1760,9 +1760,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 62,
     "baseStats": {
       "hp": 75,
-      "atk": 130,
+      "atk": 120,
       "def": 110,
-      "spa": 130,
+      "spa": 120,
       "spd": 110,
       "spe": 80
     }
@@ -1773,9 +1773,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 117,
     "baseStats": {
       "hp": 110,
-      "atk": 65,
+      "atk": 55,
       "def": 90,
-      "spa": 175,
+      "spa": 165,
       "spd": 134,
       "spe": 96
     }
@@ -1786,9 +1786,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 88,
     "baseStats": {
       "hp": 100,
-      "atk": 65,
+      "atk": 55,
       "def": 100,
-      "spa": 130,
+      "spa": 120,
       "spd": 100,
       "spe": 90
     }
@@ -1799,9 +1799,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 57,
     "baseStats": {
       "hp": 90,
-      "atk": 132,
+      "atk": 122,
       "def": 105,
-      "spa": 132,
+      "spa": 122,
       "spd": 105,
       "spe": 60
     }
@@ -1812,9 +1812,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 141,
     "baseStats": {
       "hp": 65,
-      "atk": 155,
+      "atk": 145,
       "def": 120,
-      "spa": 65,
+      "spa": 55,
       "spd": 90,
       "spe": 95
     }
@@ -1825,9 +1825,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 65,
     "baseStats": {
       "hp": 82,
-      "atk": 122,
+      "atk": 112,
       "def": 88,
-      "spa": 120,
+      "spa": 110,
       "spd": 120,
       "spe": 98
     }
@@ -1838,9 +1838,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 70,
     "baseStats": {
       "hp": 72,
-      "atk": 140,
+      "atk": 130,
       "def": 130,
-      "spa": 64,
+      "spa": 54,
       "spd": 106,
       "spe": 109
     }
@@ -1851,9 +1851,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 88,
     "baseStats": {
       "hp": 70,
-      "atk": 20,
+      "atk": 10,
       "def": 80,
-      "spa": 180,
+      "spa": 170,
       "spd": 100,
       "spe": 125
     }
@@ -1864,9 +1864,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 80,
     "baseStats": {
       "hp": 80,
-      "atk": 120,
+      "atk": 110,
       "def": 80,
-      "spa": 120,
+      "spa": 110,
       "spd": 80,
       "spe": 100
     }
@@ -1877,9 +1877,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 57,
     "baseStats": {
       "hp": 70,
-      "atk": 80,
+      "atk": 70,
       "def": 70,
-      "spa": 140,
+      "spa": 130,
       "spd": 100,
       "spe": 120
     }
@@ -1890,9 +1890,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 89,
     "baseStats": {
       "hp": 65,
-      "atk": 156,
+      "atk": 146,
       "def": 94,
-      "spa": 54,
+      "spa": 44,
       "spd": 96,
       "spe": 135
     }
@@ -1903,9 +1903,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 116,
     "baseStats": {
       "hp": 88,
-      "atk": 137,
+      "atk": 127,
       "def": 172,
-      "spa": 74,
+      "spa": 64,
       "spd": 115,
       "spe": 44
     }
@@ -1916,9 +1916,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 19,
     "baseStats": {
       "hp": 75,
-      "atk": 69,
+      "atk": 59,
       "def": 72,
-      "spa": 159,
+      "spa": 149,
       "spd": 125,
       "spe": 134
     }
@@ -1929,9 +1929,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 142,
     "baseStats": {
       "hp": 72,
-      "atk": 125,
+      "atk": 115,
       "def": 77,
-      "spa": 133,
+      "spa": 123,
       "spd": 81,
       "spe": 142
     }
@@ -1942,9 +1942,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 145,
     "baseStats": {
       "hp": 75,
-      "atk": 155,
+      "atk": 145,
       "def": 110,
-      "spa": 60,
+      "spa": 50,
       "spd": 100,
       "spe": 95
     }
@@ -1955,9 +1955,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 4,
     "baseStats": {
       "hp": 95,
-      "atk": 75,
+      "atk": 65,
       "def": 180,
-      "spa": 130,
+      "spa": 120,
       "spd": 80,
       "spe": 30
     }
@@ -1968,9 +1968,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 70,
     "baseStats": {
       "hp": 80,
-      "atk": 105,
+      "atk": 95,
       "def": 150,
-      "spa": 95,
+      "spa": 85,
       "spd": 110,
       "spe": 110
     }
@@ -1981,9 +1981,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 14,
     "baseStats": {
       "hp": 15,
-      "atk": 175,
+      "atk": 165,
       "def": 117,
-      "spa": 105,
+      "spa": 95,
       "spd": 101,
       "spe": 67
     }
@@ -1994,9 +1994,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 33,
     "baseStats": {
       "hp": 80,
-      "atk": 130,
+      "atk": 120,
       "def": 123,
-      "spa": 132,
+      "spa": 122,
       "spd": 120,
       "spe": 80
     }
@@ -2007,9 +2007,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 88,
     "baseStats": {
       "hp": 79,
-      "atk": 103,
+      "atk": 93,
       "def": 120,
-      "spa": 145,
+      "spa": 135,
       "spd": 115,
       "spe": 78
     }
@@ -2020,9 +2020,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 3,
     "baseStats": {
       "hp": 105,
-      "atk": 150,
+      "atk": 140,
       "def": 70,
-      "spa": 100,
+      "spa": 90,
       "spd": 100,
       "spe": 135
     }
@@ -2033,11 +2033,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 142,
     "baseStats": {
       "hp": 80,
-      "atk": 45,
+      "atk": 35,
       "def": 130,
-      "spa": 140,
+      "spa": 130,
       "spd": 100,
-      "spe": 45
+      "spe": 65
     }
   },
   "489": {
@@ -2046,9 +2046,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 148,
     "baseStats": {
       "hp": 80,
-      "atk": 139,
+      "atk": 129,
       "def": 120,
-      "spa": 100,
+      "spa": 90,
       "spd": 125,
       "spe": 97
     }
@@ -2059,9 +2059,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 125,
     "baseStats": {
       "hp": 100,
-      "atk": 85,
+      "atk": 75,
       "def": 155,
-      "spa": 85,
+      "spa": 75,
       "spd": 155,
       "spe": 0
     }
@@ -2072,9 +2072,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 144,
     "baseStats": {
       "hp": 210,
-      "atk": 40,
+      "atk": 30,
       "def": 50,
-      "spa": 200,
+      "spa": 190,
       "spd": 50,
       "spe": 110
     }
@@ -2085,7 +2085,7 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 75,
     "baseStats": {
       "hp": 100,
-      "atk": 165,
+      "atk": 155,
       "def": 100,
       "spa": 0,
       "spd": 65,
@@ -2098,9 +2098,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 68,
     "baseStats": {
       "hp": 83,
-      "atk": 90,
+      "atk": 80,
       "def": 125,
-      "spa": 120,
+      "spa": 110,
       "spd": 116,
       "spe": 101
     }
@@ -2111,9 +2111,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 70,
     "baseStats": {
       "hp": 155,
-      "atk": 120,
+      "atk": 110,
       "def": 145,
-      "spa": 40,
+      "spa": 30,
       "spd": 90,
       "spe": 30
     }
@@ -2124,9 +2124,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 31,
     "baseStats": {
       "hp": 125,
-      "atk": 165,
+      "atk": 155,
       "def": 125,
-      "spa": 55,
+      "spa": 45,
       "spd": 55,
       "spe": 45
     }
@@ -2137,9 +2137,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 16,
     "baseStats": {
       "hp": 70,
-      "atk": 135,
+      "atk": 125,
       "def": 80,
-      "spa": 135,
+      "spa": 125,
       "spd": 80,
       "spe": 135
     }
@@ -2150,9 +2150,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 91,
     "baseStats": {
       "hp": 100,
-      "atk": 40,
+      "atk": 30,
       "def": 126,
-      "spa": 120,
+      "spa": 110,
       "spd": 126,
       "spe": 66
     }
@@ -2163,9 +2163,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 32,
     "baseStats": {
       "hp": 60,
-      "atk": 150,
+      "atk": 140,
       "def": 200,
-      "spa": 110,
+      "spa": 100,
       "spd": 70,
       "spe": 0
     }
@@ -2176,9 +2176,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 53,
     "baseStats": {
       "hp": 75,
-      "atk": 61,
+      "atk": 51,
       "def": 80,
-      "spa": 150,
+      "spa": 140,
       "spd": 130,
       "spe": 109
     }
@@ -2189,9 +2189,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 121,
     "baseStats": {
       "hp": 65,
-      "atk": 160,
+      "atk": 150,
       "def": 110,
-      "spa": 60,
+      "spa": 50,
       "spd": 100,
       "spe": 75
     }
@@ -2202,9 +2202,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 139,
     "baseStats": {
       "hp": 128,
-      "atk": 58,
+      "atk": 48,
       "def": 62,
-      "spa": 128,
+      "spa": 118,
       "spd": 129,
       "spe": 145
     }
@@ -2215,9 +2215,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 150,
     "baseStats": {
       "hp": 110,
-      "atk": 145,
+      "atk": 135,
       "def": 100,
-      "spa": 40,
+      "spa": 30,
       "spd": 98,
       "spe": 107
     }
@@ -2228,9 +2228,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 75,
     "baseStats": {
       "hp": 90,
-      "atk": 95,
+      "atk": 85,
       "def": 105,
-      "spa": 165,
+      "spa": 155,
       "spd": 110,
       "spe": 45
     }
@@ -2241,9 +2241,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 9,
     "baseStats": {
       "hp": 70,
-      "atk": 150,
+      "atk": 140,
       "def": 75,
-      "spa": 150,
+      "spa": 140,
       "spd": 85,
       "spe": 145
     }
@@ -2254,9 +2254,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 3,
     "baseStats": {
       "hp": 100,
-      "atk": 100,
+      "atk": 90,
       "def": 100,
-      "spa": 100,
+      "spa": 90,
       "spd": 100,
       "spe": 100
     }
@@ -2267,9 +2267,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 135,
     "baseStats": {
       "hp": 100,
-      "atk": 135,
+      "atk": 125,
       "def": 80,
-      "spa": 145,
+      "spa": 135,
       "spd": 90,
       "spe": 80
     }
@@ -2280,9 +2280,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 16,
     "baseStats": {
       "hp": 100,
-      "atk": 130,
+      "atk": 120,
       "def": 135,
-      "spa": 55,
+      "spa": 45,
       "spd": 135,
       "spe": 68
     }
@@ -2293,9 +2293,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 69,
     "baseStats": {
       "hp": 100,
-      "atk": 160,
+      "atk": 150,
       "def": 104,
-      "spa": 50,
+      "spa": 40,
       "spd": 115,
       "spe": 65
     }
@@ -2306,9 +2306,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 89,
     "baseStats": {
       "hp": 100,
-      "atk": 157,
+      "atk": 147,
       "def": 122,
-      "spa": 62,
+      "spa": 52,
       "spd": 107,
       "spe": 33
     }
@@ -2319,9 +2319,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 144,
     "baseStats": {
       "hp": 68,
-      "atk": 172,
+      "atk": 142,
       "def": 58,
-      "spa": 88,
+      "spa": 78,
       "spd": 109,
       "spe": 145
     }
@@ -2332,9 +2332,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 68,
     "baseStats": {
       "hp": 70,
-      "atk": 60,
+      "atk": 50,
       "def": 100,
-      "spa": 155,
+      "spa": 145,
       "spd": 90,
       "spe": 120
     }
@@ -2345,9 +2345,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 147,
     "baseStats": {
       "hp": 70,
-      "atk": 120,
+      "atk": 110,
       "def": 110,
-      "spa": 150,
+      "spa": 140,
       "spd": 150,
       "spe": 100
     }
@@ -2358,9 +2358,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 151,
     "baseStats": {
       "hp": 95,
-      "atk": 55,
+      "atk": 45,
       "def": 145,
-      "spa": 145,
+      "spa": 135,
       "spd": 55,
       "spe": 120
     }
@@ -2371,9 +2371,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 152,
     "baseStats": {
       "hp": 80,
-      "atk": 52,
+      "atk": 42,
       "def": 145,
-      "spa": 143,
+      "spa": 133,
       "spd": 125,
       "spe": 80
     }
@@ -2384,9 +2384,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 82,
     "baseStats": {
       "hp": 85,
-      "atk": 165,
+      "atk": 155,
       "def": 120,
-      "spa": 79,
+      "spa": 69,
       "spd": 93,
       "spe": 88
     }
@@ -2397,9 +2397,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 75,
     "baseStats": {
       "hp": 130,
-      "atk": 158,
+      "atk": 148,
       "def": 75,
-      "spa": 80,
+      "spa": 70,
       "spd": 110,
       "spe": 75
     }
@@ -2410,9 +2410,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 138,
     "baseStats": {
       "hp": 80,
-      "atk": 140,
+      "atk": 130,
       "def": 80,
-      "spa": 140,
+      "spa": 130,
       "spd": 100,
       "spe": 80
     }
@@ -2423,9 +2423,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 133,
     "baseStats": {
       "hp": 90,
-      "atk": 145,
+      "atk": 135,
       "def": 102,
-      "spa": 145,
+      "spa": 135,
       "spd": 88,
       "spe": 85
     }
@@ -2436,9 +2436,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 102,
     "baseStats": {
       "hp": 80,
-      "atk": 140,
+      "atk": 130,
       "def": 80,
-      "spa": 140,
+      "spa": 130,
       "spd": 80,
       "spe": 90
     }
@@ -2449,9 +2449,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 64,
     "baseStats": {
       "hp": 110,
-      "atk": 141,
+      "atk": 131,
       "def": 92,
-      "spa": 79,
+      "spa": 49,
       "spd": 70,
       "spe": 138
     }
@@ -2462,9 +2462,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 121,
     "baseStats": {
       "hp": 95,
-      "atk": 84,
+      "atk": 74,
       "def": 95,
-      "spa": 90,
+      "spa": 80,
       "spd": 100,
       "spe": 116
     }
@@ -2475,9 +2475,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 65,
     "baseStats": {
       "hp": 100,
-      "atk": 122,
+      "atk": 112,
       "def": 115,
-      "spa": 128,
+      "spa": 118,
       "spd": 95,
       "spe": 100
     }
@@ -2488,9 +2488,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 124,
     "baseStats": {
       "hp": 70,
-      "atk": 145,
+      "atk": 135,
       "def": 85,
-      "spa": 20,
+      "spa": 10,
       "spd": 105,
       "spe": 125
     }
@@ -2501,9 +2501,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 155,
     "baseStats": {
       "hp": 80,
-      "atk": 30,
+      "atk": 20,
       "def": 83,
-      "spa": 220,
+      "spa": 210,
       "spd": 86,
       "spe": 151
     }
