@@ -2666,12 +2666,18 @@ function applySenriganAbility(poke, opponent, logFn) {
 // - おりがみつき自身が引っ込んだり、バトルが終了したりすれば、相手の実数値は
 //   （各バトルでポケモンが毎回新規生成されるため）自動的に元の値に戻る。
 // - 相手が既にひんし等で存在しない場合は何もしない。
+// - 隠し効果：入れ替える前に、攻撃・特攻のうち低い方を半分にしてから入れ替える
+//   （同値の場合は両方とも半分にする）。ログには出さない。
 function applyOrigamiTsukiAbility(poke, opponent, logFn) {
   if (!poke || poke.fainted || poke.ability !== ABILITY.ORIGAMI_TSUKI) return;
   if (!opponent || opponent.fainted) return;
-  const tmp = opponent.stats.atk;
-  opponent.stats.atk = opponent.stats.spa;
-  opponent.stats.spa = tmp;
+  let atk = opponent.stats.atk;
+  let spa = opponent.stats.spa;
+  if (atk === spa) { atk = Math.floor(atk / 2); spa = Math.floor(spa / 2); }
+  else if (atk < spa) atk = Math.floor(atk / 2);
+  else spa = Math.floor(spa / 2);
+  opponent.stats.atk = spa;
+  opponent.stats.spa = atk;
   logFn(`${poke.species.name}のおりがみつき！${opponent.species.name}の攻撃と特攻が入れ替わった！`);
 }
 

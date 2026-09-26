@@ -8831,6 +8831,9 @@ function npcPickRender() {
 // npcTeamState.source は state.playerTeam と同じオブジェクト参照を共有しているため、
 // バトル中の megaEvolve() がそのままここにも影響してしまう。実際のメガ解除（ステータス再計算含む）
 // は resetPokeForBattle と同じロジックのため、それを流用する。
+// また、ランダムアクト（メガヴァニクト等）で入れ替わった技も同様にここで元へ戻す。
+// これをしないと、npcTeamState.source が入れ替わったままの技を持った状態で選出画面に出てきて、
+// sbHasInvalidLoadout（本来覚えない技を持っている＝❌判定）に引っかかり、次の選出へ進めなくなる。
 function demegaNpcPickSource() {
   npcTeamState.source.forEach((p) => {
     if (p.isMega && p.megaOriginalSpecies) {
@@ -8841,6 +8844,8 @@ function demegaNpcPickSource() {
     p.isMega = false;
     p.megaOriginalSpecies = null;
     p.megaOriginalAbility = null;
+    restoreOriginalMoves(p);
+    if (p.moves) p.moves.forEach((m) => { if (m) { m.pp = m.maxPp; m.locked = false; } });
   });
 }
 
