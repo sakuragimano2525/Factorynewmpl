@@ -39,7 +39,7 @@
      実績ID「intrusion_<種族ID>」＝そのポケモンを乱入戦で倒した記録。
      この実績が解除済みのポケモンは、二度と乱入ボスとして登場しない。
      IDリストは engine.js の INTRUSION_BOSS_IDS を使う（読み込めない場合の予備も持つ）。 */
-  const INTRUSION_FALLBACK_IDS = [1030,476,171, 36, 91, 322, 347, 360, 1009, 1023, 1024, 1025, 1026];
+  const INTRUSION_FALLBACK_IDS = [1054,1057,1030,476,171, 36, 91, 322, 347, 360, 1009, 1023, 1024, 1025, 1026];
   const INTRUSION_IDS = (typeof INTRUSION_BOSS_IDS !== 'undefined' && Array.isArray(INTRUSION_BOSS_IDS))
     ? INTRUSION_BOSS_IDS : INTRUSION_FALLBACK_IDS;
   const ALL_CLEAR_INDEX = ACHIEVEMENTS.findIndex((a) => a.id === 'all_clear');
