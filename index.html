@@ -2628,6 +2628,19 @@ html,body{
 }
 #pick-overlay .tpc-new-badge{ font-size:7px; padding:1.5px 5px; bottom:4px; right:4px; }
 
+/* メガシンカ図鑑未登録のポケモンに付ける虹色版NEW（通常NEWと排他） */
+.tpc-new-badge.tpc-new-badge-mega{
+  background: linear-gradient(90deg, #ff5d5d, #ff9d3d, #ffe95d, #6dff8f, #5dc9ff, #a45dff, #ff5dc9);
+  background-size: 300% 100%;
+  animation: tpcNewBadgeRainbow 3s linear infinite;
+  color:#fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.45);
+}
+@keyframes tpcNewBadgeRainbow{
+  0%{ background-position: 0% 50%; }
+  100%{ background-position: 300% 50%; }
+}
+
 /* ---- 対人選出タイマー & 交換フェーズ ---- */
 .pick-timer-badge{
   position:absolute; top:10px; right:14px;

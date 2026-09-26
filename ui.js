@@ -491,9 +491,19 @@ const Pokedex = (() => {
 
 // 選出/交換カードに載せる「図鑑未登録」マーク。既存の !ボタン（右上）や
 // 選出順バッジ（左上）と重ならないよう、右下に小さく表示する。
+// ・通常図鑑に未登録            → オレンジ背景の NEW
+// ・通常図鑑には登録済みだが、
+//   メガシンカ可能種で           → 虹色背景の NEW
+//   メガシンカ図鑑にまだ未登録
 function pokedexNewBadgeHtml(speciesId) {
-  if (Pokedex.has(speciesId)) return '';
-  return `<span class="tpc-new-badge">NEW</span>`;
+  if (!Pokedex.has(speciesId)) {
+    return `<span class="tpc-new-badge">NEW</span>`;
+  }
+  const canMega = typeof MEGA_EVOLUTION_DATA !== 'undefined' && !!MEGA_EVOLUTION_DATA[speciesId];
+  if (canMega && !Pokedex.hasMega(speciesId)) {
+    return `<span class="tpc-new-badge tpc-new-badge-mega">NEW</span>`;
+  }
+  return '';
 }
 
 /* =========================================================
@@ -5841,26 +5851,6 @@ async function runMultiplayerBattleHost() {
     queueTurnDivider(state.turnNumber);
     await drainMessages();
 
-    // 【AI確認】ホスト自身がまだ技を選んでいる最中でも、参加側（ゲスト）が
-    // 先に行動を確定させていればその時点で検知してログに出す（リアルタイム先読み表示）。
-    // waitForOpponentAction とは別の「値を消費しない」リスナーを使うため、
-    // 本来のターン進行（お互いの行動が揃ってから処理する部分）には影響しない。
-    let debugPeekShown = false;
-    let unsubDebugPeek = null;
-    if (debugCpuMovePeekEnabled) {
-      unsubDebugPeek = Net.peekOpponentAction((raw) => {
-        if (debugPeekShown) return;
-        debugPeekShown = true;
-        if (raw && raw.type === 'move') {
-          const move = state.cpuActive.moves.find((m) => m.id === raw.moveId);
-          if (move) pushLogLine(`【AI確認】相手は「${move.name}」を選んでいる`);
-        } else if (raw && raw.type === 'switch') {
-          const target = state.cpuTeam[raw.idx];
-          if (target) pushLogLine(`【AI確認】相手は「${target.species.name}」に交代しようとしている`);
-        }
-      });
-    }
-
     const myAction = await waitForPlayerAction();
     await Net.sendAction(myAction);
     showOpponentWaitingBadge();
@@ -5869,13 +5859,24 @@ async function runMultiplayerBattleHost() {
       if (surrenderedByOpponent) { resolve('__surrender__'); return; }
       let settled = false;
       const finish = (v) => { if (settled) return; settled = true; clearInterval(check); resolve(v); };
-      Net.waitForOpponentAction(finish);
+      // 【AI確認】onPeek は「相手の行動を検知した瞬間（＝消費する直前）」に呼ばれる。
+      // waitForOpponentAction 側の1本のリスナーで検知〜表示〜消費までを行うため、
+      // 同じパスに複数のリスナーを同時に張ることによる競合・フリーズを避けられる。
+      const onPeek = debugCpuMovePeekEnabled ? (raw) => {
+        if (raw && raw.type === 'move') {
+          const move = state.cpuActive.moves.find((m) => m.id === raw.moveId);
+          if (move) pushLogLine(`【AI確認】相手は「${move.name}」を選んでいる`);
+        } else if (raw && raw.type === 'switch') {
+          const target = state.cpuTeam[raw.idx];
+          if (target) pushLogLine(`【AI確認】相手は「${target.species.name}」に交代しようとしている`);
+        }
+      } : null;
+      Net.waitForOpponentAction(finish, onPeek);
       const check = setInterval(() => {
         if (surrenderedByOpponent) finish('__surrender__');
       }, 200);
     });
     hideOpponentWaitingBadge();
-    if (unsubDebugPeek) unsubDebugPeek();
     if (guestRaw === '__surrender__') {
       if (unsubSurrender) unsubSurrender();
       await endMultiplayerBattleHost(true, true);
@@ -5884,17 +5885,6 @@ async function runMultiplayerBattleHost() {
     const guestAction = resolveRemoteAction(guestRaw, state.cpuActive);
 
     msgQueue = [];
-
-    // 上のリアルタイム先読みで既に表示済みの場合は、ここでの重複表示は行わない。
-    // （自分の選択の方が早く終わり、先読みリスナーが発火しなかった場合のみここで表示する）
-    if (debugCpuMovePeekEnabled && !debugPeekShown) {
-      if (guestAction.type === 'move' && guestAction.move) {
-        pushLogLine(`【AI確認】相手は「${guestAction.move.name}」を選んでいる`);
-      } else if (guestAction.type === 'switch') {
-        const target = state.cpuTeam[guestAction.idx];
-        if (target) pushLogLine(`【AI確認】相手は「${target.species.name}」に交代しようとしている`);
-      }
-    }
 
 
     if (myAction.type === 'switch') {
@@ -6101,6 +6091,12 @@ async function runMultiplayerRematchFlow() {
 let guestEventQueue = [];
 let guestProcessing = false;
 let guestTurnEndResolve = null;
+// 対戦が終了（決着 or 降参）したことを示すフラグ。runMultiplayerBattleGuest の
+// while(true) ループはこれが立ったら必ず抜ける。降参の場合は playerTeam / cpuTeam が
+// どちらも全滅していない状態で終わるため、fainted判定だけのループ終了条件だと
+// ループが永久にwaitForPlayerAction()で待ち続けてしまい、対戦後に画面を戻っても
+// 裏でこのPromiseが解決されないまま残り、以後の操作と衝突してフリーズする不具合があった。
+let guestBattleEnded = false;
 // バトル開始直後、最初の「--ターン1--」の表示が完了するまでゲストの行動選択を
 // 保留するためのゲート。handleGuestEvent内でev.turn付きの最初のmsgイベントの
 // 表示が終わった時にこれが一度だけ呼ばれ、runMultiplayerBattleGuestのループが
@@ -6129,6 +6125,19 @@ function enqueueGuestEvent(ev, key) {
   // 消えないままになっていた不具合を修正する。
   if (ev && (ev.k === 'msg' || ev.k === 'sprite' || ev.k === 'turn-end')) {
     hideOpponentWaitingBadge();
+  }
+  // 'end'（対戦終了）は、降参などによってキューの手前に溜まっている
+  // 別のイベント（例：force-switchの交代待ち）の処理待ちでブロックされてしまうと、
+  // 対戦終了の画面遷移自体が起きず、内部的にはバトルが終わっているのに
+  // 交代待ちのままフリーズしたように見える不具合につながる。
+  // そのため 'end' を受け取ったら、通常のキュー処理を待たずに即座に処理する。
+  // （guestBattleEnded は handleGuestEvent 内の 'end' 処理で true になり、
+  //   force-switch待ち等が forcedSwitchResolve の強制解決で解消されるため、
+  //   後続の通常キュー処理が二重に 'end' を扱うことはない）
+  if (ev && ev.k === 'end') {
+    if (guestBattleEnded) return; // 既に処理済みなら無視
+    handleGuestEvent(ev);
+    return;
   }
   guestEventQueue.push(ev);
   if (!guestProcessing) processGuestEvents();
@@ -6371,6 +6380,7 @@ async function handleGuestEvent(ev) {
     const mySide = ev.s === 'cpu' ? 'self' : 'opp';
     if (mySide === 'self') {
       const idx = await waitGuestForcedSwitch();
+      if (guestBattleEnded) return; // 待っている間に対戦が終了していたら送信しない
       await Net.sendAction({ type: 'switch', idx });
     }
     return;
@@ -6525,9 +6535,18 @@ async function handleGuestEvent(ev) {
 
   if (ev.k === 'end') {
     state.battleBusy = false;
+    guestBattleEnded = true;
     clearTurnTimer();
     hideOpponentWaitingBadge();
     BattleBgm.stop();
+    // まだ技/交代の選択待ち（waitForPlayerAction）が残っていた場合、そのPromiseを
+    // 解決しないまま画面を切り替えてしまうと、古いバトルループが待ち続けたまま
+    // 裏に残ってしまう（次の操作と衝突してフリーズする原因になる）。
+    // ダミーの行動で強制的に解決し、ループ側のguestBattleEndedチェックで
+    // 何もせず抜けるようにする。
+    if (turnResolve) { const r = turnResolve; turnResolve = null; r({ type: 'none' }); }
+    if (guestTurnEndResolve) { const r = guestTurnEndResolve; guestTurnEndResolve = null; r(); }
+    if (forcedSwitchResolve) { const r = forcedSwitchResolve; forcedSwitchResolve = null; try { closePartyOverlay(); } catch (e) {} r(0); }
     // 結果オーバーレイの裏に技メニュー等が残ったままタップできてしまわないよう、
     // ゲスト側でも確実にコマンドパネルを空にしておく。
     clearCmdPanel();
@@ -6578,6 +6597,7 @@ function waitGuestForcedSwitch() {
 
 async function runMultiplayerBattleGuest() {
   state.battleBusy = true;
+  guestBattleEnded = false;
   clearWeatherFxLayer();
   guestEventQueue = [];
   guestProcessing = false;
@@ -6604,14 +6624,20 @@ async function runMultiplayerBattleGuest() {
   await withTimeout(waitForInitialTurnDivider, 12000);
 
   while (true) {
+    // 降参などで決着がついた場合、playerTeam/cpuTeamが全滅していなくても
+    // 対戦が終わっていることがある。guestBattleEnded（'end'イベント受信で立つ）が
+    // 立っていたら、fainted判定を待たずここで確実にループを抜ける。
+    if (guestBattleEnded) return;
     if (state.playerTeam.every((p) => p.fainted)) return;
     if (state.cpuTeam.every((p) => p.fainted)) return;
 
     const myAction = await waitForPlayerAction();
+    if (guestBattleEnded) return;
     await Net.sendAction(myAction);
     showOpponentWaitingBadge();
     await waitForGuestTurnEnd();
     hideOpponentWaitingBadge();
+    if (guestBattleEnded) return;
   }
 }
 
