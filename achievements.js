@@ -21,7 +21,6 @@
     { id: 'win_streak_team_5', title: 'チーム5連勝',  desc: 'チームバトルで5連勝を達成する',    card: 'card16.png' },
 { id: 'win_streak_team_11', title: 'Oracle',  desc: 'チームバトルでボスを倒す',    card: 'card17.png' },
     { id: 'mega_first',      title: 'メガシンカ',     desc: 'はじめてメガシンカを発動する',     card: 'card5.png'  },
-    { id: 'pvp_first_win',   title: '対人戦初勝利',   desc: 'プレイヤーとのバトルで勝利する',   card: 'card6.png'  },
     { id: 'pokedex_50',      title: '図鑑ビギナー',      desc: '図鑑に50匹のポケモンを登録する',   card: 'card7.png'  },
     { id: 'pokedex_100',      title: 'ポケモン探検家',      desc: '図鑑に100匹のポケモンを登録する',   card: 'card8.png'  },
     { id: 'pokedex_150',      title: 'ポケモン収集家',      desc: '図鑑に150匹のポケモンを登録する',   card: 'card9.png' },
@@ -173,7 +172,7 @@
       if (typeof MaxWinStreak !== 'undefined' && typeof MaxWinStreak.getTeam === 'function') {
         const bestTeam = MaxWinStreak.getTeam();
         if (bestTeam >= 5) unlock('win_streak_team_5');
-if (bestTeam >= 10) unlock('win_streak_team_10');
+if (bestTeam >= 11) unlock('win_streak_team_11');
       }
     } catch (e) {}
 
@@ -185,6 +184,7 @@ if (c >= 100) unlock('pokedex_100');
 if (c >= 150) unlock('pokedex_150');
 if (c >= 200) unlock('pokedex_200');
 if (c >= 250) unlock('pokedex_250');
+if (c >= 300) unlock('pokedex_300');
         // メガ登録の有無・数
         const megaData = (typeof MEGA_EVOLUTION_DATA !== 'undefined' && MEGA_EVOLUTION_DATA) || {};
         let megaCount = 0;

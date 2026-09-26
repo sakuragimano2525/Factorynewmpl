@@ -1409,10 +1409,10 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 104,
     "baseStats": {
       "hp": 100,
-      "atk": 135,
-      "def": 55,
-      "spa": 135,
-      "spd": 75,
+      "atk": 155,
+      "def": 85,
+      "spa": 155,
+      "spd": 85,
       "spe": 110
     }
   },
@@ -1434,8 +1434,8 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "steel",
     "ability": 53,
     "baseStats": {
-      "hp": 70,
-      "atk": 140,
+      "hp": 80,
+      "atk": 130,
       "def": 130,
       "spa": 55,
       "spd": 100,
@@ -1448,11 +1448,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 120,
     "baseStats": {
       "hp": 100,
-      "atk": 125,
+      "atk": 100,
       "def": 80,
-      "spa": 125,
+      "spa": 140,
       "spd": 109,
-      "spe": 106
+      "spe": 116
     }
   },
   "188": {
@@ -1461,7 +1461,7 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 139,
     "baseStats": {
       "hp": 105,
-      "atk": 130,
+      "atk": 165,
       "def": 100,
       "spa": 50,
       "spd": 100,
@@ -1474,8 +1474,8 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 98,
     "baseStats": {
       "hp": 65,
-      "atk": 127,
-      "def": 135,
+      "atk": 137,
+      "def": 160,
       "spa": 60,
       "spd": 85,
       "spe": 103
@@ -2133,14 +2133,14 @@ const MEGA_EVOLUTION_DATA = {
   },
   "577": {
     "type1": "electric",
-    "type2": null,
-    "ability": 16,
+    "type2": "shine",
+    "ability": 73,
     "baseStats": {
-      "hp": 70,
-      "atk": 125,
-      "def": 80,
-      "spa": 125,
-      "spd": 80,
+      "hp": 75,
+      "atk": 65,
+      "def": 110,
+      "spa": 155,
+      "spd": 110,
       "spe": 135
     }
   },
@@ -5075,6 +5075,13 @@ logFn(`${attacker.species.name}の${move.name}！`, {
       };
       return;
     }
+    // ほえる(508)／ふきとばし(509)：変化技として必ず命中し、ダメージを与えず
+    // 相手を強制的に交代させる。実際の交代処理はドラゴンテール(49)等と同様、
+    // pendingForceSwitchをrunTurn側で見て解決する（交代自体のログはそちら側で出る）。
+    if (move.id === 508 || move.id === 509) {
+      defender.pendingForceSwitch = true;
+      return;
+    }
     if (move.id === 475) {
       const side = attacker.side === 'player' ? 'player' : 'cpu';
       if (side === 'player') battleField.playerReflect = 5;
@@ -5322,6 +5329,13 @@ logFn(`${attacker.species.name}の${move.name}！`, {
         if (move.id !== 43) applyStatus(attacker, move.selfStatus, logFn);
       }
       break;
+    }
+
+    // ドラゴンテール(49)／510：命中して相手を倒さなかった場合、相手を強制的に交代させる。
+    // 相手が瀕死になった場合（直前のbreak）は発動しない。実際の交代処理は
+    // runTurn側でpendingForceSwitchを見て行う（ui.js側のコールバックで解決）。
+    if ((move.id === 49 || move.id === 510) && defender.currentHp > 0 && !defender.fainted) {
+      defender.pendingForceSwitch = true;
     }
   }
 
@@ -5614,6 +5628,25 @@ async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onIm
           if (actions[j].target === action.poke) actions[j].target = newActive;
         }
         if (action.side === 'player') playerPoke = newActive; else cpuPoke = newActive;
+      }
+    }
+
+    // ドラゴンテール／ほえる／ふきとばし等：相手（action.target）に強制交代フラグが
+    // 立った場合、ここで解決する。onImmediateSwitchは「指定したsideのアクティブ
+    // ポケモンを交代させる」汎用コールバックなので、対象側（相手側）を指定してそのまま
+    // 流用する（控えなし／バインド中なら内部でnullが返り不発）。
+    if (action.target.pendingForceSwitch && !action.target.fainted && typeof onImmediateSwitch === 'function') {
+      action.target.pendingForceSwitch = false;
+      const leavingPoke = action.target;
+      const targetSide = action.side === 'player' ? 'cpu' : 'player';
+      const newActive = await onImmediateSwitch(targetSide);
+      if (newActive) {
+        clearShadowTrapsBy(leavingPoke, action.poke);
+        for (let j = i + 1; j < actions.length; j++) {
+          if (actions[j].poke === action.target) actions[j].poke = newActive;
+          if (actions[j].target === action.target) actions[j].target = newActive;
+        }
+        if (targetSide === 'player') playerPoke = newActive; else cpuPoke = newActive;
       }
     }
   }
