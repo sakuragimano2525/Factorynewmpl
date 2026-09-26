@@ -1499,8 +1499,8 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "flying",
     "ability": 125,
     "baseStats": {
-      "hp": 95,
-      "atk": 70,
+      "hp": 120,
+      "atk": 60,
       "def": 113,
       "spa": 125,
       "spd": 120,
@@ -1515,7 +1515,7 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 80,
       "atk": 125,
       "def": 85,
-      "spa": 60,
+      "spa": 50,
       "spd": 95,
       "spe": 150
     }
@@ -1528,8 +1528,8 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 85,
       "atk": 130,
       "def": 100,
-      "spa": 50,
-      "spd": 90,
+      "spa": 40,
+      "spd": 100,
       "spe": 110
     }
   },
@@ -1562,14 +1562,14 @@ const MEGA_EVOLUTION_DATA = {
   "242": {
     "type1": "ghost",
     "type2": null,
-    "ability": 149,
+    "ability": 68,
     "baseStats": {
       "hp": 64,
-      "atk": 145,
+      "atk": 155,
       "def": 105,
-      "spa": 33,
+      "spa": 105,
       "spd": 80,
-      "spe": 98
+      "spe": 108
     }
   },
   "254": {
@@ -1631,9 +1631,9 @@ const MEGA_EVOLUTION_DATA = {
     "baseStats": {
       "hp": 74,
       "atk": 38,
-      "def": 76,
-      "spa": 143,
-      "spd": 101,
+      "def": 116,
+      "spa": 153,
+      "spd": 121,
       "spe": 124
     }
   },
@@ -1759,12 +1759,12 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "fairy",
     "ability": 62,
     "baseStats": {
-      "hp": 75,
-      "atk": 120,
-      "def": 110,
-      "spa": 120,
-      "spd": 110,
-      "spe": 80
+      "hp": 95,
+      "atk": 90,
+      "def": 120,
+      "spa": 150,
+      "spd": 120,
+      "spe": 85
     }
   },
   "347": {
@@ -1796,14 +1796,14 @@ const MEGA_EVOLUTION_DATA = {
   "351": {
     "type1": "grass",
     "type2": "ice",
-    "ability": 57,
+    "ability": 59,
     "baseStats": {
-      "hp": 90,
-      "atk": 122,
+      "hp": 95,
+      "atk": 160,
       "def": 105,
-      "spa": 122,
+      "spa": 160,
       "spd": 105,
-      "spe": 60
+      "spe": 50
     }
   },
   "352": {
@@ -1811,7 +1811,7 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "flying",
     "ability": 141,
     "baseStats": {
-      "hp": 65,
+      "hp": 75,
       "atk": 145,
       "def": 120,
       "spa": 55,
@@ -1824,8 +1824,8 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "psychic",
     "ability": 65,
     "baseStats": {
-      "hp": 82,
-      "atk": 112,
+      "hp": 126,
+      "atk": 115,
       "def": 88,
       "spa": 110,
       "spd": 120,
@@ -1838,11 +1838,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 70,
     "baseStats": {
       "hp": 72,
-      "atk": 130,
-      "def": 130,
-      "spa": 54,
+      "atk": 165,
+      "def": 140,
+      "spa": 24,
       "spd": 106,
-      "spe": 109
+      "spe": 123
     }
   },
   "360": {
@@ -1864,9 +1864,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 80,
     "baseStats": {
       "hp": 80,
-      "atk": 110,
-      "def": 80,
-      "spa": 110,
+      "atk": 160,
+      "def": 120,
+      "spa": 160,
       "spd": 80,
       "spe": 100
     }
@@ -1877,11 +1877,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 57,
     "baseStats": {
       "hp": 70,
-      "atk": 70,
+      "atk": 25,
       "def": 70,
-      "spa": 130,
-      "spd": 100,
-      "spe": 120
+      "spa": 160,
+      "spd": 120,
+      "spe": 130
     }
   },
   "366": {
@@ -1892,7 +1892,7 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 65,
       "atk": 146,
       "def": 94,
-      "spa": 44,
+      "spa": 35,
       "spd": 96,
       "spe": 135
     }
@@ -1903,11 +1903,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 116,
     "baseStats": {
       "hp": 88,
-      "atk": 127,
+      "atk": 147,
       "def": 172,
-      "spa": 64,
+      "spa": 84,
       "spd": 115,
-      "spe": 44
+      "spe": 54
     }
   },
   "384": {
@@ -1928,10 +1928,10 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "dark",
     "ability": 142,
     "baseStats": {
-      "hp": 72,
-      "atk": 115,
+      "hp": 92,
+      "atk": 135,
       "def": 77,
-      "spa": 123,
+      "spa": 133,
       "spd": 81,
       "spe": 142
     }
@@ -1954,12 +1954,12 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "psychic",
     "ability": 4,
     "baseStats": {
-      "hp": 95,
-      "atk": 65,
+      "hp": 110,
+      "atk": 60,
       "def": 180,
       "spa": 120,
       "spd": 80,
-      "spe": 30
+      "spe": 0
     }
   },
   "456": {
@@ -1993,7 +1993,7 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "poison",
     "ability": 33,
     "baseStats": {
-      "hp": 80,
+      "hp": 70,
       "atk": 120,
       "def": 123,
       "spa": 122,
@@ -2006,12 +2006,12 @@ const MEGA_EVOLUTION_DATA = {
     "type2": null,
     "ability": 88,
     "baseStats": {
-      "hp": 79,
-      "atk": 93,
-      "def": 120,
-      "spa": 135,
+      "hp": 80,
+      "atk": 50,
+      "def": 125,
+      "spa": 140,
       "spd": 115,
-      "spe": 78
+      "spe": 100
     }
   },
   "476": {
@@ -2139,7 +2139,7 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 75,
       "atk": 65,
       "def": 110,
-      "spa": 155,
+      "spa": 145,
       "spd": 110,
       "spe": 135
     }
@@ -3838,7 +3838,7 @@ function calcDamage(attacker, defender, move, logFn) {
 }
 
 // あめの時に必中となる技ID（かみなり・ルクシオンエア・しはいのかぜ・アクアスワール）
-const RAIN_ALWAYS_HIT_MOVES = [73, 78, 156, 357];
+const RAIN_ALWAYS_HIT_MOVES = [73, 78, 156, 357, 496, 502];
 // ゆきの時に必中となる技ID（こごえるかぜ・ふぶき・ヘイルストーム）
 const SNOW_ALWAYS_HIT_MOVES = [232, 235, 237];
 
@@ -4948,6 +4948,10 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     logFn(`${move.name}の威力は${modifiedPower}になった！`);
   }
   if (move.id === 70 && battleField.terrain === 'electric') {
+    modifiedPower = 120;
+    logFn(`${move.name}の威力は${modifiedPower}になった！`);
+  }
+  if (move.id === 511 && battleField.terrain === 'psychic') {
     modifiedPower = 120;
     logFn(`${move.name}の威力は${modifiedPower}になった！`);
   }
