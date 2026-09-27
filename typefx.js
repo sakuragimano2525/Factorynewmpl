@@ -19360,6 +19360,655 @@ function spawnFlamethrowerSpecial(particles, w, h, info) {
 }
 
 // ============================================================
+// オーバーヒート：口元に全力を凝縮させた灼熱の光を溜め、極太の炎の奔流を
+// 一直線に叩き込み、着弾点で画面を覆うほどの巨大な爆炎を巻き起こす演出。
+// ソード・シールド実機のイメージ：
+//   ①身構えと同時に口元へ赤〜白の光が急速に圧縮されながら収束する（渾身の溜め）
+//   ②収束が臨界に達した瞬間、閃光と共に極太の炎の激流が相手へ向けて放たれる
+//     （かえんほうしゃより太く短時間で到達する「太い一撃」）
+//   ③着弾の瞬間、白閃光→巨大な火球が膨張し、画面を揺らす大爆発が起こる
+//   ④爆発は上方向にも大きく広がる火柱（キノコ雲状）となり、火の粉と黒煙が
+//     画面全体に飛び散って余韻を残す
+// 「渾身の溜め→太く短い激流→画面いっぱいの大爆発」という力の解放感がキモ。
+// info = { from:{x,y}, to:{x,y}, scale }  ※ playSpecialTypeEffect が実測して渡す。
+// ============================================================
+const OVERHEAT_CHARGE_MS = 460;    // 口元に光が凝縮するチャージ
+const OVERHEAT_EXTEND_MS = 130;    // 炎が相手まで届くまで（太く短時間で到達）
+const OVERHEAT_HIT_MS = OVERHEAT_CHARGE_MS + OVERHEAT_EXTEND_MS;  // 着弾（大爆発の開始）
+const OVERHEAT_BLAST_MS = 460;     // 大爆発が膨張しきるまで
+const OVERHEAT_PILLAR_MS = 520;    // 火柱（キノコ雲）が立ち上り燃え広がる間
+const OVERHEAT_FADE_MS = 420;      // 爆炎が収縮して消える
+const OVERHEAT_END_MS = OVERHEAT_HIT_MS + OVERHEAT_BLAST_MS + OVERHEAT_PILLAR_MS + OVERHEAT_FADE_MS;
+
+function spawnOverheatSpecial(particles, w, h, info) {
+  const from = (info && info.from) || { x: w * 0.28, y: h * 0.68 };
+  const to = (info && info.to) || { x: w * 0.72, y: h * 0.32 };
+  const S = (info && info.scale) || 1;
+  const R = Math.max(w, h);
+
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const nx = -uy, ny = ux;
+  const mouth = { x: from.x + ux * 30 * S, y: from.y + uy * 30 * S };
+  const beamW = Math.min(68 * S, 78);   // かえんほうしゃ(46)より明確に太い奔流
+  const cx = to.x, cy = to.y;
+  const seedA = rand(0, 100), seedB = rand(0, 100);
+
+  function beamReach(ms) {
+    if (ms < OVERHEAT_CHARGE_MS) return 0;
+    return easeOutQuint(clamp01((ms - OVERHEAT_CHARGE_MS) / OVERHEAT_EXTEND_MS));
+  }
+  // 大爆発〜火柱〜収縮までの全体強度（0〜1）
+  function blastStrength(ms) {
+    if (ms < OVERHEAT_HIT_MS) return 0;
+    const since = ms - OVERHEAT_HIT_MS;
+    const sustainEnd = OVERHEAT_BLAST_MS + OVERHEAT_PILLAR_MS;
+    if (since < sustainEnd) return 1;
+    const f = (since - sustainEnd) / OVERHEAT_FADE_MS;
+    return Math.pow(1 - clamp01(f), 1.6);
+  }
+
+  // ---- 幕0：口元に「渾身の力」を凝縮させる圧縮光（かえんほうしゃより激しく渦を巻く） ----
+  particles.push({
+    maxLife: OVERHEAT_CHARGE_MS + 80,
+    blend: 'lighter',
+    draw(ctx, t) {
+      // 前半は膨張、後半は臨界に向けて急速に圧縮される「溜め」の呼吸
+      const swell = t < 0.55 ? easeOutCubic(t / 0.55) : 1 - easeInCubic((t - 0.55) / 0.45) * 0.4;
+      const a = Math.sin(Math.PI * clamp01(t)) * 0.75 + (t > 0.85 ? (t - 0.85) / 0.15 * 0.25 : 0);
+      const r = lerp(6 * S, 30 * S, swell);
+      const g = ctx.createRadialGradient(mouth.x, mouth.y, 0, mouth.x, mouth.y, r);
+      g.addColorStop(0, rgba('#ffffff', a));
+      g.addColorStop(0.35, rgba('#fff0b0', a * 0.9));
+      g.addColorStop(0.7, rgba('#ff7a1a', a * 0.6));
+      g.addColorStop(1, 'rgba(255,60,10,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(mouth.x, mouth.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  // 周囲から口元へ吸い込まれる螺旋状の火の粒（渾身の力を集める体感）
+  for (let i = 0; i < 22; i++) {
+    const a0 = (i / 22) * Math.PI * 2 + rand(-0.2, 0.2);
+    const r0 = rand(48, 90) * S;
+    const startAt = rand(0, 160);
+    const seed = rand(0, 100);
+    particles.push({
+      delay: startAt,
+      maxLife: rand(220, 320),
+      blend: 'lighter',
+      draw(ctx, t) {
+        if (t >= 1) return;
+        const e = easeInCubic(t);
+        const rr = lerp(r0, 3 * S, e);
+        const spin = a0 - t * 4.2;   // 吸い込まれる回転
+        const x = mouth.x + Math.cos(spin) * rr;
+        const y = mouth.y + Math.sin(spin) * rr * 0.8;
+        const a = clamp01(t * 4) * (1 - Math.max(0, (t - 0.82) / 0.18));
+        const size = (2.6 + 2.2 * Math.abs(noise1(t * 10, seed))) * S;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, size * 2.6);
+        g.addColorStop(0, rgba('#fff6d0', a));
+        g.addColorStop(0.5, rgba('#ff9a3a', a * 0.75));
+        g.addColorStop(1, 'rgba(255,80,20,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, size * 2.6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+  // 臨界に達する寸前の小さな衝撃波リング（発射直前の合図）
+  particles.push({
+    delay: OVERHEAT_CHARGE_MS - 90,
+    maxLife: 130,
+    blend: 'lighter',
+    draw(ctx, t) {
+      const a = (1 - t) * 0.6;
+      const r = lerp(4 * S, 34 * S, easeOutCubic(t));
+      ctx.strokeStyle = rgba('#fff3c4', a);
+      ctx.lineWidth = 3 * S;
+      ctx.shadowColor = rgba('#ffb347', 0.9);
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(mouth.x, mouth.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  });
+
+  // ---- 幕1：極太の炎の激流（3層、太く短時間で到達させる） ----
+  const LAYERS = [
+    { n: 20, wMul: 1.05, aMul: 0.32, spread: 0.55, col0: '#ff7a1a', col1: '#ff2e0e', seedOff: 0 },
+    { n: 18, wMul: 0.72, aMul: 0.60, spread: 0.15, col0: '#ffd98a', col1: '#ff5a1a', seedOff: 9 },
+    { n: 14, wMul: 0.40, aMul: 0.95, spread: -0.25, col0: '#ffffff', col1: '#ffe9a0', seedOff: 17 },
+  ];
+  LAYERS.forEach((L, li) => {
+    particles.push({
+      delay: OVERHEAT_CHARGE_MS,
+      maxLife: OVERHEAT_HIT_MS - OVERHEAT_CHARGE_MS + 40,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const ms = OVERHEAT_CHARGE_MS + t * (OVERHEAT_HIT_MS - OVERHEAT_CHARGE_MS + 40);
+        const reach = beamReach(ms);
+        if (reach <= 0.01) return;
+        const time = ms / 1000;
+        for (let i = 0; i < L.n; i++) {
+          const kk = (i + 0.5) / L.n;
+          if (kk > reach) break;
+          const px = mouth.x + (to.x - mouth.x) * kk;
+          const py = mouth.y + (to.y - mouth.y) * kk;
+          const jit = noise1(kk * 5 + time * 8 + L.seedOff, seedA + li * 3) * beamW * 0.30 * kk;
+          const jit2 = noise1(kk * 4 + time * 9 + L.seedOff + 5, seedB + li * 3) * beamW * 0.30 * kk;
+          const x = px + nx * (jit + jit2 * 0.5);
+          const y = py + ny * (jit + jit2 * 0.5);
+          const baseTaper = Math.min(1, kk * 5);
+          const taper = baseTaper * (1 + L.spread * kk) * Math.max(0.25, 1 - Math.pow(kk, 3) * 0.4);
+          const size = beamW * L.wMul * taper * (0.9 + Math.abs(noise1(kk * 6 + time * 12 + L.seedOff, seedA + li)) * 0.3);
+          const a = L.aMul * (1 - kk * 0.3) * (0.88 + Math.abs(noise1(kk * 8 + time * 14, seedB + li)) * 0.25);
+          const g = ctx.createRadialGradient(x, y, 0, x, y, size);
+          g.addColorStop(0, rgba(L.col0, a));
+          g.addColorStop(0.4, rgba(L.col1, a * 0.85));
+          g.addColorStop(1, 'rgba(255,60,0,0)');
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(x, y, size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    });
+  });
+  // 激流から飛び散る火の粉（短時間だが密度高め）
+  for (let i = 0; i < 26; i++) {
+    const startAt = OVERHEAT_CHARGE_MS + rand(0, OVERHEAT_EXTEND_MS + 40);
+    const kStart = rand(0, 0.4);
+    const kEnd = rand(0.6, 1.05);
+    const sideOff = rand(-1, 1);
+    const size = rand(1.8, 3.4) * S;
+    const col = pick(['#ffe9a0', '#ffb347', '#ff7a1a']);
+    const seed = rand(0, 100);
+    particles.push({
+      delay: startAt,
+      maxLife: rand(200, 320),
+      blend: 'lighter',
+      draw(ctx, t) {
+        if (t >= 1) return;
+        const e = easeOutCubic(t);
+        const kk = lerp(kStart, kEnd, e);
+        const px = mouth.x + (to.x - mouth.x) * kk;
+        const py = mouth.y + (to.y - mouth.y) * kk;
+        const drift = noise1(kk * 4 + t * 4, seed) * 12 * S * e;
+        const perp = sideOff * beamW * 0.65 * (1 - kk * 0.3) + drift;
+        const x = px + nx * perp;
+        const y = py + ny * perp;
+        const a = (1 - t) * 0.95;
+        ctx.fillStyle = rgba(col, a);
+        ctx.shadowColor = rgba('#ff9a3a', 0.9);
+        ctx.shadowBlur = 6 * S;
+        ctx.beginPath();
+        ctx.arc(x, y, size * (1 - t * 0.4), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
+  // ---- 幕2：着弾の白閃光（大爆発の起点） ----
+  particles.push({
+    delay: OVERHEAT_HIT_MS,
+    maxLife: 260,
+    blend: 'lighter',
+    draw(ctx, t) {
+      const a = (1 - t) * 1.0;
+      const r = lerp(14 * S, 96 * S, easeOutQuint(t));
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, rgba('#ffffff', a));
+      g.addColorStop(0.3, rgba('#ffffff', a * 0.9));
+      g.addColorStop(0.6, rgba('#ffe9a0', a * 0.6));
+      g.addColorStop(1, 'rgba(255,180,80,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  // ---- 幕3：画面を覆う巨大な爆炎（中心の火球本体） ----
+  particles.push({
+    delay: OVERHEAT_HIT_MS,
+    maxLife: OVERHEAT_BLAST_MS + OVERHEAT_PILLAR_MS + OVERHEAT_FADE_MS,
+    blend: 'lighter',
+    draw(ctx, t) {
+      const ms = OVERHEAT_HIT_MS + t * (OVERHEAT_BLAST_MS + OVERHEAT_PILLAR_MS + OVERHEAT_FADE_MS);
+      const k = blastStrength(ms);
+      if (k <= 0.01) return;
+      const since = ms - OVERHEAT_HIT_MS;
+      const growT = clamp01(since / OVERHEAT_BLAST_MS);
+      const baseR = lerp(20 * S, R * 0.44, easeOutQuint(growT));
+      const pulse = 1 + 0.05 * Math.sin(ms * 0.02);
+      const r = baseR * pulse * k;
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, rgba('#ffffff', 0.9 * k));
+      g.addColorStop(0.22, rgba('#fff0b0', 0.85 * k));
+      g.addColorStop(0.5, rgba('#ff9a2e', 0.7 * k));
+      g.addColorStop(0.78, rgba('#ff4d1a', 0.4 * k));
+      g.addColorStop(1, 'rgba(180,20,10,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  // 衝撃波リング（複数、外側へ広がる）
+  for (let i = 0; i < 4; i++) {
+    particles.push({
+      delay: OVERHEAT_HIT_MS + i * 45,
+      maxLife: 460 - i * 50,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const r = lerp(14 * S, R * (0.20 + i * 0.075), easeOutQuint(t));
+        const a = (1 - t) * (0.85 - i * 0.14);
+        ctx.strokeStyle = rgba(i < 2 ? '#ffe9a0' : '#ff7a1a', a);
+        ctx.lineWidth = (8 - i) * (1 - t * 0.45) * S;
+        ctx.shadowColor = rgba('#ff9a3a', 0.9);
+        ctx.shadowBlur = 14;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    });
+  }
+
+  // ---- 幕4：上方向に立ち上る火柱（キノコ雲状）。原作の「炎が突き上がる」印象を再現 ----
+  const pillarStart = OVERHEAT_HIT_MS + OVERHEAT_BLAST_MS * 0.35;
+  const PILLAR_N = 9;
+  for (let i = 0; i < PILLAR_N; i++) {
+    const ox = rand(-30, 30) * S;
+    const riseMax = rand(90, 150) * S;
+    const size0 = rand(20, 32) * S;
+    const seed = rand(0, 100);
+    const startAt = pillarStart + rand(0, 120);
+    particles.push({
+      delay: startAt,
+      maxLife: OVERHEAT_END_MS - startAt,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const ms = startAt + t * (OVERHEAT_END_MS - startAt);
+        const k = blastStrength(ms);
+        if (k <= 0.02) return;
+        const rise = easeOutCubic(clamp01((ms - startAt) / (OVERHEAT_PILLAR_MS + 120)));
+        const x = cx + ox + noise1(t * 3 + seed, seed) * 20 * S;
+        const y = cy - rise * riseMax;
+        const size = size0 * (0.7 + rise * 0.6);
+        const a = k * (0.7 - rise * 0.25);
+        const g = ctx.createRadialGradient(x, y, 0, x, y, size);
+        g.addColorStop(0, rgba('#ffd98a', a));
+        g.addColorStop(0.45, rgba('#ff7a1a', a * 0.8));
+        g.addColorStop(1, 'rgba(255,50,10,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
+  // 爆発から放射状に飛び散る火の粒（密度高め・画面いっぱいに広がる）
+  for (let i = 0; i < 46; i++) {
+    const sa = rand(0, Math.PI * 2);
+    const sp = rand(40, 170) * S;
+    const sz = rand(2, 5) * S;
+    const col = pick(['#ffe9a0', '#ffb347', '#ff7a1a', '#ff4d2e']);
+    const grav = rand(0.5, 1.3);
+    const seed = rand(0, 100);
+    particles.push({
+      delay: OVERHEAT_HIT_MS + rand(0, 100),
+      maxLife: rand(420, 700),
+      blend: 'lighter',
+      draw(ctx, t) {
+        const e = easeOutCubic(t);
+        const x = cx + Math.cos(sa) * sp * e;
+        const y = cy + Math.sin(sa) * sp * e * 0.85 + grav * t * t * h * 0.07;
+        const flick = 0.5 + Math.abs(noise1(t * 20 + seed, seed)) * 0.5;
+        const a = (1 - t) * 0.95 * flick;
+        ctx.fillStyle = rgba(col, a);
+        ctx.shadowColor = rgba('#ff9a3a', 0.9);
+        ctx.shadowBlur = 7 * S;
+        ctx.beginPath();
+        ctx.arc(x, y, sz * (1 - t * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+
+  // 黒煙（爆発後、キノコ雲の周囲に立ち上って余韻を残す）
+  for (let i = 0; i < 14; i++) {
+    const ox = rand(-46, 46) * S;
+    const oy = rand(-30, 10) * S;
+    const size = rand(30, 52) * S;
+    const seed = rand(0, 100);
+    const startAt = OVERHEAT_HIT_MS + 140 + rand(0, 260);
+    particles.push({
+      delay: startAt,
+      maxLife: rand(560, 820),
+      draw(ctx, t) {
+        const rise = easeOutCubic(t);
+        const x = cx + ox + noise1(t * 4 + seed, seed) * 20 * S;
+        const y = cy + oy - rise * 60 * S;
+        const a = (t < 0.12 ? t / 0.12 : (1 - Math.max(0, (t - 0.4) / 0.6))) * 0.42;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, size);
+        g.addColorStop(0, rgba('#2a1812', a));
+        g.addColorStop(1, 'rgba(20,12,10,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+}
+
+// ============================================================
+// リーフストーム：使用者の周りに無数の鋭い葉が渦を巻いて集まり、
+// 竜巻状の緑の嵐となって相手へ叩きつけられる演出（ソード・シールド実機イメージ）。
+// 構成：①使用者の周囲に木の葉が渦巻きながら収束する（チャージ）
+//       ②収束した葉が竜巻状の奔流となって相手へ向けて放たれる
+//       ③着弾の瞬間、閃光と共に無数の葉が相手に斬りつけるように爆ぜ散る
+//       ④緑の光の粒と葉が風に舞いながら飛び散り、ゆっくり消えていく余韻
+// 「鋭い葉の形状」「渦を巻く動き」「若葉〜濃緑の階調」がキモ。
+// info = { from:{x,y}, to:{x,y}, scale }  ※ playSpecialTypeEffect が実測して渡す。
+// ============================================================
+const LEAFSTORM_CHARGE_MS = 460;   // 葉が渦を巻いて集まるチャージ
+const LEAFSTORM_EXTEND_MS = 260;   // 竜巻の奔流が相手まで届くまで
+const LEAFSTORM_HIT_MS = LEAFSTORM_CHARGE_MS + LEAFSTORM_EXTEND_MS;  // 着弾（葉が爆ぜる）
+const LEAFSTORM_BURST_MS = 420;    // 葉が斬りつけて爆ぜ散る間
+const LEAFSTORM_FADE_MS = 480;     // 葉と光の粒が風に舞って消える余韻
+const LEAFSTORM_END_MS = LEAFSTORM_HIT_MS + LEAFSTORM_BURST_MS + LEAFSTORM_FADE_MS;
+
+// 鋭い木の葉の形（葉脈入りのシンプルな葉形）を、指定した中心・角度・サイズで描く。
+function drawSharpLeaf(ctx, x, y, angle, size, col0, col1, alpha) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  const g = ctx.createLinearGradient(0, -size * 0.6, 0, size * 0.6);
+  g.addColorStop(0, rgba(col0, alpha));
+  g.addColorStop(1, rgba(col1, alpha * 0.85));
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  // 笹の葉のような、両端が尖った鋭い葉形
+  ctx.moveTo(0, -size * 0.62);
+  ctx.quadraticCurveTo(size * 0.34, -size * 0.1, 0, size * 0.62);
+  ctx.quadraticCurveTo(-size * 0.34, -size * 0.1, 0, -size * 0.62);
+  ctx.closePath();
+  ctx.fill();
+  // 葉脈（中央の一本線）
+  ctx.strokeStyle = rgba('#eaffb0', alpha * 0.6);
+  ctx.lineWidth = Math.max(0.6, size * 0.045);
+  ctx.beginPath();
+  ctx.moveTo(0, -size * 0.55);
+  ctx.lineTo(0, size * 0.55);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function spawnLeafStormSpecial(particles, w, h, info) {
+  const from = (info && info.from) || { x: w * 0.28, y: h * 0.68 };
+  const to = (info && info.to) || { x: w * 0.72, y: h * 0.32 };
+  const S = (info && info.scale) || 1;
+  const R = Math.max(w, h);
+
+  const dx = to.x - from.x, dy = to.y - from.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  const nx = -uy, ny = ux;
+  const cx = to.x, cy = to.y;
+  const LEAF_COLORS = [
+    ['#8fd93a', '#3f9a1c'],
+    ['#b8f24a', '#5cb82a'],
+    ['#5aa82a', '#2a6e12'],
+    ['#d4ff7a', '#7ac93a'],
+  ];
+
+  function chargeStrength(ms) {
+    return clamp01(ms / LEAFSTORM_CHARGE_MS);
+  }
+  function beamReach(ms) {
+    if (ms < LEAFSTORM_CHARGE_MS) return 0;
+    return easeOutQuint(clamp01((ms - LEAFSTORM_CHARGE_MS) / LEAFSTORM_EXTEND_MS));
+  }
+  function burstStrength(ms) {
+    if (ms < LEAFSTORM_HIT_MS) return 0;
+    const since = ms - LEAFSTORM_HIT_MS;
+    if (since < LEAFSTORM_BURST_MS) return 1;
+    const f = (since - LEAFSTORM_BURST_MS) / LEAFSTORM_FADE_MS;
+    return Math.pow(1 - clamp01(f), 1.5);
+  }
+
+  // ---- 幕0：使用者の周囲に木の葉が渦を巻いて集まる（チャージ） ----
+  // 淡い緑のオーラ（集束の起点）
+  particles.push({
+    maxLife: LEAFSTORM_CHARGE_MS + 60,
+    blend: 'lighter',
+    draw(ctx, t) {
+      const a = Math.sin(Math.PI * clamp01(t)) * 0.5;
+      const r = lerp(10 * S, 46 * S, easeOutCubic(t));
+      const g = ctx.createRadialGradient(from.x, from.y, 0, from.x, from.y, r);
+      g.addColorStop(0, rgba('#eaffb0', a));
+      g.addColorStop(0.45, rgba('#8fd93a', a * 0.75));
+      g.addColorStop(1, 'rgba(60,140,20,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(from.x, from.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+  // 螺旋を描いて使用者に集まる葉（吸い込まれる動き）
+  const CHARGE_LEAVES = 26;
+  for (let i = 0; i < CHARGE_LEAVES; i++) {
+    const a0 = (i / CHARGE_LEAVES) * Math.PI * 2 + rand(-0.25, 0.25);
+    const r0 = rand(56, 110) * S;
+    const startAt = rand(0, 220);
+    const size = rand(10, 16) * S;
+    const col = pick(LEAF_COLORS);
+    const spinDir = i % 2 === 0 ? 1 : -1;
+    particles.push({
+      delay: startAt,
+      maxLife: rand(220, 320),
+      draw(ctx, t) {
+        if (t >= 1) return;
+        const e = easeInCubic(t);
+        const rr = lerp(r0, 6 * S, e);
+        const spin = a0 + spinDir * t * 4.4;
+        const x = from.x + Math.cos(spin) * rr;
+        const y = from.y + Math.sin(spin) * rr * 0.85;
+        const a = clamp01(t * 4) * (1 - Math.max(0, (t - 0.82) / 0.18));
+        drawSharpLeaf(ctx, x, y, spin + Math.PI / 2, size * (1 - t * 0.3), col[0], col[1], a);
+      }
+    });
+  }
+
+  // ---- 幕1：竜巻状の奔流が相手へ放たれる ----
+  const STORM_LEAVES = 60;
+  for (let i = 0; i < STORM_LEAVES; i++) {
+    const along0 = rand(0, 0.9);
+    const orbitR0 = rand(10, 44) * S;
+    const orbitSpeed = rand(2.2, 4.2) * (rand(0, 1) < 0.5 ? 1 : -1);
+    const size = rand(11, 18) * S;
+    const col = pick(LEAF_COLORS);
+    const seed = rand(0, 100);
+    const startAt = LEAFSTORM_CHARGE_MS + rand(0, LEAFSTORM_EXTEND_MS * 0.75);
+    particles.push({
+      delay: startAt,
+      maxLife: LEAFSTORM_HIT_MS - startAt + 60,
+      draw(ctx, t) {
+        if (t >= 1) return;
+        const ms = startAt + t * (LEAFSTORM_HIT_MS - startAt + 60);
+        const reach = beamReach(ms);
+        if (reach <= 0.01) return;
+        const kk = clamp01(along0 + (1 - along0) * reach);
+        const px = from.x + (to.x - from.x) * kk;
+        const py = from.y + (to.y - from.y) * kk;
+        // 竜巻状に回転しながら進む（進行方向に垂直な円運動）
+        const orbitR = orbitR0 * (0.6 + 0.4 * Math.sin(kk * Math.PI));
+        const ang = seed + ms * 0.012 * orbitSpeed;
+        const ox = Math.cos(ang) * orbitR;
+        const oy = Math.sin(ang) * orbitR * 0.6;
+        const x = px + nx * ox;
+        const y = py + ny * ox + oy * 0.3;
+        const a = 0.9 * (1 - kk * 0.15);
+        const leafAngle = ang + Math.PI / 2;
+        drawSharpLeaf(ctx, x, y, leafAngle, size, col[0], col[1], a);
+      }
+    });
+  }
+  // 竜巻の芯：緑の光の筋（風の勢いを示す）
+  particles.push({
+    delay: LEAFSTORM_CHARGE_MS,
+    maxLife: LEAFSTORM_EXTEND_MS + 60,
+    blend: 'lighter',
+    draw(ctx, t) {
+      const ms = LEAFSTORM_CHARGE_MS + t * (LEAFSTORM_EXTEND_MS + 60);
+      const reach = beamReach(ms);
+      if (reach <= 0.01) return;
+      const time = ms / 1000;
+      const N = 16;
+      for (let i = 0; i < N; i++) {
+        const kk = (i + 0.5) / N;
+        if (kk > reach) break;
+        const px = from.x + (to.x - from.x) * kk;
+        const py = from.y + (to.y - from.y) * kk;
+        const jit = noise1(kk * 5 + time * 8, 3.3) * 14 * S * kk;
+        const x = px + nx * jit;
+        const y = py + ny * jit;
+        const size = 20 * S * (0.6 + 0.4 * Math.sin(kk * Math.PI));
+        const a = 0.22 * (1 - kk * 0.3);
+        const g = ctx.createRadialGradient(x, y, 0, x, y, size);
+        g.addColorStop(0, rgba('#c8ff6a', a));
+        g.addColorStop(1, 'rgba(90,180,40,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  });
+
+  // ---- 幕2：着弾の閃光 ----
+  particles.push({
+    delay: LEAFSTORM_HIT_MS,
+    maxLife: 280,
+    blend: 'lighter',
+    draw(ctx, t) {
+      const a = (1 - t) * 0.9;
+      const r = lerp(12 * S, 78 * S, easeOutQuint(t));
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+      g.addColorStop(0, rgba('#f4ffd0', a));
+      g.addColorStop(0.35, rgba('#b8f24a', a * 0.9));
+      g.addColorStop(0.7, rgba('#4c9a1e', a * 0.55));
+      g.addColorStop(1, 'rgba(40,110,10,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  });
+
+  // ---- 幕3：無数の葉が相手に斬りつけるように爆ぜ散る ----
+  const BURST_LEAVES = 48;
+  for (let i = 0; i < BURST_LEAVES; i++) {
+    const sa = rand(0, Math.PI * 2);
+    const sp = rand(50, 190) * S;
+    const size = rand(9, 17) * S;
+    const col = pick(LEAF_COLORS);
+    const spin = rand(-6, 6);
+    const startAt = LEAFSTORM_HIT_MS + rand(0, 90);
+    const seed = rand(0, 100);
+    particles.push({
+      delay: startAt,
+      maxLife: rand(420, 680),
+      draw(ctx, t) {
+        const e = easeOutCubic(t);
+        const wob = noise1(t * 6 + seed, seed) * 10 * S;
+        const x = cx + Math.cos(sa) * sp * e + wob;
+        const y = cy + Math.sin(sa) * sp * e * 0.85 + t * t * h * 0.05;
+        const a = (1 - t) * 0.95;
+        const ang = sa + spin * t;
+        drawSharpLeaf(ctx, x, y, ang, size * (1 - t * 0.25), col[0], col[1], a);
+      }
+    });
+  }
+  // 斬撃のきらめき（葉の切れ味を示す短い光の線）
+  for (let i = 0; i < 10; i++) {
+    const ang = rand(0, Math.PI * 2);
+    const len2 = rand(26, 48) * S;
+    const startAt = LEAFSTORM_HIT_MS + rand(0, 120);
+    particles.push({
+      delay: startAt,
+      maxLife: rand(160, 240),
+      blend: 'lighter',
+      draw(ctx, t) {
+        const a = (1 - t) * 0.85;
+        const ex = Math.cos(ang) * len2 * easeOutCubic(t);
+        const ey = Math.sin(ang) * len2 * easeOutCubic(t);
+        ctx.strokeStyle = rgba('#eaffb0', a);
+        ctx.lineWidth = 2.4 * S * (1 - t * 0.5);
+        ctx.shadowColor = rgba('#b8f24a', 0.9);
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.moveTo(cx - ex, cy - ey);
+        ctx.lineTo(cx + ex, cy + ey);
+        ctx.stroke();
+      }
+    });
+  }
+
+  // ---- 幕4：緑の光の粒と葉が風に舞いながら消える余韻 ----
+  for (let i = 0; i < 20; i++) {
+    const ox = rand(-50, 50) * S;
+    const startAt = LEAFSTORM_HIT_MS + LEAFSTORM_BURST_MS * 0.4 + rand(0, 260);
+    const size = rand(2, 4) * S;
+    const drift = rand(-30, 30) * S;
+    const seed = rand(0, 100);
+    particles.push({
+      delay: startAt,
+      maxLife: rand(400, 620),
+      blend: 'lighter',
+      draw(ctx, t) {
+        const rise = easeOutCubic(t);
+        const x = cx + ox + drift * rise + noise1(t * 4 + seed, seed) * 14 * S;
+        const y = cy - rise * 50 * S;
+        const a = (t < 0.15 ? t / 0.15 : (1 - Math.max(0, (t - 0.4) / 0.6))) * 0.7;
+        ctx.fillStyle = rgba('#c8ff6a', a);
+        ctx.shadowColor = rgba('#8fd93a', 0.8);
+        ctx.shadowBlur = 6 * S;
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+  }
+  // 舞い落ちる名残の葉（ひらひらと回転しながら落ちる）
+  for (let i = 0; i < 8; i++) {
+    const ox = rand(-56, 56) * S;
+    const startAt = LEAFSTORM_HIT_MS + LEAFSTORM_BURST_MS * 0.5 + rand(0, 320);
+    const size = rand(8, 13) * S;
+    const col = pick(LEAF_COLORS);
+    const spinSpeed = rand(-3, 3);
+    const sway = rand(10, 26) * S;
+    particles.push({
+      delay: startAt,
+      maxLife: rand(480, 700),
+      draw(ctx, t) {
+        const fall = easeOutCubic(t);
+        const x = cx + ox + Math.sin(t * 6) * sway;
+        const y = cy - 20 * S + fall * 70 * S;
+        const a = (1 - t) * 0.8;
+        drawSharpLeaf(ctx, x, y, t * spinSpeed * 3, size, col[0], col[1], a);
+      }
+    });
+  }
+}
+
+// ============================================================
 // だいもんじ：火球を相手へ撃ち込み、着弾点に炎が「大」の字を描いて燃え広がる演出
 // 原作（ダイパ以降のバトル演出）の象徴である「大の字」を再現する。
 // 構成：①口元に火球が生まれる（チャージ）
@@ -21932,10 +22581,865 @@ function spawnBehemothBeamSpecial(particles, w, h, info) {
   }
 
   // ============================================================
+  // attack394「フレア」専用演出（太陽フレア／プロミネンス版）
+  // オリジナル・シャインタイプ（光属性）の技。
+  //
+  // ビームで撃つのではなく、天体現象としての「太陽フレア」を再現する：
+  //   ①召喚：相手の頭上あたりに小さな光点が生まれ、急速に膨らんで
+  //          脈動する太陽（発光する球体、表面に粒状班のテクスチャ）が出現
+  //   ②噴出：太陽表面のあちこちから、金〜白のうねる光の弧（プロミネンス）が
+  //          何本も噴き上がる。表面ではコロナのゆらめきと爆ぜる粒子が常時発生
+  //   ③直撃：最も大きく育ったプロミネンスの1本が鞭のようにしなって相手へ
+  //          垂れ下がるように直撃し、着弾で眩い閃光と衝撃波が広がる
+  //   ④減衰：太陽本体が急速に収縮しながら光度を落とし、コロナの残光と
+  //          光の粒だけを残して消えていく
+  //
+  // 色は白・金・淡黄色系のみに統一し、他の光線技（銀＝ラスターカノン、
+  // 黄緑＝10まんボルト等）と混同しないよう「恒星の輝き」の質感に振っている。
+  // ============================================================
+  const FLARE394_SUMMON_MS  = 420;   // ①太陽が生まれて膨らみきるまで
+  const FLARE394_ERUPT_MS   = 520;   // ②プロミネンスが噴き上がり育つ時間
+  const FLARE394_STRIKE_MS  = FLARE394_SUMMON_MS + FLARE394_ERUPT_MS; // ③直撃タイミング
+  const FLARE394_DECAY_MS   = 480;   // ④太陽が収縮していく時間
+  const FLARE394_SUN_END_MS = FLARE394_STRIKE_MS + FLARE394_DECAY_MS;
+  const FLARE394_END_MS     = FLARE394_SUN_END_MS + 700; // 余韻を含めた全体の終了時刻
+  const FLARE394_HIT_MS     = FLARE394_STRIKE_MS; // 他の技と命名を揃えるためのエイリアス
+
+  // シャインタイプ配色：純白〜金〜淡い黄色のみ
+  const FLARE394_WHITE = '#ffffff';
+  const FLARE394_GOLD  = '#ffe28a';
+  const FLARE394_AMBER = '#ffb648';
+  const FLARE394_PALE  = '#fff6d8';
+  const FLARE394_CORE  = '#fff9ec';
+
+  // ---- 星形（きらめく光の粒）を描くヘルパー ----
+  function drawSparkle394(ctx, x, y, size, rot, alpha, color) {
+    if (alpha <= 0.005) return;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color || FLARE394_WHITE;
+    ctx.beginPath();
+    ctx.moveTo(0, -size);
+    ctx.quadraticCurveTo(size * 0.14, -size * 0.14, size, 0);
+    ctx.quadraticCurveTo(size * 0.14, size * 0.14, 0, size);
+    ctx.quadraticCurveTo(-size * 0.14, size * 0.14, -size, 0);
+    ctx.quadraticCurveTo(-size * 0.14, -size * 0.14, 0, -size);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.5);
+    ctx.quadraticCurveTo(size * 0.05, 0, 0, size * 0.5);
+    ctx.quadraticCurveTo(-size * 0.05, 0, 0, -size * 0.5);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // ---- プロミネンス（うねる光の弧）を1本描くヘルパー（雰囲気づくり用の通常フレア） ----
+  function flare394ArcPoint(kk, origin, reachDir, archHeight, seed, time, sway) {
+    const spread = Math.sin(kk * Math.PI);
+    const wob = noise1(kk * 4 + time * 1.6, seed) * sway * (0.3 + kk * 0.7);
+    const dist = kk * archHeight;
+    const x = origin.x + Math.cos(reachDir) * dist + Math.cos(reachDir + Math.PI / 2) * (spread * archHeight * 0.32 + wob);
+    const y = origin.y + Math.sin(reachDir) * dist * 0.72 - spread * archHeight * 0.5;
+    return { x, y };
+  }
+
+  function spawnFlare394Special(particles, w, h, info) {
+    // 太陽が出現する位置＝相手（防御側）の頭上寄り。infoが無い場合は画面中央上寄りに出す。
+    const to = (info && info.to) || { x: w * 0.5, y: h * 0.42 };
+    const S = (info && info.scale) || 1;
+    const R = Math.max(w, h);
+    const seedA = rand(0, 100);
+
+    // 太陽本体の中心座標（相手の頭上へ少し寄せる）
+    const sun = { x: to.x, y: to.y - 46 * S };
+    const sunMaxR = Math.min(46 * S, R * 0.14);
+
+    function sunGrowth(ms) {
+      if (ms < 0) return 0;
+      if (ms < FLARE394_SUMMON_MS) return easeOutQuint(ms / FLARE394_SUMMON_MS);
+      if (ms < FLARE394_STRIKE_MS) return 1 + Math.sin((ms - FLARE394_SUMMON_MS) * 0.02) * 0.04;
+      const f = clamp01((ms - FLARE394_STRIKE_MS) / FLARE394_DECAY_MS);
+      return Math.max(0, (1 - easeInCubic(f)) * 1.0);
+    }
+
+    // ---- 幕0：光点が生まれて太陽へ膨らむ ----
+    particles.push({
+      maxLife: FLARE394_SUN_END_MS,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const ms = t * FLARE394_SUN_END_MS;
+        const grow = sunGrowth(ms);
+        if (grow <= 0.01) return;
+        const r = sunMaxR * grow;
+        const pulse = 1 + Math.sin(ms * 0.012) * 0.03 * clamp01((ms - FLARE394_SUMMON_MS) / 80);
+        const rr = r * pulse;
+        const gc = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, rr * 2.4);
+        gc.addColorStop(0, rgba(FLARE394_PALE, 0.28 * grow));
+        gc.addColorStop(0.5, rgba(FLARE394_GOLD, 0.14 * grow));
+        gc.addColorStop(1, 'rgba(255,226,138,0)');
+        ctx.fillStyle = gc;
+        ctx.beginPath();
+        ctx.arc(sun.x, sun.y, rr * 2.4, 0, Math.PI * 2);
+        ctx.fill();
+        const g = ctx.createRadialGradient(sun.x, sun.y, 0, sun.x, sun.y, rr);
+        g.addColorStop(0, rgba(FLARE394_CORE, grow));
+        g.addColorStop(0.55, rgba(FLARE394_GOLD, grow));
+        g.addColorStop(0.85, rgba(FLARE394_AMBER, grow * 0.9));
+        g.addColorStop(1, rgba(FLARE394_AMBER, 0));
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(sun.x, sun.y, rr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+
+    // 表面の粒状班（granulation）：小さな明暗のムラが常に蠢く質感
+    for (let i = 0; i < 10; i++) {
+      const a0 = rand(0, Math.PI * 2);
+      const r0 = rand(0.2, 0.85);
+      const seed = rand(0, 100);
+      const sz = rand(6, 14) * S;
+      particles.push({
+        delay: FLARE394_SUMMON_MS * 0.5,
+        maxLife: FLARE394_SUN_END_MS - FLARE394_SUMMON_MS * 0.5,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const ms = FLARE394_SUMMON_MS * 0.5 + t * (FLARE394_SUN_END_MS - FLARE394_SUMMON_MS * 0.5);
+          const grow = sunGrowth(ms);
+          if (grow <= 0.05) return;
+          const r = sunMaxR * grow * r0;
+          const ang = a0 + Math.sin(ms * 0.0015 + seed) * 0.6;
+          const x = sun.x + Math.cos(ang) * r;
+          const y = sun.y + Math.sin(ang) * r * 0.9;
+          const flick = 0.5 + 0.5 * Math.abs(noise1(ms * 0.006 + seed, seed));
+          ctx.fillStyle = rgba(FLARE394_AMBER, 0.35 * grow * flick);
+          ctx.beginPath();
+          ctx.arc(x, y, sz * grow, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+
+    // ---- 幕1：太陽表面から常時ぱちぱち爆ぜる小さなコロナ粒子 ----
+    for (let i = 0; i < 24; i++) {
+      const a0 = rand(0, Math.PI * 2);
+      const startAt = FLARE394_SUMMON_MS * 0.6 + rand(0, FLARE394_ERUPT_MS + 200);
+      const sp = rand(18, 46) * S;
+      const sz = rand(1.6, 3.2) * S;
+      particles.push({
+        delay: startAt,
+        maxLife: rand(220, 380),
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const r0 = sunMaxR * 0.9;
+          const x = sun.x + Math.cos(a0) * (r0 + sp * e);
+          const y = sun.y + Math.sin(a0) * (r0 + sp * e) * 0.85;
+          const a = (1 - t) * 0.8;
+          ctx.fillStyle = rgba(FLARE394_WHITE, a);
+          ctx.shadowColor = rgba(FLARE394_PALE, 1);
+          ctx.shadowBlur = 6 * S;
+          ctx.beginPath();
+          ctx.arc(x, y, sz, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+
+    // ---- 幕2：プロミネンス（噴き上がる光の弧）を複数本（雰囲気づくり用） ----
+    const NORMAL_ARCS = 5;
+    for (let i = 0; i < NORMAL_ARCS; i++) {
+      const originAng = rand(0, Math.PI * 2);
+      const origin = {
+        x: sun.x + Math.cos(originAng) * sunMaxR * 0.92,
+        y: sun.y + Math.sin(originAng) * sunMaxR * 0.92 * 0.9,
+      };
+      const reachDir = originAng + rand(-0.3, 0.3);
+      const archHeight = rand(34, 60) * S;
+      const seed = rand(0, 100);
+      const sway = rand(6, 14) * S;
+      const startAt = FLARE394_SUMMON_MS + rand(0, FLARE394_ERUPT_MS * 0.7);
+      const life = rand(360, 560);
+      particles.push({
+        delay: startAt,
+        maxLife: life,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const grow = t < 0.5 ? easeOutCubic(t / 0.5) : 1 - easeInCubic((t - 0.5) / 0.5);
+          if (grow <= 0.02) return;
+          const time = (startAt + t * life) / 1000;
+          const segN = 16;
+          ctx.beginPath();
+          for (let s = 0; s <= segN; s++) {
+            const kk = (s / segN) * grow;
+            const p = flare394ArcPoint(kk, origin, reachDir, archHeight, seed, time, sway);
+            if (s === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+          }
+          const a = grow * 0.75;
+          ctx.strokeStyle = rgba(FLARE394_GOLD, a);
+          ctx.lineWidth = 3.2 * S * (1 - grow * 0.3);
+          ctx.shadowColor = rgba(FLARE394_AMBER, 0.9);
+          ctx.shadowBlur = 10 * S;
+          ctx.stroke();
+          ctx.strokeStyle = rgba(FLARE394_WHITE, a * 0.8);
+          ctx.lineWidth = 1.3 * S;
+          ctx.shadowBlur = 4 * S;
+          ctx.stroke();
+        }
+      });
+    }
+
+    // ---- 幕3：本命のプロミネンス＝相手へ向かって直撃する1本 ----
+    const strikeOriginAng = Math.PI / 2 + rand(-0.25, 0.25); // 太陽の下側寄り
+    const strikeOrigin = {
+      x: sun.x + Math.cos(strikeOriginAng) * sunMaxR * 0.9,
+      y: sun.y + Math.sin(strikeOriginAng) * sunMaxR * 0.9 * 0.9,
+    };
+    const strikeSeed = rand(0, 100);
+    const strikeSway = 16 * S;
+
+    function flare394StrikeArcPoint(kk, time) {
+      const sx = lerp(strikeOrigin.x, to.x, kk);
+      const archOffset = Math.sin(kk * Math.PI) * 54 * S;
+      const wob = noise1(kk * 4 + time * 1.8, strikeSeed) * strikeSway * (0.3 + kk * 0.7);
+      const x = sx + archOffset * 0.5 + wob;
+      const y = lerp(strikeOrigin.y, to.y, easeInCubic(kk)) - Math.sin(kk * Math.PI) * 18 * S;
+      return { x, y };
+    }
+
+    particles.push({
+      delay: FLARE394_SUMMON_MS + FLARE394_ERUPT_MS * 0.15,
+      maxLife: FLARE394_STRIKE_MS - (FLARE394_SUMMON_MS + FLARE394_ERUPT_MS * 0.15) + 220,
+      blend: 'lighter',
+      draw(ctx, t) {
+        // 0〜0.75：伸びていく、0.75〜1：伸びきった弧が素早くフェードアウトして消える
+        // （フェードを入れないと着弾後も弧の形がそのまま残り、余計な光の筋に見えてしまうため）
+        const growPhase = clamp01(t / 0.75);
+        const grow = easeOutCubic(growPhase);
+        const fadePhase = clamp01((t - 0.75) / 0.25);
+        const fade = 1 - easeInCubic(fadePhase);
+        if (fade <= 0.01) return;
+        const ms = FLARE394_SUMMON_MS + FLARE394_ERUPT_MS * 0.15 + t * this.maxLife;
+        const time = ms / 1000;
+        const segN = 22;
+        ctx.beginPath();
+        for (let s = 0; s <= segN; s++) {
+          const kk = (s / segN) * grow;
+          const p = flare394StrikeArcPoint(kk, time);
+          if (s === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+        }
+        const a = clamp01(grow * 1.4) * fade;
+        ctx.strokeStyle = rgba(FLARE394_GOLD, a * 0.85);
+        ctx.lineWidth = 8 * S * (0.6 + grow * 0.4);
+        ctx.lineCap = 'round';
+        ctx.shadowColor = rgba(FLARE394_AMBER, 0.9);
+        ctx.shadowBlur = 16 * S;
+        ctx.stroke();
+        ctx.strokeStyle = rgba(FLARE394_WHITE, a);
+        ctx.lineWidth = 3.4 * S * (0.6 + grow * 0.4);
+        ctx.shadowBlur = 8 * S;
+        ctx.stroke();
+      }
+    });
+    // 本命フレアの先端に沿って舞う光の粒（星形）
+    for (let i = 0; i < 10; i++) {
+      const kkBase = rand(0.3, 1);
+      const seed = rand(0, 100);
+      const sz = rand(3.5, 6.5) * S;
+      particles.push({
+        delay: FLARE394_SUMMON_MS + FLARE394_ERUPT_MS * 0.15 + rand(0, 260),
+        maxLife: rand(300, 460),
+        blend: 'lighter',
+        draw(ctx, t) {
+          const time = t;
+          const kk = clamp01(kkBase + Math.sin(t * 3 + seed) * 0.05);
+          const p = flare394StrikeArcPoint(kk, time);
+          const a = (1 - t) * 0.85;
+          drawSparkle394(ctx, p.x, p.y, sz, t * 6 + seed, a, FLARE394_WHITE);
+        }
+      });
+    }
+
+    // ---- 幕4：直撃＝着弾の閃光と衝撃波 ----
+    particles.push({
+      delay: FLARE394_STRIKE_MS,
+      maxLife: 300,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const a = (1 - t) * 1.0;
+        const r = lerp(8 * S, 64 * S, easeOutQuint(t));
+        const g = ctx.createRadialGradient(to.x, to.y, 0, to.x, to.y, r);
+        g.addColorStop(0, rgba(FLARE394_WHITE, a));
+        g.addColorStop(0.35, rgba(FLARE394_PALE, a * 0.9));
+        g.addColorStop(0.7, rgba(FLARE394_GOLD, a * 0.55));
+        g.addColorStop(1, 'rgba(255,226,138,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(to.x, to.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+    for (let i = 0; i < 3; i++) {
+      particles.push({
+        delay: FLARE394_STRIKE_MS + i * 45,
+        maxLife: 380 - i * 50,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const r = lerp(8 * S, R * (0.13 + i * 0.045), easeOutQuint(t));
+          const a = (1 - t) * (0.9 - i * 0.15);
+          ctx.strokeStyle = rgba(i === 0 ? FLARE394_WHITE : FLARE394_GOLD, a);
+          ctx.lineWidth = (6 - i) * (1 - t * 0.5);
+          ctx.shadowColor = rgba(FLARE394_PALE, 0.9);
+          ctx.shadowBlur = 13;
+          ctx.beginPath();
+          ctx.arc(to.x, to.y, r, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      });
+    }
+    // 光の粒（星形）が放射状に弾け飛ぶ
+    for (let i = 0; i < 26; i++) {
+      const a0 = rand(0, Math.PI * 2);
+      const sp = rand(40, 130) * S;
+      const sz = rand(3.5, 7) * S;
+      const spin = rand(-8, 8);
+      const grav = rand(0.4, 1.1);
+      const col = pick([FLARE394_WHITE, FLARE394_GOLD, FLARE394_PALE, FLARE394_AMBER]);
+      particles.push({
+        delay: FLARE394_STRIKE_MS + rand(0, 55),
+        maxLife: rand(420, 640),
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const x = to.x + Math.cos(a0) * sp * e;
+          const y = to.y + Math.sin(a0) * sp * e * 0.85 + grav * t * t * h * 0.07;
+          const a = 1 - Math.max(0, (t - 0.55) / 0.45);
+          drawSparkle394(ctx, x, y, sz * (1 - t * 0.3), a0 + t * spin, a, col);
+        }
+      });
+    }
+    // 明滅する小さな火花
+    for (let i = 0; i < 20; i++) {
+      const a0 = rand(0, Math.PI * 2);
+      const sp = rand(40, 110) * S;
+      const sz = rand(1.6, 3) * S;
+      const seed = rand(0, 100);
+      particles.push({
+        delay: FLARE394_STRIKE_MS + rand(0, 90),
+        maxLife: rand(260, 400),
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const x = to.x + Math.cos(a0) * sp * e;
+          const y = to.y + Math.sin(a0) * sp * e;
+          const flick = 0.5 + Math.abs(noise1(t * 24 + seed, seed)) * 0.5;
+          ctx.fillStyle = rgba(FLARE394_WHITE, (1 - t) * flick);
+          ctx.shadowColor = rgba(FLARE394_PALE, 1);
+          ctx.shadowBlur = 6 * S;
+          ctx.beginPath();
+          ctx.arc(x, y, sz * (1 - t * 0.4), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+
+    // ---- 幕5：余韻＝太陽が萎み消えたあと、光の粒がふわふわ舞い降りる ----
+    for (let i = 0; i < 16; i++) {
+      const x0 = to.x + rand(-70, 70) * S;
+      const y0 = sun.y + rand(-20, 30) * S;
+      const sz = rand(2, 3.6) * S;
+      const sway = rand(6, 14) * S;
+      const rot = rand(0, Math.PI * 2);
+      particles.push({
+        delay: FLARE394_SUN_END_MS + rand(0, 200),
+        maxLife: rand(460, 680),
+        blend: 'lighter',
+        draw(ctx, t) {
+          const fall = easeInCubic(t) * 0.85;
+          const y = y0 + fall * h * 0.28;
+          const x = x0 + Math.sin(t * 3.2 + rot) * sway;
+          const twinkle = 0.6 + 0.4 * Math.abs(Math.sin(t * 10 + rot));
+          const a = (t < 0.12 ? t / 0.12 : (1 - Math.max(0, (t - 0.7) / 0.3))) * 0.8 * twinkle;
+          drawSparkle394(ctx, x, y, sz, rot + t * 1.5, a, FLARE394_PALE);
+        }
+      });
+    }
+  }
+
+  // ============================================================
+  // Attack397『雪月光（せつげっこう）』専用エフェクト
+  // オリジナル・シャインタイプ技。
+  //
+  // 演出コンセプト：
+  //   朝方に見られるダイヤモンドダストのような、きらめく極小氷晶の霧が
+  //   画面全体をふわりと包み込み、その霧の向こうから満月のような
+  //   銀白〜淡青の月光がほのかに相手へ差し込む――という「静かで美しい」系の
+  //   技。他のシャイン技（太陽フレア＝394）とは対照的に、爆発的な閃光ではなく
+  //   淡く優しい光の演出とする。
+  // ============================================================
+
+  // ---- タイムライン ----
+  // ①霧が静かに立ち込める → ②霧の向こうに月がぼんやり浮かぶ →
+  // ③月光が相手へ差し込む（着弾）→ ④霧が晴れ、氷晶の余韻がきらめきながら消える
+  const SETSU_MIST_MS      = 520;   // ①霧が広がりきるまで
+  const SETSU_MOON_MS      = 480;   // ②月がぼんやり浮かび上がる時間
+  const SETSU_SHINE_MS     = SETSU_MIST_MS + SETSU_MOON_MS; // ③月光が差し込み始める時刻
+  const SETSU_STRIKE_MS    = SETSU_SHINE_MS + 460;          // 月光が相手に到達＝着弾
+  const SETSU_CLEAR_MS     = 560;   // ④霧が晴れていく時間
+  const SETSU_MIST_END_MS  = SETSU_STRIKE_MS + SETSU_CLEAR_MS;
+  const SETSU_END_MS       = SETSU_MIST_END_MS + 640; // 氷晶の余韻を含めた全体の終了時刻
+  const SETSU_HIT_MS       = SETSU_STRIKE_MS; // 他の技と命名を揃えるためのエイリアス
+
+  // 雪月光の配色：銀白〜氷の淡青〜ごくわずかに紫を帯びた月光色のみ
+  // （太陽フレア=394の白〜金と対を成す、シャインタイプの「冷たい光」バリエーション）
+  const SETSU_WHITE  = '#ffffff';
+  const SETSU_MOONW  = '#f3f8ff'; // 月そのものの光（ほぼ白、ごく淡い青み）
+  const SETSU_ICE    = '#cfe8ff'; // 氷晶・霧の基調色
+  const SETSU_LILAC  = '#dcdcff'; // 月光がわずかに帯びる淡い紫〜藤色
+  const SETSU_DEEP   = '#9fc4e8'; // 霧の奥の陰影・輪郭に使う少し濃いめの青
+
+  // ---- 六花結晶（雪の結晶）を描くヘルパー ----
+  // ダイヤモンドダストの主役。6方向に伸びる腕＋小枝を持つ、細く繊細な結晶を描く。
+  function drawSnowflake397(ctx, x, y, size, rot, alpha, color) {
+    if (alpha <= 0.004) return;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color || SETSU_ICE;
+    ctx.lineWidth = Math.max(0.6, size * 0.09);
+    ctx.lineCap = 'round';
+    for (let arm = 0; arm < 6; arm++) {
+      const ang = (Math.PI / 3) * arm;
+      ctx.save();
+      ctx.rotate(ang);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, -size);
+      ctx.stroke();
+      // 小枝（腕の先寄りと中ほどに、左右対称の短い枝）
+      ctx.beginPath();
+      ctx.moveTo(0, -size * 0.55);
+      ctx.lineTo(size * 0.28, -size * 0.78);
+      ctx.moveTo(0, -size * 0.55);
+      ctx.lineTo(-size * 0.28, -size * 0.78);
+      ctx.moveTo(0, -size * 0.82);
+      ctx.lineTo(size * 0.18, -size * 0.98);
+      ctx.moveTo(0, -size * 0.82);
+      ctx.lineTo(-size * 0.18, -size * 0.98);
+      ctx.stroke();
+      ctx.restore();
+    }
+    // 中心の小さな光点
+    ctx.fillStyle = color || SETSU_ICE;
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.09, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // ---- 小さな四角い光の粒（きらめく粉雪）を描くヘルパー ----
+  function drawGlint397(ctx, x, y, size, alpha, color) {
+    if (alpha <= 0.004) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color || SETSU_WHITE;
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function spawnSetsugekkouSpecial(particles, w, h, info) {
+    // 月が浮かぶ位置＝画面上部中央寄り（相手の頭上よりさらに高い、夜空の月の位置）。
+    // 月光が降り注ぐ先＝相手（防御側）。infoが無い場合は画面中央を対象にする。
+    const to = (info && info.to) || { x: w * 0.5, y: h * 0.56 };
+    const S = (info && info.scale) || 1;
+    const R = Math.max(w, h);
+    const moon = { x: w * 0.5, y: h * 0.16 };
+    const moonR = Math.min(30 * S, R * 0.09);
+
+    // ============================================================
+    // 幕0：霧（ダイヤモンドダストの靄）が画面全体にゆっくり立ち込める
+    //       → 着弾後、静かに晴れていく
+    // ============================================================
+    particles.push({
+      maxLife: SETSU_MIST_END_MS,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const ms = t * SETSU_MIST_END_MS;
+        let a;
+        if (ms < SETSU_MIST_MS) {
+          a = easeOutCubic(ms / SETSU_MIST_MS) * 0.30;
+        } else if (ms < SETSU_STRIKE_MS) {
+          // 立ち込めたあとも、ごく緩やかに呼吸するように揺らぐ
+          a = 0.30 + Math.sin(ms * 0.003) * 0.02;
+        } else {
+          const f = clamp01((ms - SETSU_STRIKE_MS) / SETSU_CLEAR_MS);
+          a = 0.30 * (1 - easeInCubic(f));
+        }
+        if (a <= 0.004) return;
+        // 画面全体を覆う淡い霧（上部を月光でわずかに明るく、下部を少し濃く見せる縦グラデーション）
+        const g = ctx.createLinearGradient(0, 0, 0, h);
+        g.addColorStop(0, rgba(SETSU_MOONW, a * 0.9));
+        g.addColorStop(0.45, rgba(SETSU_ICE, a * 0.7));
+        g.addColorStop(1, rgba(SETSU_DEEP, a * 0.5));
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+    });
+
+    // 霧の質感：ゆったり漂う大きな半透明の靄の塊を複数重ねる（noise1で緩やかに移動）
+    for (let i = 0; i < 7; i++) {
+      const x0 = rand(0, w);
+      const y0 = rand(h * 0.15, h * 0.95);
+      const rr = rand(80, 160) * S;
+      const seed = rand(0, 100);
+      const drift = rand(10, 24) * S;
+      particles.push({
+        delay: rand(0, 140),
+        maxLife: SETSU_MIST_END_MS - rand(0, 140),
+        blend: 'lighter',
+        draw(ctx, t) {
+          const ms = t * this.maxLife;
+          let a;
+          if (ms < SETSU_MIST_MS) {
+            a = easeOutCubic(ms / SETSU_MIST_MS) * 0.16;
+          } else if (ms < SETSU_STRIKE_MS) {
+            a = 0.16;
+          } else {
+            const f = clamp01((ms - SETSU_STRIKE_MS) / SETSU_CLEAR_MS);
+            a = 0.16 * (1 - easeInCubic(f));
+          }
+          if (a <= 0.004) return;
+          const x = x0 + noise1(ms * 0.0007 + seed, seed) * drift;
+          const y = y0 + noise1(ms * 0.0005 + seed * 1.3, seed + 5) * drift * 0.6;
+          const g = ctx.createRadialGradient(x, y, 0, x, y, rr);
+          g.addColorStop(0, rgba(SETSU_ICE, a));
+          g.addColorStop(1, 'rgba(207,232,255,0)');
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.arc(x, y, rr, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+
+    // ============================================================
+    // 幕1：ダイヤモンドダスト＝細かい氷晶がきらきらと画面全体に舞う
+    //       （常時、技の間ずっと静かに降り続ける）
+    // ============================================================
+    const DUST_N = 42;
+    for (let i = 0; i < DUST_N; i++) {
+      const x0 = rand(0, w);
+      const y0 = rand(-h * 0.15, h * 1.0);
+      const sz = rand(1.0, 2.2) * S;
+      const seed = rand(0, 100);
+      const fallSpeed = rand(10, 22) * S;
+      const sway = rand(6, 16) * S;
+      const startAt = rand(0, SETSU_MIST_MS + 200);
+      const twinkleSeed = rand(0, 100);
+      particles.push({
+        delay: startAt,
+        maxLife: SETSU_END_MS - startAt,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const ms = t * this.maxLife;
+          const time = ms / 1000;
+          const x = x0 + Math.sin(time * 1.3 + seed) * sway;
+          const y = ((y0 + time * fallSpeed * 10) % (h * 1.3)) - h * 0.15;
+          // フェードイン・フェードアウトは全体の霧の推移に合わせる
+          const envelope = t < 0.06 ? t / 0.06 : (1 - Math.max(0, (t - 0.92) / 0.08));
+          const twinkle = 0.45 + 0.55 * Math.abs(noise1(time * 2.4 + twinkleSeed, twinkleSeed));
+          const a = clamp01(envelope) * twinkle * 0.9;
+          drawGlint397(ctx, x, y, sz, a, SETSU_WHITE);
+        }
+      });
+    }
+
+    // 大きめの結晶（六花）も少数、ゆったり回転しながら舞う
+    for (let i = 0; i < 10; i++) {
+      const x0 = rand(w * 0.05, w * 0.95);
+      const y0 = rand(-h * 0.1, h * 0.9);
+      const sz = rand(5, 9) * S;
+      const seed = rand(0, 100);
+      const fallSpeed = rand(7, 14) * S;
+      const sway = rand(10, 22) * S;
+      const spin = rand(-1.2, 1.2);
+      const startAt = rand(SETSU_MIST_MS * 0.3, SETSU_MIST_MS + 400);
+      particles.push({
+        delay: startAt,
+        maxLife: SETSU_END_MS - startAt,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const ms = t * this.maxLife;
+          const time = ms / 1000;
+          const x = x0 + Math.sin(time * 1.0 + seed) * sway;
+          const y = ((y0 + time * fallSpeed * 10) % (h * 1.2)) - h * 0.1;
+          const envelope = t < 0.08 ? t / 0.08 : (1 - Math.max(0, (t - 0.9) / 0.1));
+          const twinkle = 0.5 + 0.5 * Math.abs(noise1(time * 1.6 + seed, seed + 9));
+          const a = clamp01(envelope) * twinkle * 0.8;
+          drawSnowflake397(ctx, x, y, sz, time * spin, a, i % 3 === 0 ? SETSU_LILAC : SETSU_ICE);
+        }
+      });
+    }
+
+    // ============================================================
+    // 幕2：霧の向こうに月がぼんやりと浮かび上がる
+    // ============================================================
+    function moonGrowth(ms) {
+      if (ms < SETSU_MIST_MS) return 0;
+      const riseEnd = SETSU_MIST_MS + SETSU_MOON_MS;
+      if (ms < riseEnd) return easeOutQuint((ms - SETSU_MIST_MS) / SETSU_MOON_MS);
+      if (ms < SETSU_STRIKE_MS + 200) return 1;
+      const f = clamp01((ms - (SETSU_STRIKE_MS + 200)) / (SETSU_MIST_END_MS - SETSU_STRIKE_MS - 200));
+      return Math.max(0, 1 - easeInCubic(f));
+    }
+    particles.push({
+      maxLife: SETSU_MIST_END_MS,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const ms = t * SETSU_MIST_END_MS;
+        const grow = moonGrowth(ms);
+        if (grow <= 0.01) return;
+        // 月暈（ムーンハロー）：柔らかく大きく広がる淡い光の輪
+        const haloR = moonR * 3.4 * (0.85 + grow * 0.15);
+        const hg = ctx.createRadialGradient(moon.x, moon.y, 0, moon.x, moon.y, haloR);
+        hg.addColorStop(0, rgba(SETSU_MOONW, 0.20 * grow));
+        hg.addColorStop(0.5, rgba(SETSU_LILAC, 0.10 * grow));
+        hg.addColorStop(1, 'rgba(220,220,255,0)');
+        ctx.fillStyle = hg;
+        ctx.beginPath();
+        ctx.arc(moon.x, moon.y, haloR, 0, Math.PI * 2);
+        ctx.fill();
+        // 月本体（ほぼ白、輪郭にごく淡い青のリム光）
+        const mg = ctx.createRadialGradient(
+          moon.x - moonR * 0.18, moon.y - moonR * 0.18, 0,
+          moon.x, moon.y, moonR
+        );
+        mg.addColorStop(0, rgba(SETSU_WHITE, grow));
+        mg.addColorStop(0.7, rgba(SETSU_MOONW, grow));
+        mg.addColorStop(1, rgba(SETSU_ICE, grow * 0.85));
+        ctx.fillStyle = mg;
+        ctx.beginPath();
+        ctx.arc(moon.x, moon.y, moonR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+
+    // ============================================================
+    // 幕3：月光が霧を貫いて相手へほのかに差し込む（本命の光条＋着弾）
+    // ============================================================
+    // 「1本の太いうねる帯」ではなく、月から扇状に伸びる複数の細い光条
+    // （薄明光線／レンブラント光線のイメージ）の束として描く。
+    // 1本だけを太く見せると終端が丸く膨らみ、水滴のように見えてしまうため、
+    // 細い筋を何本も重ねて「光が降り注ぐ」質感を出す。各筋は直線に近く、
+    // 先端に向かって細くフェードするだけで、玉状に膨らむ箇所を作らない。
+    const RAY_N = 9;
+    const rays = [];
+    for (let i = 0; i < RAY_N; i++) {
+      const spread = (i / (RAY_N - 1) - 0.5); // -0.5 〜 0.5
+      rays.push({
+        // 月側の出発点にごくわずかな横ずれ（光源の面積感）
+        originOffset: spread * moonR * 0.7,
+        // 相手側の到達点は扇状に開く
+        targetOffset: spread * moonR * 3.2,
+        seed: rand(0, 100),
+        widthNear: rand(1.1, 1.8) * S,
+        widthFar: rand(2.2, 3.4) * S,
+        phase: rand(0, Math.PI * 2),
+        alphaMul: rand(0.6, 1.0),
+      });
+    }
+    particles.push({
+      delay: SETSU_SHINE_MS,
+      maxLife: (SETSU_MIST_END_MS - SETSU_SHINE_MS) + 200,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const ms = SETSU_SHINE_MS + t * this.maxLife;
+        // 差し込み始め～着弾でしっかり見え、その後はゆっくり淡くフェード
+        const growPhase = clamp01((ms - SETSU_SHINE_MS) / (SETSU_STRIKE_MS - SETSU_SHINE_MS));
+        const grow = easeOutCubic(growPhase);
+        let fade = 1;
+        if (ms > SETSU_STRIKE_MS + 120) {
+          fade = 1 - easeInCubic(clamp01((ms - SETSU_STRIKE_MS - 120) / (this.maxLife - (SETSU_STRIKE_MS - SETSU_SHINE_MS) - 120)));
+        }
+        const base = grow * fade;
+        if (base <= 0.01) return;
+
+        ctx.save();
+        for (let r = 0; r < rays.length; r++) {
+          const ry = rays[r];
+          // 光の強さがゆっくり明滅する（月光が揺らめく質感。個体差はseedで散らす）
+          const flicker = 0.75 + 0.25 * Math.sin(ms * 0.0022 + ry.phase);
+          const a = base * ry.alphaMul * flicker;
+          if (a <= 0.01) continue;
+
+          const x0 = moon.x + ry.originOffset;
+          const y0 = moon.y;
+          const x1 = to.x + ry.targetOffset * grow;
+          const y1 = to.y;
+
+          // わずかな横ゆらぎのみ（大きくうねらせない＝直線に近い光条）
+          const midWob = noise1(ms * 0.0015 + ry.seed, ry.seed) * 4 * S;
+          const mx = (x0 + x1) / 2 + midWob;
+          const my = (y0 + y1) / 2;
+
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.quadraticCurveTo(mx, my, x1, y1 * grow + y0 * (1 - grow));
+          ctx.strokeStyle = rgba(SETSU_ICE, a * 0.5);
+          ctx.lineWidth = lerp(ry.widthNear, ry.widthFar, grow);
+          ctx.lineCap = 'round';
+          ctx.shadowColor = rgba(SETSU_LILAC, 0.5);
+          ctx.shadowBlur = 8 * S;
+          ctx.stroke();
+          // 芯の部分に細い明るい線を重ねる（発光の芯）
+          ctx.strokeStyle = rgba(SETSU_MOONW, a * 0.55);
+          ctx.lineWidth = lerp(ry.widthNear, ry.widthFar, grow) * 0.4;
+          ctx.shadowBlur = 4 * S;
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+    });
+
+    // 光条に沿って、ふわふわと降りていく小さな氷晶の粒（月光そのものが粒立って見える演出）
+    for (let i = 0; i < 16; i++) {
+      const kkBase = rand(0.15, 0.95);
+      const seed = rand(0, 100);
+      const sz = rand(1.4, 3) * S;
+      const rayPick = rays[(Math.random() * rays.length) | 0];
+      const startAt = SETSU_SHINE_MS + rand(0, 320);
+      particles.push({
+        delay: startAt,
+        maxLife: rand(360, 560),
+        blend: 'lighter',
+        draw(ctx, t) {
+          const kk = clamp01(kkBase + t * 0.12);
+          const x = lerp(moon.x + rayPick.originOffset, to.x + rayPick.targetOffset, kk);
+          const y = lerp(moon.y, to.y, kk);
+          const a = (1 - t) * 0.85;
+          drawGlint397(ctx, x, y, sz, a, SETSU_WHITE);
+        }
+      });
+    }
+
+    // ---- 着弾：相手の足元にふわっと広がる淡い光だまり（玉状の膨らみを作らないよう、横長の楕円で表現）----
+    particles.push({
+      delay: SETSU_STRIKE_MS,
+      maxLife: 460,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const a = (1 - t) * 0.6;
+        const rx = lerp(10 * S, 70 * S, easeOutQuint(t));
+        const ry_ = rx * 0.42; // 縦を潰した楕円＝床に広がる光、というシルエットにする
+        ctx.save();
+        ctx.translate(to.x, to.y + 14 * S);
+        ctx.scale(1, ry_ / rx);
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rx);
+        g.addColorStop(0, rgba(SETSU_MOONW, a));
+        g.addColorStop(0.45, rgba(SETSU_ICE, a * 0.6));
+        g.addColorStop(1, 'rgba(220,220,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(0, 0, rx, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    });
+    // 着弾点にごく短時間だけ、小さくやわらかい光点（玉にならない程度の小ささに留める）
+    particles.push({
+      delay: SETSU_STRIKE_MS,
+      maxLife: 260,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const a = (1 - t) * 0.5;
+        const r = lerp(4 * S, 16 * S, easeOutQuint(t));
+        const g = ctx.createRadialGradient(to.x, to.y, 0, to.x, to.y, r);
+        g.addColorStop(0, rgba(SETSU_WHITE, a));
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(to.x, to.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+    // 静かに広がる淡いリング（爆発の衝撃波ではなく、水面の波紋のような柔らかいもの）
+    for (let i = 0; i < 2; i++) {
+      particles.push({
+        delay: SETSU_STRIKE_MS + i * 70,
+        maxLife: 520 - i * 60,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const r = lerp(6 * S, R * (0.10 + i * 0.035), easeOutQuint(t));
+          const a = (1 - t) * (0.4 - i * 0.1);
+          ctx.strokeStyle = rgba(SETSU_ICE, a);
+          ctx.lineWidth = (3 - i) * (1 - t * 0.4);
+          ctx.shadowColor = rgba(SETSU_MOONW, 0.7);
+          ctx.shadowBlur = 10 * S;
+          ctx.beginPath();
+          ctx.arc(to.x, to.y, r, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      });
+    }
+    // 着弾の瞬間、氷晶がふわりと舞い上がって周囲に散る（放射状だが勢いは控えめ）
+    for (let i = 0; i < 18; i++) {
+      const a0 = rand(0, Math.PI * 2);
+      const sp = rand(20, 70) * S;
+      const sz = rand(3, 6) * S;
+      const spin = rand(-2, 2);
+      const col = pick([SETSU_WHITE, SETSU_ICE, SETSU_LILAC]);
+      particles.push({
+        delay: SETSU_STRIKE_MS + rand(0, 80),
+        maxLife: rand(480, 720),
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const x = to.x + Math.cos(a0) * sp * e;
+          const y = to.y + Math.sin(a0) * sp * e * 0.8 - Math.sin(t * Math.PI) * 14 * S; // ふわっと浮いてから降りる
+          const a = 1 - Math.max(0, (t - 0.5) / 0.5);
+          drawSnowflake397(ctx, x, y, sz * (1 - t * 0.25), a0 + t * spin, a * 0.85, col);
+        }
+      });
+    }
+
+    // ============================================================
+    // 幕4：余韻＝霧が晴れたあと、最後の氷晶がきらめきながらゆっくり舞い降りる
+    // ============================================================
+    for (let i = 0; i < 14; i++) {
+      const x0 = to.x + rand(-80, 80) * S;
+      const y0 = to.y + rand(-50, 10) * S;
+      const sz = rand(1.8, 3.2) * S;
+      const sway = rand(6, 14) * S;
+      const rot = rand(0, Math.PI * 2);
+      particles.push({
+        delay: SETSU_MIST_END_MS + rand(0, 220),
+        maxLife: rand(420, 620),
+        blend: 'lighter',
+        draw(ctx, t) {
+          const fall = easeInCubic(t) * 0.8;
+          const y = y0 + fall * h * 0.22;
+          const x = x0 + Math.sin(t * 3 + rot) * sway;
+          const twinkle = 0.55 + 0.45 * Math.abs(Math.sin(t * 9 + rot));
+          const a = (t < 0.14 ? t / 0.14 : (1 - Math.max(0, (t - 0.7) / 0.3))) * 0.75 * twinkle;
+          drawGlint397(ctx, x, y, sz, a, SETSU_WHITE);
+        }
+      });
+    }
+  }
+
+  // ============================================================
   // 専用大技エフェクト：技ID → spawn関数（技ごとの専用フルスクリーン演出）
   // wrapEl には battle-field 全体（スプライト枠ではない、画面全体のコンテナ）を渡す。
   // ============================================================
   const SPECIAL_SCENES = {
+    394: spawnFlare394Special,       // フレア（オリジナル・シャインタイプ、太陽フレア＝プロミネンス演出）
+    397: spawnSetsugekkouSpecial,    // 雪月光（オリジナル・シャインタイプ、ダイヤモンドダストの霧と月光演出）
     480: spawnInfernoSpecial,       // インフェルノ
     483: spawnMaelstromSpecial,     // メイルストローム
     484: spawnYggdrasillSpecial,    // イルミンスール
@@ -21959,6 +23463,9 @@ function spawnBehemothBeamSpecial(particles, w, h, info) {
     317: spawnGravelBreathSpecial,  // グラベルブレス（砂利まじりの息を、扇状の砂礫の奔流として相手へ吹きつける演出）
     132: spawnFlamethrowerSpecial,     // かえんほうしゃ
     133: spawnDaimonjiSpecial,         // だいもんじ（火球を撃ち込み、炎が「大」の字を描いて燃え広がる）
+    140: spawnOverheatSpecial,         // オーバーヒート（渾身の溜め→極太の炎の激流→画面いっぱいの大爆発）
+    193: spawnLeafStormSpecial,        // リーフストーム（葉が渦を巻いて竜巻状に→相手へ叩きつけ爆散）
+    199: spawnLeafStormSpecial,        // （リーフストームと共通演出）
     216: spawnEarthPowerSpecial,       // だいちのちから（相手の足元が黄金に発光→亀裂→大地のエネルギー噴出）
     78: spawnLuxionAirSpecial,        // ルクシオンエア（オリジナル・りゅうせいぐんのでんき版、雷を帯びた竜巻が相手を包む）
     215: spawnEarthPowerSpecial,       // （だいちのちからと共通演出）
@@ -22014,8 +23521,10 @@ function spawnBehemothBeamSpecial(particles, w, h, info) {
   512: spawnAmazetsuSpecial,      // アマゼツ（オリジナル・宝石を宙に放ち世界がピンク〜紫に崩壊、崩壊後に相手へダメージ）
   };
   // 攻撃側スプライト→防御側スプライトの座標が必要な（飛翔型の）専用演出の技ID。
-  const FLIGHT_MOVE_IDS = [312,123,63,66, 153,156,157,353,354,355,253,254,273,277,315,78,132,133,215,216,233,332,317, 318, 72, 75, 76, 13, 18, 32, 33, 37, 173, 112, 113, 117, 292, 300, 103, 172, 175, 61, 222, 124, 7, 24, 25, 28, 284, 348, 227, 218, 139, 198, 43, 333, 334, 335, 338, 511, 512];
+  const FLIGHT_MOVE_IDS = [312,123,63,66, 153,156,157,353,354,355,253,254,273,277,315,78,132,133,140,193,199,215,216,233,332,317, 318, 72, 75, 76, 13, 18, 32, 33, 37, 173, 112, 113, 117, 292, 300, 103, 172, 175, 61, 222, 124, 7, 24, 25, 28, 284, 348, 227, 218, 139, 198, 43, 333, 334, 335, 338, 511, 512, 394];
   const SPECIAL_DURATION_MS = {
+    394: FLARE394_END_MS,   // フレア：太陽が萎み消え、光の粒の余韻が消えるまで
+    397: SETSU_END_MS,      // 雪月光：霧が晴れ、氷晶の余韻が消えるまで
     480: 1900,
     483: 1900,
     484: 1900,
@@ -22045,6 +23554,9 @@ function spawnBehemothBeamSpecial(particles, w, h, info) {
     317: GRAVELBREATH_END_MS + 560,        // 砂礫が届き終わった後、砂煙が晴れるまで
     132: FLAMETHROWER_END_MS + 220,   // かえんほうしゃ
     133: DAIMONJI_END_MS,             // だいもんじ：大の字が爆ぜた後の火の粉・黒煙が消えるまで
+    140: OVERHEAT_END_MS + 200,       // オーバーヒート：大爆発の火柱と黒煙が消えるまで
+    193: LEAFSTORM_END_MS + 160,      // リーフストーム：舞い散る葉と光の粒が消えるまで
+    199: LEAFSTORM_END_MS + 160,      // （リーフストームと共通演出）
     216: EARTHPOWER_END_MS,            // だいちのちから：地割れの跡と土煙が消えるまで
     78: LUXIONAIR_END_MS,               // ルクシオンエア：静電気の火花と暗雲の残骸が消えるまで
     215: EARTHPOWER_END_MS,            // （だいちのちからと共通演出）
@@ -22095,6 +23607,16 @@ function spawnBehemothBeamSpecial(particles, w, h, info) {
   };
   // 技ごとの画面シェイク・フラッシュ演出設定（インパクトの瞬間＝delayに合わせて発火）
   const SPECIAL_IMPACT_FX = {
+    394: { // フレア：太陽が召喚される予兆の淡い光→直撃の瞬間に強い白閃光＋大振動
+      flashes: [
+        { color: '#fff6d8', peakAlpha: 0.35, durationMs: 260, delay: FLARE394_SUMMON_MS },
+        { color: '#ffffff', peakAlpha: 1.0, durationMs: 200, delay: FLARE394_STRIKE_MS },
+        { color: '#ffe28a', peakAlpha: 0.5, durationMs: 480, delay: FLARE394_STRIKE_MS + 30 },
+      ],
+      shakes: [
+        { ampPx: 18, durationMs: 420, freq: 30, delay: FLARE394_STRIKE_MS },
+      ],
+    },
     480: { // インフェルノ：噴き上がりの瞬間に強いオレンジフラッシュ＋激しいシェイク
       flashes: [
         { color: '#fff3c4', peakAlpha: 0.9, durationMs: 260, delay: 170 },
@@ -22674,6 +24196,34 @@ SPECIAL_IMPACT_FX[133] = {
     { ampPx: 22, durationMs: 460, freq: 32, delay: DAIMONJI_BURST_MS },
   ],
 };
+// オーバーヒート：渾身の一撃らしく、着弾の白閃光→大爆発の二段フラッシュと、
+// 大爆発の瞬間に画面を大きく揺らす強めのシェイクを重ねる（インフェルノ級の派手さ）。
+SPECIAL_IMPACT_FX[140] = {
+  flashes: [
+    { color: '#ffffff', peakAlpha: 1.0,  durationMs: 220, delay: OVERHEAT_HIT_MS },
+    { color: '#fff3c4', peakAlpha: 0.7,  durationMs: 320, delay: OVERHEAT_HIT_MS + 40 },
+    { color: '#ff7a1a', peakAlpha: 0.42, durationMs: 560, delay: OVERHEAT_HIT_MS + 90 },
+  ],
+  shakes: [
+    { ampPx: 6,  durationMs: 200, freq: 36, delay: OVERHEAT_CHARGE_MS - 100 },  // 溜めの震え
+    { ampPx: 26, durationMs: 560, freq: 34, delay: OVERHEAT_HIT_MS },           // 大爆発の衝撃
+  ],
+};
+// リーフストーム：着弾で緑の閃光＋葉が斬りつける瞬間に鋭いシェイク（威力の高い一撃技らしく強めに）
+(function () {
+  const fx = {
+    flashes: [
+      { color: '#f4ffd0', peakAlpha: 0.75, durationMs: 220, delay: LEAFSTORM_HIT_MS },
+      { color: '#8fd93a', peakAlpha: 0.36, durationMs: 460, delay: LEAFSTORM_HIT_MS + 30 },
+    ],
+    shakes: [
+      { ampPx: 4,  durationMs: 160, freq: 28, delay: LEAFSTORM_CHARGE_MS - 80 },  // 集束の震え
+      { ampPx: 20, durationMs: 420, freq: 32, delay: LEAFSTORM_HIT_MS },          // 着弾の衝撃
+    ],
+  };
+  SPECIAL_IMPACT_FX[193] = fx;
+  SPECIAL_IMPACT_FX[199] = fx;
+})();
 SPECIAL_IMPACT_FX[216] = {
   flashes: [
     { color: '#ffcf5a', peakAlpha: 0.28, durationMs: 220, delay: EARTHPOWER_CRACK_START_MS },
@@ -22698,6 +24248,15 @@ SPECIAL_IMPACT_FX[78] = {
     { ampPx: 8,  durationMs: LUXIONAIR_RAGE_MS, freq: 40, delay: LUXIONAIR_RAGE_START_MS },
     { ampPx: 24, durationMs: 520, freq: 30, delay: LUXIONAIR_BURST_START_MS },
   ],
+};
+// 雪月光：ダイヤモンドダストの霧と月光が降り注ぐ技のため、
+// 着弾フラッシュもごく淡く（銀白〜氷青）、画面シェイクは入れない
+SPECIAL_IMPACT_FX[397] = {
+  flashes: [
+    { color: '#f3f8ff', peakAlpha: 0.28, durationMs: 260, delay: SETSU_HIT_MS },
+    { color: '#cfe8ff', peakAlpha: 0.16, durationMs: 420, delay: SETSU_HIT_MS + 30 },
+  ],
+  shakes: [],
 };
 // れいとうビーム：着弾で白〜淡青の冷色フラッシュのみ（シェイクなし）
 SPECIAL_IMPACT_FX[233] = {
