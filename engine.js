@@ -653,9 +653,10 @@ const POKEDEX_CUSTOM_ORDER = [
 1051,
 1052,
 1056,
-1057,
+1058,
   1990, // ウーズメルス
   2000, // アリアスカル
+  1057,
 ];
 
 // 与えられた種族IDの配列を、POKEDEX_CUSTOM_ORDER の順に並べ替えて返す（元の配列は変更しない）。
@@ -1562,7 +1563,7 @@ const MEGA_EVOLUTION_DATA = {
   "242": {
     "type1": "ghost",
     "type2": null,
-    "ability": 68,
+    "ability": 156,
     "baseStats": {
       "hp": 64,
       "atk": 155,
@@ -2409,10 +2410,10 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "fairy",
     "ability": 138,
     "baseStats": {
-      "hp": 80,
-      "atk": 130,
-      "def": 80,
-      "spa": 130,
+      "hp": 90,
+      "atk": 140,
+      "def": 100,
+      "spa": 140,
       "spd": 100,
       "spe": 80
     }
@@ -2437,7 +2438,7 @@ const MEGA_EVOLUTION_DATA = {
     "baseStats": {
       "hp": 80,
       "atk": 130,
-      "def": 80,
+      "def": 100,
       "spa": 130,
       "spd": 80,
       "spe": 90
