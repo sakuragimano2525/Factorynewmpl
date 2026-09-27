@@ -4284,7 +4284,6 @@ function resetPokeForBattle(poke) {
   poke.changedType = null;
   poke.hengenjizaiType = null;
   poke.hengenjizaiUsed = false;
-  poke.origamiTsukiSwapped = false;
   poke.typeLockTurns = 0;
   poke.typeLockType = null;
   poke.lastUsedMoveId = null;
@@ -4305,13 +4304,23 @@ function resetPokeForBattle(poke) {
     poke.species = poke.megaOriginalSpecies;
     poke.ability = poke.megaOriginalAbility;
     recalcMegaStats(poke, poke.species.baseStats);
+  } else if (poke.origamiTsukiSwapped) {
+    // おりがみつきで攻撃・特攻の実数値が入れ替わったまま持ち越されないよう、
+    // 種族値から実数値を再計算して元に戻す。
+    recalcMegaStats(poke, poke.species.baseStats);
   }
+  poke.origamiTsukiSwapped = false;
   poke.isMega = false;
   poke.megaOriginalSpecies = null;
   poke.megaOriginalAbility = null;
   // megaFormはリセットしない：createRandomPokemon生成時（＝選出/トレードでプールに並んだ時点）で
   // 既にX/Y抽選が確定しており、その表記を選出画面等で見せ続ける必要があるため。
   poke.wantsMegaEvolve = false;
+  // トレースでコピーした特性が残っていれば、本来の特性（トレース）へ戻す。
+  if (poke.traceOriginalAbility != null) {
+    poke.ability = poke.traceOriginalAbility;
+    poke.traceOriginalAbility = null;
+  }
 }
 
 // 次のバトルが「10連勝目」にあたるボス戦かどうかを判定する。
@@ -8850,10 +8859,23 @@ function demegaNpcPickSource() {
       p.species = p.megaOriginalSpecies;
       p.ability = p.megaOriginalAbility;
       recalcMegaStats(p, p.species.baseStats);
+    } else if (p.origamiTsukiSwapped) {
+      // おりがみつきで攻撃・特攻の実数値が入れ替わったまま（npcTeamState.sourceは
+      // state.playerTeamと同じオブジェクト参照を共有しているため、バトル終了後も
+      // 入れ替わった値が残ってしまう）。種族値から実数値を再計算し、元の値に戻す。
+      recalcMegaStats(p, p.species.baseStats);
     }
     p.isMega = false;
     p.megaOriginalSpecies = null;
     p.megaOriginalAbility = null;
+    p.origamiTsukiSwapped = false;
+    // トレースでバトル中に相手の特性をコピーしたまま残っていると、選出画面で
+    // sbIsAbilityInvalid（本来の種族にない特性＝❌判定）に引っかかり選出へ進めなくなるため、
+    // ここで本来の特性（トレース）へ戻す。
+    if (p.traceOriginalAbility != null) {
+      p.ability = p.traceOriginalAbility;
+      p.traceOriginalAbility = null;
+    }
     restoreOriginalMoves(p);
     if (p.moves) p.moves.forEach((m) => { if (m) { m.pp = m.maxPp; m.locked = false; } });
   });

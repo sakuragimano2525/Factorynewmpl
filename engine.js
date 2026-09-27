@@ -2719,6 +2719,8 @@ function reapplyOrigamiTsukiIfNeeded(poke, logFn) {
 function applyMegaEvolveAbilityTrigger(poke, logFn, opponent) {
   if (!poke) return;
   if (opponent && !opponent.fainted && opponent.ability === ABILITY.TRACE && poke.ability !== ABILITY.TRACE) {
+    // トレース発動で元の特性が上書きされる前に退避しておく（試合終了後に選出画面へ戻す用）。
+    if (opponent.traceOriginalAbility == null) opponent.traceOriginalAbility = opponent.ability;
     opponent.ability = poke.ability;
     logFn(`${opponent.species.name}は${abilityJp(poke.ability)}をコピーした！`);
   }
@@ -3427,6 +3429,8 @@ function applyWeatherTerrainAbilityOnSwitchIn(poke, logFn, opponent) {
     logFn(`${poke.species.name}の${abilityJp(poke.ability)}が発動！`);
   }
   if (poke.ability === ABILITY.TRACE && opponent && !opponent.fainted) {
+    // トレース発動で元の特性が上書きされる前に退避しておく（試合終了後に選出画面へ戻す用）。
+    if (poke.traceOriginalAbility == null) poke.traceOriginalAbility = poke.ability;
     poke.ability = opponent.ability;
     logFn(`${poke.species.name}は${abilityJp(opponent.ability)}をコピーした！`);
   }
