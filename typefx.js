@@ -4753,6 +4753,549 @@
     }
   }
 
+  // ============================================================
+  // ハクアメテオ（オリジナル・りゅうせいぐんの青白版）
+  // 満天の夜空を、無数の氷の隕石が左上から右下へ長い尾を引いて降り注ぐ演出。
+  // 構成：①空が深い夜に暗転し、星が瞬く予兆 ②左上の空から右下へ、氷の隕石が次々に斜めに走り抜ける
+  //       ③一発ごとに着弾して冷気の柱＋衝撃波＋氷片が弾け、大地が白く凍てつく
+  //       ④隕石の密度が最高潮に達した後、特大の主星（巨大な氷塊）が左上の空から斜めに落ちる
+  //       ⑤主星の着弾で画面全体を白く染め上げる大爆発＋放射状に走る「氷結のひび割れ」
+  //       ⑥消えかけの冷気の燐光と、極寒の空を彩るオーロラの帯が漂う余韻
+  // りゅうせいぐん(53)の構成密度・タイミングをそのまま踏襲しつつ、配色を
+  // 「深い夜空（濃紺〜藍）× 橙〜白金」から「深い夜空（濃紺〜藍）× 氷青〜白銀」へ一新し、
+  // 氷竜の技らしい神秘的で冷ややかな迫力を表現する。
+  // ============================================================
+  function spawnHakuMeteorSpecial(particles, w, h) {
+    const cx = w / 2, groundY = h * 0.88;
+    const R = Math.max(w, h);
+    // 全ての流星が落ちる共通の向き：左上 → 右下（画面上で約35°の緩い斜め）。
+    // ※canvasはy軸が下向きなので、右へ進みつつ下へ進む単位ベクトルが (cos, sin) の正の値になる。
+    //   角度を浅め(35°)にすると流星が横に長く流れて見え、原作の「夜空を走る流星」に近づく。
+    const FALL_ANG = Math.PI * 0.195;               // ≒ 35°
+    const fdx = Math.cos(FALL_ANG), fdy = Math.sin(FALL_ANG);
+
+    // ---- 幕0: 空が深い夜に暗転する（流星を際立たせる下地）----
+    particles.push({
+      maxLife: 3400,   // 演出の全体尺に合わせる（主星の落下〜大爆発〜オーロラの余韻まで暗いまま保つ）
+      draw(ctx, t) {
+        // 素早く暗くなり、大爆発とオーロラの余韻が引く終盤にゆっくり明けていく
+        const a = t < 0.06 ? t / 0.06 : (t > 0.88 ? 1 - (t - 0.88) / 0.12 : 1);
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, rgba('#040414', a * 0.84));
+        grad.addColorStop(0.5, rgba('#0a0c2e', a * 0.66));
+        grad.addColorStop(1, rgba('#1a1236', a * 0.36));
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+      }
+    });
+    // 天の川のような淡い光の帯（夜空の奥行き。流星と同じ左上→右下の向きに流す）
+    particles.push({
+      maxLife: 3400,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const env = t < 0.08 ? t / 0.08 : (t > 0.88 ? (1 - t) / 0.12 : 1);
+        ctx.save();
+        ctx.translate(w * 0.5, h * 0.3);
+        ctx.rotate(FALL_ANG);
+        const g = ctx.createLinearGradient(0, -h * 0.16, 0, h * 0.16);
+        g.addColorStop(0, 'rgba(120,130,230,0)');
+        g.addColorStop(0.5, rgba('#7ad4ff', env * 0.16));
+        g.addColorStop(1, 'rgba(120,130,230,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(-R, -h * 0.16, R * 2, h * 0.32);
+        ctx.restore();
+      }
+    });
+    // 空に瞬く星（暗転した空の奥行き。数を増やして満天の星空にする）
+    for (let i = 0; i < 70; i++) {
+      const sx = rand(0, w), sy = rand(0, h * 0.72);
+      const seed = rand(0, 100);
+      const sz = rand(0.7, 2.3);
+      particles.push({
+        delay: rand(0, 220),
+        maxLife: 2750,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const env = t < 0.06 ? t / 0.06 : (t > 0.85 ? (1 - t) / 0.15 : 1);
+          const tw = Math.abs(noise1(t * 14, seed)) * 0.7 + 0.3;
+          ctx.fillStyle = rgba(i % 5 === 0 ? '#eaf6ff' : '#dfe4ff', env * tw * 0.9);
+          ctx.beginPath();
+          ctx.arc(sx, sy, sz, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+
+    // ---- 流星を1本描くヘルパー（氷の尾を引く隕石）----
+    // 「頭（明るい核）」と「尾（後方に伸びる多層の氷光）」で構成する。
+    // headX/Y は現在位置、tail は尾の長さ、size は頭の大きさ、a は不透明度。
+    function drawHakuMeteor(ctx, headX, headY, tail, size, a) {
+      const tx = headX - fdx * tail, ty = headY - fdy * tail;
+      ctx.save();
+      ctx.lineCap = 'round';
+      // 外側の広い光（氷青〜水色）
+      const g1 = ctx.createLinearGradient(tx, ty, headX, headY);
+      g1.addColorStop(0, 'rgba(20,140,255,0)');
+      g1.addColorStop(0.6, rgba('#1ab0ff', a * 0.5));
+      g1.addColorStop(1, rgba('#bfe9ff', a * 0.9));
+      ctx.strokeStyle = g1;
+      ctx.lineWidth = size * 2.4;
+      ctx.shadowColor = rgba('#2ad0ff', 0.9);
+      ctx.shadowBlur = 24;
+      ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(headX, headY); ctx.stroke();
+      // 中間の明るい光（淡氷白）
+      const g2 = ctx.createLinearGradient(tx, ty, headX, headY);
+      g2.addColorStop(0, 'rgba(120,210,255,0)');
+      g2.addColorStop(1, rgba('#eaf9ff', a));
+      ctx.strokeStyle = g2;
+      ctx.lineWidth = size * 1.3;
+      ctx.shadowBlur = 14;
+      ctx.beginPath(); ctx.moveTo(tx + fdx * tail * 0.25, ty + fdy * tail * 0.25); ctx.lineTo(headX, headY); ctx.stroke();
+      // 芯（白熱）
+      ctx.strokeStyle = rgba('#ffffff', a);
+      ctx.lineWidth = size * 0.55;
+      ctx.shadowBlur = 8;
+      ctx.beginPath(); ctx.moveTo(headX - fdx * tail * 0.4, headY - fdy * tail * 0.4); ctx.lineTo(headX, headY); ctx.stroke();
+      // 頭（凍てついた氷塊）：発光する核
+      const hg = ctx.createRadialGradient(headX, headY, 0, headX, headY, size * 1.6);
+      hg.addColorStop(0, rgba('#ffffff', a));
+      hg.addColorStop(0.35, rgba('#cdeeff', a * 0.95));
+      hg.addColorStop(1, 'rgba(20,140,255,0)');
+      ctx.fillStyle = hg;
+      ctx.beginPath(); ctx.arc(headX, headY, size * 1.6, 0, Math.PI * 2); ctx.fill();
+      // 氷竜らしい演出強化：頭部に小さな六角結晶のきらめきを1つ重ねる（ハクアメテオ専用の追加装飾）
+      ctx.save();
+      ctx.translate(headX, headY);
+      ctx.rotate(fdx * headX * 0.0001 + headY * 0.0002); // 位置ごとに向きをずらし単調な反復感を防ぐ
+      ctx.strokeStyle = rgba('#ffffff', a * 0.85);
+      ctx.lineWidth = Math.max(0.6, size * 0.14);
+      ctx.shadowColor = rgba('#bfe9ff', 0.9);
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      for (let k = 0; k < 3; k++) {
+        const ang = (Math.PI / 3) * k;
+        const rr = size * 1.1;
+        ctx.moveTo(-Math.cos(ang) * rr, -Math.sin(ang) * rr);
+        ctx.lineTo(Math.cos(ang) * rr, Math.sin(ang) * rr);
+      }
+      ctx.stroke();
+      ctx.restore();
+      ctx.restore();
+    }
+
+    // ---- 幕2: 流星群の雨（左上の夜空から右下へ次々に走り抜け、地面で着弾する）----
+    // 出発点は「着弾点から落下方向を逆に辿り、画面の外（左上）まで遡った点」にする。
+    // これにより流星は必ず画面外から現れて斜めに横切る。着弾点は画面中央〜右寄りに散らす。
+    const rainStart = 300;
+    const meteorCount = 34;
+    // 時刻の配り方：序盤はまばら → 後半ほど密に（本家の「降り注ぐ」クライマックス感）。
+    // i/(n-1) を 0..1 に取り、二乗で前半を間延びさせ後半を詰める。
+    const rainSpan = 1000;
+    for (let i = 0; i < meteorCount; i++) {
+      const k = i / (meteorCount - 1);
+      // 着弾点：画面の右寄り〜中央。落下方向が右下なので、右に寄せるほど軌跡が画面を長く横切る。
+      const landX = cx + rand(w * 0.02, w * 0.42);
+      const landY = groundY + rand(-h * 0.05, h * 0.03);
+      // 出発点は「画面の左上の外」。着弾点から落下方向を遡り、y が画面上端(-h*0.12)より上に
+      // 来るまで、かつ x が画面左端(-w*0.1)より外に出るまで遡る（＝必ず画面外から入ってくる）。
+      const backY = (landY + h * 0.12) / fdy;              // 上端の外まで遡る距離
+      const backX = (landX + w * 0.1) / fdx;               // 左端の外まで遡る距離
+      const back = Math.max(backY, backX);                 // 両方を満たす長い方
+      const startX = landX - fdx * back, startY = landY - fdy * back;
+      const delay = rainStart + Math.pow(k, 1.35) * rainSpan + rand(-14, 14);
+      const flight = rand(300, 420);           // 少し長く飛ばし、同時に夜空を走る本数を増やす（派手さ）
+      const size = rand(3.4, 6.6);
+      const tail = rand(h * 0.34, h * 0.62);   // 尾を長く（走っている速度感）
+      // 隕石本体の落下
+      particles.push({
+        delay,
+        maxLife: flight,
+        blend: 'lighter',
+        draw(ctx, t) {
+          // 着弾後(t>=1)はrunParticleSceneがpt=1のままdrawを呼び続けるため、ここで明示的に描画を止める
+          if (t >= 1) return;
+          const p = easeInCubic(t) * 0.4 + t * 0.6; // 加速しながら落ちる
+          const x = lerp(startX, landX, p), y = lerp(startY, landY, p);
+          const a = t < 0.08 ? t / 0.08 : 1;
+          drawHakuMeteor(ctx, x, y, tail * (0.6 + 0.4 * p), size, a);
+        }
+      });
+      // 着弾：閃光＋火柱＋衝撃波
+      const hit = delay + flight;
+      particles.push({ // 着弾の閃光
+        delay: hit,
+        maxLife: 220,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const a = (1 - t) * 0.95;
+          const r = lerp(size * 2, size * 11, easeOutQuint(t));
+          const g = ctx.createRadialGradient(landX, landY, 0, landX, landY, r);
+          g.addColorStop(0, rgba('#ffffff', a));
+          g.addColorStop(0.3, rgba('#cdeeff', a * 0.9));
+          g.addColorStop(0.7, rgba('#2ad0ff', a * 0.5));
+          g.addColorStop(1, 'rgba(20,140,255,0)');
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(landX, landY, r, 0, Math.PI * 2); ctx.fill();
+        }
+      });
+      particles.push({ // 上に噴き上がる冷気の柱
+        delay: hit,
+        maxLife: 380,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const rise = easeOutCubic(t);
+          const a = (1 - t) * 0.85;
+          const ph = size * 9 * rise;
+          const g = ctx.createLinearGradient(landX, landY, landX, landY - ph);
+          g.addColorStop(0, rgba('#eaf9ff', a));
+          g.addColorStop(0.5, rgba('#3fc4ff', a * 0.75));
+          g.addColorStop(1, 'rgba(20,140,255,0)');
+          ctx.fillStyle = g;
+          const bw = size * (2.6 - t * 1.2);
+          ctx.beginPath();
+          ctx.moveTo(landX - bw, landY);
+          ctx.quadraticCurveTo(landX - bw * 0.3, landY - ph * 0.6, landX, landY - ph);
+          ctx.quadraticCurveTo(landX + bw * 0.3, landY - ph * 0.6, landX + bw, landY);
+          ctx.closePath();
+          ctx.fill();
+        }
+      });
+      particles.push({ // 地面を走る衝撃波リング（横に潰した楕円）
+        delay: hit,
+        maxLife: 340,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const r = lerp(size * 1.5, size * 15, easeOutQuint(t));
+          ctx.strokeStyle = rgba('#d8f2ff', (1 - t) * 0.7);
+          ctx.lineWidth = 3.4 * (1 - t * 0.6);
+          ctx.shadowColor = rgba('#3fc4ff', 0.9);
+          ctx.shadowBlur = 12;
+          ctx.beginPath();
+          ctx.ellipse(landX, landY, r, r * 0.3, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      });
+      // 弾け飛ぶ氷の粒・氷片
+      for (let k = 0; k < 6; k++) {
+        const ang = rand(-Math.PI * 0.95, -Math.PI * 0.05); // 上半分へ放射
+        const sp = rand(size * 5, size * 13);
+        const g = rand(0.8, 1.5);
+        const rad = rand(1.6, 3);   // 半径は生成時に固定（フレームごとのrandはチラつきの原因）
+        particles.push({
+          delay: hit,
+          maxLife: rand(300, 520),
+          blend: 'lighter',
+          draw(ctx, t) {
+            const e = easeOutCubic(t);
+            const x = landX + Math.cos(ang) * sp * e;
+            const y = landY + Math.sin(ang) * sp * e + g * t * t * h * 0.16;
+            ctx.fillStyle = rgba(k % 2 ? '#cdeeff' : '#3fc4ff', (1 - t) * 0.9);
+            ctx.shadowColor = rgba('#2ad0ff', 0.9);
+            ctx.shadowBlur = 8;
+            ctx.beginPath();
+            ctx.arc(x, y, rad, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        });
+      }
+    }
+
+    // ---- 幕3: 静寂 → 左上の夜空から特大の主星が斜めに落ちる ----
+    // 流星の雨のあと一瞬だけ間を置き（静寂）、最後に他の流星より圧倒的に大きな主星を落とす。
+    const bigStart = rainStart + rainSpan + 200;   // 流星の雨が途切れた後の「間」
+    const bigFlight = 560;   // 迫ってくる姿を見せるため、小流星(230〜320ms)より明確に遅く大きく
+    const bigHit = bigStart + bigFlight;
+    // 主星本体：巨大な凍てつく巨大な氷塊が左上の画面外から中心めがけて斜めに
+    const bigTailLen = R * 0.95;
+    const bigSize = w * 0.075;   // 小流星(3.4〜6.6px)の数倍：一目で「主星」とわかる大きさ
+    // 主星の着弾点は画面中央やや右。落下方向を遡り、画面の上端/左端のすぐ外を出発点にする
+    // （遡りすぎると画面外を飛んでいる時間が長く、肝心の「迫ってくる姿」が見えない）。
+    const bigLandX = cx + w * 0.06;
+    const bigBackY = (groundY + h * 0.14) / fdy;
+    const bigBackX = (bigLandX + w * 0.12) / fdx;
+    const bigBack = Math.max(bigBackY, bigBackX);
+    const bigStartX = bigLandX - fdx * bigBack, bigStartY = groundY - fdy * bigBack;
+    // 主星が近づくにつれ、空の左上が赤熱して明るくなる（接近の予感）
+    particles.push({
+      delay: bigStart,
+      maxLife: bigFlight,
+      blend: 'lighter',
+      draw(ctx, t) {
+        if (t >= 1) return;
+        const a = easeInCubic(t) * 0.55;
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, w * 0.75);
+        g.addColorStop(0, rgba('#cdeeff', a));
+        g.addColorStop(0.5, rgba('#3fc4ff', a * 0.5));
+        g.addColorStop(1, 'rgba(20,140,255,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h * 0.7);
+      }
+    });
+    particles.push({
+      delay: bigStart,
+      maxLife: bigFlight,
+      blend: 'lighter',
+      draw(ctx, t) {
+        if (t >= 1) return;   // 着弾後は描かない（爆発側の演出に引き継ぐ）
+        const p = easeInCubic(t) * 0.3 + t * 0.7;   // ほぼ等速：画面内を悠然と、しかし確実に迫ってくる
+        const x = lerp(bigStartX, bigLandX, p), y = lerp(bigStartY, groundY, p);
+        drawHakuMeteor(ctx, x, y, bigTailLen * (0.5 + 0.5 * p), bigSize, 1);
+        // 主星の周囲を包む極寒のオーラ
+        const g = ctx.createRadialGradient(x, y, 0, x, y, bigSize * 5);
+        g.addColorStop(0, rgba('#dff3ff', 0.55));
+        g.addColorStop(1, 'rgba(30,160,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(x, y, bigSize * 5, 0, Math.PI * 2); ctx.fill();
+      }
+    });
+
+    // ---- 幕4: 主星の着弾＝画面全体を白く染め上げる大爆発 ----
+    // 着弾の閃光：画面全体の白飛びはDOM側のscreenFlash(SPECIAL_IMPACT_FX)が担当するため、
+    // ここでは着弾点を中心にした放射状の光に留める（全面を白で塗ると二重で眩しくなり、
+    // 着弾の瞬間そのものが見えなくなる）。
+    particles.push({
+      delay: bigHit,
+      maxLife: 160,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const a = (1 - t) * 0.9;
+        const r = lerp(w * 0.1, R * 0.75, easeOutCubic(t));
+        const g = ctx.createRadialGradient(bigLandX, groundY, 0, bigLandX, groundY, r);
+        g.addColorStop(0, rgba('#ffffff', a));
+        g.addColorStop(0.45, rgba('#eafbff', a * 0.55));
+        g.addColorStop(1, 'rgba(210,240,255,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+    });
+    // 巨大な氷結球（白→氷青→深藍のグラデ）
+    particles.push({
+      delay: bigHit,
+      maxLife: 620,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const a = (1 - t) * 0.95;
+        const r = lerp(8, R * 0.62, easeOutQuint(t));
+        const g = ctx.createRadialGradient(bigLandX, groundY, 0, bigLandX, groundY, r);
+        g.addColorStop(0, rgba('#ffffff', a));
+        g.addColorStop(0.25, rgba('#eaf9ff', a * 0.95));
+        g.addColorStop(0.55, rgba('#3fc4ff', a * 0.75));
+        g.addColorStop(0.85, rgba('#0a3a8a', a * 0.4));
+        g.addColorStop(1, 'rgba(10,30,90,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(bigLandX, groundY, r, 0, Math.PI * 2); ctx.fill();
+      }
+    });
+    // 多重の衝撃波（白・氷青が重なり氷竜の魔力を感じさせる）
+    for (let i = 0; i < 4; i++) {
+      const col = ['#ffffff', '#cdeeff', '#3fc4ff', '#9adfff'][i];
+      particles.push({
+        delay: bigHit + i * 55,
+        maxLife: 520 - i * 40,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const r = lerp(w * 0.04, R * (0.55 + i * 0.16), easeOutQuint(t));
+          ctx.strokeStyle = rgba(col, (1 - t) * (0.9 - i * 0.14));
+          ctx.lineWidth = (9 - i * 1.6) * (1 - t * 0.55);
+          ctx.shadowColor = rgba(col, 0.9);
+          ctx.shadowBlur = 20;
+          ctx.beginPath();
+          ctx.ellipse(bigLandX, groundY, r, r * 0.34, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      });
+    }
+    // ハクアメテオ専用の追加演出：着弾点から放射状に走る「氷結のひび割れ」紋様。
+    // りゅうせいぐんには無い、氷雪の竜技らしい質感を加えるための固有カット。
+    // 白い亀裂が地面を這うように広がり、そこから冷気が霧のように立ち上る。
+    const crackSeed = rand(0, 100);
+    const crackCount = 9;
+    for (let i = 0; i < crackCount; i++) {
+      const ang = (Math.PI * 2 * i) / crackCount + rand(-0.12, 0.12);
+      const len = rand(w * 0.16, w * 0.3);
+      particles.push({
+        delay: bigHit + 20,
+        maxLife: 640,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const a = (1 - clamp01(t / 0.8)) * 0.85;
+          if (a <= 0.01) return;
+          const grow = easeOutCubic(clamp01(t / 0.35));
+          const jag = 5;
+          ctx.save();
+          ctx.strokeStyle = rgba('#eafbff', a);
+          ctx.lineWidth = 2.2 * (1 - t * 0.5);
+          ctx.shadowColor = rgba('#7ad4ff', 0.9);
+          ctx.shadowBlur = 12;
+          ctx.beginPath();
+          ctx.moveTo(bigLandX, groundY);
+          for (let j = 1; j <= jag; j++) {
+            const k = j / jag;
+            const dist = len * grow * k;
+            const wob = noise1(k * 6 + i, crackSeed) * (10 + 18 * k);
+            const px = bigLandX + Math.cos(ang) * dist + Math.cos(ang + Math.PI / 2) * wob;
+            const py = groundY * 0.999 + Math.sin(ang) * dist * 0.32 + Math.sin(ang + Math.PI / 2) * wob * 0.32;
+            ctx.lineTo(px, py);
+          }
+          ctx.stroke();
+          ctx.restore();
+        }
+      });
+    }
+    // 中心から立ち昇る巨大な氷結の柱：太い根元から、揺らめきながら上へ広がり散っていく冷気の柱。
+    // 内側（白熱）・中間（氷青）・外側（深藍）の3層を、それぞれ少しずつ違う揺らぎで重ねて氷の厚みを出す。
+    const pillarSeed = rand(0, 100);
+    const pillarLayers = [
+      { wMul: 1.00, col0: '#0a3a8a', col1: '#1ab0ff', aMul: 0.55, seedOff: 0 },
+      { wMul: 0.72, col0: '#3fc4ff', col1: '#8fe0ff', aMul: 0.75, seedOff: 7 },
+      { wMul: 0.42, col0: '#eafbff', col1: '#ffffff', aMul: 0.95, seedOff: 13 },
+    ];
+    pillarLayers.forEach((L) => {
+      particles.push({
+        delay: bigHit,
+        maxLife: 560,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const rise = easeOutCubic(clamp01(t / 0.55));
+          const fade = 1 - Math.max(0, (t - 0.25) / 0.75);
+          const a = fade * fade * L.aMul;   // 二乗で減衰させ、消え際に薄い残像が長く残らないようにする
+          if (a <= 0.02) return;
+          const ph = h * 0.92 * rise;
+          const baseW = w * 0.15 * L.wMul * (1 - t * 0.35);
+          const steps = 18;
+          // 高さ方向に18分割し、左右の縁を「太さ×揺らぎ」で結んで炎の輪郭にする
+          const left = [], right = [];
+          for (let i = 0; i <= steps; i++) {
+            const k = i / steps;                                    // 0=根元 1=先端
+            const taper = Math.pow(1 - k, 0.85) * (1 + 0.55 * Math.sin(k * Math.PI)); // 中ほどが膨らむ
+            const sway = noise1(k * 4 + t * 9, pillarSeed + L.seedOff) * baseW * 0.55 * k;
+            const bw = baseW * taper;
+            const y = groundY - ph * k;
+            left.push([bigLandX + sway - bw, y]);
+            right.push([bigLandX + sway + bw, y]);
+          }
+          const g = ctx.createLinearGradient(bigLandX, groundY, bigLandX, groundY - ph);
+          g.addColorStop(0, rgba(L.col1, a));
+          g.addColorStop(0.5, rgba(L.col0, a * 0.8));
+          g.addColorStop(1, 'rgba(20,140,255,0)');
+          ctx.fillStyle = g;
+          ctx.shadowColor = rgba('#2ad0ff', 0.8);
+          ctx.shadowBlur = 16;
+          ctx.beginPath();
+          ctx.moveTo(left[0][0], left[0][1]);
+          for (let i = 1; i < left.length; i++) ctx.lineTo(left[i][0], left[i][1]);
+          for (let i = right.length - 1; i >= 0; i--) ctx.lineTo(right[i][0], right[i][1]);
+          ctx.closePath();
+          ctx.fill();
+        }
+      });
+    });
+    // 四方に飛び散る砕け散る氷片（放物線を描いて降る）
+    for (let i = 0; i < 30; i++) {
+      const ang = rand(-Math.PI * 0.98, -Math.PI * 0.02);
+      const sp = rand(w * 0.22, w * 0.6);
+      const grav = rand(1.0, 1.9);
+      const sz = rand(2.4, 6);
+      particles.push({
+        delay: bigHit + rand(0, 40),
+        maxLife: rand(460, 740),   // 最長でも bigHit+40+740=2370ms < 全体尺2400ms（途中で切れない）
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const x = bigLandX + Math.cos(ang) * sp * e;
+          const y = groundY + Math.sin(ang) * sp * e + grav * t * t * h * 0.34;
+          ctx.fillStyle = rgba(i % 3 === 0 ? '#ffffff' : (i % 3 === 1 ? '#cdeeff' : '#3fc4ff'), (1 - t) * 0.92);
+          ctx.shadowColor = rgba('#2ad0ff', 0.95);
+          ctx.shadowBlur = 10;
+          ctx.beginPath();
+          ctx.arc(x, y, sz * (1 - t * 0.45), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+    // 地面の残光（凍てついた大地に残る冷気の残光）
+    particles.push({
+      delay: bigHit + 60,
+      maxLife: 700,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const a = Math.sin(Math.PI * clamp01(t)) * 0.5;
+        const g = ctx.createLinearGradient(0, groundY - h * 0.12, 0, h);
+        g.addColorStop(0, 'rgba(20,140,255,0)');
+        g.addColorStop(0.5, rgba('#1ab0ff', a));
+        g.addColorStop(1, rgba('#0a3a8a', a * 0.7));
+        ctx.fillStyle = g;
+        ctx.fillRect(0, groundY - h * 0.12, w, h - (groundY - h * 0.12));
+      }
+    });
+
+    // ---- 幕5: 余燼（消えかけの冷気の燐光が漂う静かな余韻）----
+    for (let i = 0; i < 22; i++) {
+      const x0 = bigLandX + rand(-w * 0.4, w * 0.4);
+      const seed = rand(0, 100);
+      const riseSpeed = rand(0.1, 0.22);   // 上昇速度は生成時に固定
+      const yOff = rand(0, h * 0.06);
+      particles.push({
+        delay: bigHit + 100 + rand(0, 160),
+        maxLife: rand(380, 520),   // 最長でも bigHit+100+160+520=2370ms < 全体尺2400ms（途中で切れない）
+        blend: 'lighter',
+        draw(ctx, t) {
+          const x = x0 + noise1(t * 3, seed) * 14;
+          const y = groundY - t * h * riseSpeed - yOff;
+          const fl = Math.abs(noise1(t * 18, seed)) * 0.6 + 0.4;
+          ctx.fillStyle = rgba('#a9e6ff', (1 - t) * fl * 0.85);
+          ctx.shadowColor = rgba('#2ad0ff', 0.9);
+          ctx.shadowBlur = 7;
+          ctx.beginPath();
+          ctx.arc(x, y, 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+    // ハクアメテオ専用の締め：大爆発の余韻に、極寒の空を彩るオーロラの帯が静かに揺らめく。
+    // りゅうせいぐんの「静かな残り火」に代えて、氷竜の技らしい神秘的な後味を残す。
+    const auroraSeed = rand(0, 100);
+    for (let i = 0; i < 3; i++) {
+      const bandY = h * (0.16 + i * 0.05);
+      const colTop = ['#7ad4ff', '#bfe9ff', '#9adfff'][i];
+      particles.push({
+        delay: bigHit + 260 + i * 60,
+        maxLife: 900,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const env = Math.sin(Math.PI * clamp01(t)) ; // 立ち上がり→消えるをゆるやかに
+          const a = env * 0.32;
+          if (a <= 0.01) return;
+          ctx.save();
+          ctx.beginPath();
+          const steps = 24;
+          ctx.moveTo(0, bandY);
+          for (let s = 0; s <= steps; s++) {
+            const k = s / steps;
+            const x = k * w;
+            const wob = noise1(k * 3 + t * 1.6, auroraSeed + i * 5) * h * 0.05;
+            ctx.lineTo(x, bandY + wob);
+          }
+          for (let s = steps; s >= 0; s--) {
+            const k = s / steps;
+            const x = k * w;
+            const wob = noise1(k * 3 + t * 1.6, auroraSeed + i * 5) * h * 0.05;
+            ctx.lineTo(x, bandY + wob + h * 0.09);
+          }
+          ctx.closePath();
+          const g = ctx.createLinearGradient(0, bandY, 0, bandY + h * 0.09);
+          g.addColorStop(0, 'rgba(120,210,255,0)');
+          g.addColorStop(0.5, rgba(colTop, a));
+          g.addColorStop(1, 'rgba(120,210,255,0)');
+          ctx.fillStyle = g;
+          ctx.fill();
+          ctx.restore();
+        }
+      });
+    }
+  }
+
+
 // ============================================================
 // ムーンフォース：夜空に満月が浮かび、月光の柱が降り注いで大地を浄化する演出
 // 構成：①夜空の暗転と星々 ②満月がゆっくり浮かび上がる ③月から放射状に降り注ぐ月光
@@ -7278,6 +7821,1065 @@ function spawnMixingSpecial(particles, w, h) {
           const x = target.x + Math.cos(sa + t * 1.3) * dd * e;
           const y = target.y + Math.sin(sa + t * 1.3) * dd * e * 0.7 - rise * e;
           glow(ctx, x, y, lerp(10, 22, t) * S, (1 - t) * 0.3, PINK, RED, DEEP);
+        }
+      });
+    }
+  }
+
+  // ============================================================
+  // ワイドフォース（attack511）専用演出
+  // ソード・シールド原作の「相手が紫の立方体（ケージ）に包まれ、内側で発光して弾ける」イメージを再現する。
+  // 質感はオーラファイト(117)と同じ方針：輪郭線＋ごく薄い塗りだけで描き、加算合成(lighter)と
+  // shadowBlurによる発光で「実体のない、念のエネルギー」らしい透け感を出す（白飛びさせない）。
+  // 構成：①相手の足元にうっすら紫のオーラの気配が立ちのぼる（予兆）
+  //       ②上下左右＋奥行きの6枚の光の壁（枠線でできた面）が外側から飛んできて、
+  //         相手を囲む立方体のケージを形作りながら閉じていく
+  //       ③ケージが完全に閉じた瞬間、内側で強く発光し、面の格子模様が眩く明滅する
+  //       ④内圧に耐えかねたように立方体が輪郭だけ残してパリンと弾け、
+  //         紫の破片と衝撃のリングが外側へ広がる
+  //       ⑤紫の光の粒と靄が立ちのぼって薄れる（余韻）
+  // 画面全体は揺らさない（はどうだん・きあいだま・あくのはどうと同じ方針。対象を囲む収束型の技のため）。
+  //
+  // info = { from:{x,y}, to:{x,y}, scale } は spawnAuraFistSpecial と同じ（playSpecialTypeEffect が実測）。
+  // ワイドフォースは自分側の起点は使わず、相手(to)を包む演出のみを行う。
+  // ============================================================
+  const WIDEFORCE_GATHER_MS = 300;    // ①足元にオーラの気配が立ちのぼる
+  const WIDEFORCE_CLOSE_MS = 420;     // ②6枚の壁が飛来してケージが閉じるまで
+  const WIDEFORCE_HOLD_MS = 260;      // ③閉じたケージの内側が明滅する（溜め）
+  const WIDEFORCE_BURST_MS = 260;     // ④ケージが弾けて破片が飛び散るまで
+  const WIDEFORCE_ARRIVE_MS = WIDEFORCE_GATHER_MS + WIDEFORCE_CLOSE_MS;   // ケージが閉じ切る時刻
+  const WIDEFORCE_HIT_MS = WIDEFORCE_ARRIVE_MS + WIDEFORCE_HOLD_MS;       // ダメージ＝弾ける瞬間
+  const WIDEFORCE_END_MS = WIDEFORCE_HIT_MS + WIDEFORCE_BURST_MS + 520;   // 余韻が消えるまで
+
+  function spawnWideForceSpecial(particles, w, h, info) {
+    const to = (info && info.to) || { x: w * 0.72, y: h * 0.32 };
+    const S = (info && info.scale) || 1;
+    const seed = rand(0, 100);
+
+    // オーラの配色：紫（薄く透ける）。芯だけ淡いラベンダーに寄せて、白飛びさせない
+    const DEEP = '#3a1560';     // 濃い紫（輪郭の根元・靄）
+    const PURPLE = '#8a2ee0';   // 紫（主色）
+    const PURPLE_HI = '#b76bff'; // 明るい紫（縁）
+    const LAV = '#ecd9ff';      // 淡いラベンダー（最も明るい部分）
+    const WHITE = '#ffffff';
+
+    const cx = to.x, cy = to.y;
+    // ケージの基準半径（相手スプライトを包み込む一辺の半分）
+    const BOX_R = 54 * S;
+    // 疑似3Dの奥行きオフセット（右斜め上にずらして「奥の面」を表現する）
+    const DEP_X = 16 * S, DEP_Y = -12 * S;
+
+    // ---- 紫の光の塊（放射グラデーション）----
+    function glow(ctx, x, y, r, a, inner, mid, outer) {
+      if (a <= 0.01 || r <= 0.5) return;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, rgba(inner, a));
+      g.addColorStop(0.35, rgba(mid, a * 0.85));
+      g.addColorStop(0.75, rgba(outer, a * 0.4));
+      g.addColorStop(1, rgba(outer, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // ---- 枠だけの正方形の面を1枚描く（輪郭線＋ごく薄い塗り＋格子の細線）----
+    // ox, oy: 中心からのオフセット（奥行き表現用）。size: 一辺の半分。build: 出現度合い（0〜1）。
+    // glowA: 内側の発光の強さ（③で使用）。
+    function drawFacePlane(ctx, ox, oy, size, alpha, build, glowA, grid) {
+      if (alpha <= 0.01 || size <= 1) return;
+      const x0 = cx + ox - size, y0 = cy + oy - size;
+      const s2 = size * 2;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      // ごく薄い塗り（内側が発光しているときだけ濃くなる）
+      if (glowA > 0.01) {
+        const g = ctx.createRadialGradient(cx + ox, cy + oy, 0, cx + ox, cy + oy, size * 1.15);
+        g.addColorStop(0, rgba(LAV, glowA * 0.55));
+        g.addColorStop(0.5, rgba(PURPLE_HI, glowA * 0.32));
+        g.addColorStop(1, rgba(PURPLE, 0));
+        ctx.fillStyle = g;
+        ctx.fillRect(x0, y0, s2, s2);
+      } else {
+        ctx.fillStyle = rgba(PURPLE, 0.08 * alpha * build);
+        ctx.fillRect(x0, y0, s2, s2);
+      }
+      // 発光する太い縁（外側のぼかし）
+      ctx.strokeStyle = rgba(PURPLE_HI, 0.5 * alpha);
+      ctx.lineWidth = Math.max(1, 3.4 * S);
+      ctx.shadowColor = rgba(PURPLE, 0.95);
+      ctx.shadowBlur = (10 + glowA * 10) * S;
+      ctx.strokeRect(x0, y0, s2, s2);
+      ctx.shadowBlur = 0;
+      // 内側の細い格子（田の字：剣盾のケージらしい面の分割線）
+      if (grid && alpha > 0.05) {
+        ctx.strokeStyle = rgba(PURPLE_HI, 0.32 * alpha);
+        ctx.lineWidth = Math.max(0.6, 1 * S);
+        ctx.beginPath();
+        ctx.moveTo(x0 + s2 / 2, y0); ctx.lineTo(x0 + s2 / 2, y0 + s2);
+        ctx.moveTo(x0, y0 + s2 / 2); ctx.lineTo(x0 + s2, y0 + s2 / 2);
+        ctx.stroke();
+      }
+      // 主輪郭線（芯は明るいラベンダー）
+      ctx.strokeStyle = rgba(LAV, 0.9 * alpha);
+      ctx.lineWidth = Math.max(0.8, 1.6 * S);
+      ctx.strokeRect(x0, y0, s2, s2);
+      // 四隅のハイライト（角が強く光る）
+      ctx.strokeStyle = rgba(WHITE, 0.7 * alpha);
+      ctx.lineWidth = Math.max(0.8, 1.4 * S);
+      const cl = size * 0.32;
+      [[x0, y0, 1, 1], [x0 + s2, y0, -1, 1], [x0, y0 + s2, 1, -1], [x0 + s2, y0 + s2, -1, -1]].forEach(([px, py, sx, sy]) => {
+        ctx.beginPath();
+        ctx.moveTo(px + cl * sx, py);
+        ctx.lineTo(px, py);
+        ctx.lineTo(px, py + cl * sy);
+        ctx.stroke();
+      });
+      ctx.restore();
+    }
+
+    // ============ ①予兆：足元に紫のオーラの気配が立ちのぼる ============
+    particles.push({
+      maxLife: WIDEFORCE_GATHER_MS + 120,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const ms = t * (WIDEFORCE_GATHER_MS + 120);
+        const f = clamp01(ms / WIDEFORCE_GATHER_MS);
+        const a = Math.sin(Math.PI * clamp01(t)) * 0.4;
+        glow(ctx, cx, cy + 10 * S, lerp(14, 60, easeOutCubic(f)) * S, a, LAV, PURPLE_HI, DEEP);
+      }
+    });
+    // 予兆の間、渦を巻いて集まる紫の細い筋（オーラファイトの「念を込める」筋を踏襲）
+    for (let i = 0; i < 14; i++) {
+      const a0 = (i / 14) * Math.PI * 2 + rand(-0.25, 0.25);
+      const r0 = rand(56, 104) * S;
+      particles.push({
+        delay: rand(0, WIDEFORCE_GATHER_MS * 0.7),
+        maxLife: rand(220, 320),
+        blend: 'lighter',
+        draw(ctx, t) {
+          if (t >= 1) return;
+          const a = clamp01(t * 4) * (1 - Math.max(0, (t - 0.8) / 0.2));
+          ctx.lineCap = 'round';
+          let prevX = null, prevY = null;
+          for (let k = 0; k <= 5; k++) {
+            const tk = Math.max(0, t - k * 0.04);
+            const rad = lerp(r0, BOX_R * 0.3, easeInCubic(tk));
+            const ang = a0 + tk * 2.6;
+            const x = cx + Math.cos(ang) * rad;
+            const y = cy + Math.sin(ang) * rad * 0.82;
+            if (prevX !== null) {
+              const seg = clamp01(1 - k / 5);
+              ctx.strokeStyle = rgba(PURPLE_HI, a * seg * 0.8);
+              ctx.lineWidth = Math.max(0.8, 1.6 * S * seg);
+              ctx.beginPath();
+              ctx.moveTo(prevX, prevY);
+              ctx.lineTo(x, y);
+              ctx.stroke();
+            }
+            prevX = x; prevY = y;
+          }
+        }
+      });
+    }
+
+    // ============ ②6枚の壁が外側から飛んできてケージを閉じる ============
+    // 各面：上・下・左・右・奥・手前の6方向から中心へ収束する。
+    // 2D的な表現として、奥・手前の面は中心の正方形として、上下左右の面は矩形が中心へ縮む形で表現する。
+    const FACES = [
+      { key: 'top',    fromOx: 0,        fromOy: -1,       axis: 'y', dir: -1 },
+      { key: 'bottom', fromOx: 0,        fromOy: 1,        axis: 'y', dir: 1 },
+      { key: 'left',   fromOx: -1,       fromOy: 0,        axis: 'x', dir: -1 },
+      { key: 'right',  fromOx: 1,        fromOy: 0,        axis: 'x', dir: 1 },
+    ];
+    const FLY_FROM_DIST = Math.max(w, h) * 0.7;
+    FACES.forEach((face, idx) => {
+      const startOx = face.fromOx * FLY_FROM_DIST;
+      const startOy = face.fromOy * FLY_FROM_DIST;
+      const delay = idx * 26; // ほぼ同時、わずかにずらして「四方から」を感じさせる
+      particles.push({
+        delay: WIDEFORCE_GATHER_MS - 40 + delay,
+        maxLife: WIDEFORCE_CLOSE_MS + WIDEFORCE_HOLD_MS + 40,
+        draw(ctx, t) {
+          const ms = t * (WIDEFORCE_CLOSE_MS + WIDEFORCE_HOLD_MS + 40);
+          const closeP = clamp01(ms / WIDEFORCE_CLOSE_MS);
+          const e = easeOutQuint(closeP);
+          const ox = lerp(startOx, face.fromOx * BOX_R, e);
+          const oy = lerp(startOy, face.fromOy * BOX_R, e);
+          const size = lerp(BOX_R * 0.55, BOX_R, e);
+          const alpha = clamp01(ms / 90);
+          const holdP = clamp01((ms - WIDEFORCE_CLOSE_MS) / WIDEFORCE_HOLD_MS);
+          const glowA = holdP > 0 ? (0.5 + 0.5 * Math.sin(holdP * Math.PI * 5)) * 0.7 : 0;
+          drawFacePlane(ctx, ox, oy, size, alpha, closeP, glowA, true);
+        }
+      });
+    });
+    // 奥・手前の面（疑似3D：斜めにオフセットした正方形で立方体らしさを出す）
+    [1, -1].forEach((dep, idx) => {
+      particles.push({
+        delay: WIDEFORCE_GATHER_MS - 40 + idx * 26,
+        maxLife: WIDEFORCE_CLOSE_MS + WIDEFORCE_HOLD_MS + 40,
+        draw(ctx, t) {
+          const ms = t * (WIDEFORCE_CLOSE_MS + WIDEFORCE_HOLD_MS + 40);
+          const closeP = clamp01(ms / WIDEFORCE_CLOSE_MS);
+          const e = easeOutQuint(closeP);
+          const ox = DEP_X * dep * e, oy = DEP_Y * dep * e;
+          const size = lerp(BOX_R * 0.7, BOX_R * 0.86, e);
+          const alpha = clamp01(ms / 90) * 0.75;
+          const holdP = clamp01((ms - WIDEFORCE_CLOSE_MS) / WIDEFORCE_HOLD_MS);
+          const glowA = holdP > 0 ? (0.5 + 0.5 * Math.sin(holdP * Math.PI * 5 + 1.2)) * 0.6 : 0;
+          drawFacePlane(ctx, ox, oy, size, alpha, closeP, glowA, false);
+        }
+      });
+    });
+
+    // ============ ③ケージ内部の発光（閉じきってから弾けるまで、脈打つように明滅）============
+    particles.push({
+      delay: WIDEFORCE_ARRIVE_MS,
+      maxLife: WIDEFORCE_HOLD_MS + 40,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const ms = t * (WIDEFORCE_HOLD_MS + 40);
+        const pulse = 0.5 + 0.5 * Math.sin(ms * 0.045);
+        const a = clamp01(1 - t) * (0.35 + 0.35 * pulse);
+        glow(ctx, cx, cy, BOX_R * (0.7 + 0.12 * pulse), a, WHITE, LAV, PURPLE);
+      }
+    });
+
+    // ============ ④着弾＝ケージが弾ける：破片が輪郭を保ったまま四散＋衝撃リング ============
+    // 弾け散る面の破片（各面の輪郭線の断片として飛び散る）
+    const SHARD_N = 16;
+    for (let i = 0; i < SHARD_N; i++) {
+      const ang = (i / SHARD_N) * Math.PI * 2 + rand(-0.2, 0.2);
+      const spd = rand(70, 150) * S;
+      const rot0 = rand(0, Math.PI * 2);
+      const spin = rand(-4, 4);
+      const size = rand(10, 20) * S;
+      particles.push({
+        delay: WIDEFORCE_HIT_MS,
+        maxLife: WIDEFORCE_BURST_MS + 420,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const dist = spd * e * (WIDEFORCE_BURST_MS + 420) * 0.0016;
+          const x = cx + Math.cos(ang) * dist;
+          const y = cy + Math.sin(ang) * dist * 0.85 - 8 * S * e;
+          const alpha = (1 - Math.pow(t, 1.6)) * 0.85;
+          if (alpha <= 0.01) return;
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(rot0 + spin * t);
+          ctx.strokeStyle = rgba(LAV, alpha);
+          ctx.lineWidth = Math.max(0.8, 1.6 * S);
+          ctx.shadowColor = rgba(PURPLE, 0.9);
+          ctx.shadowBlur = 6 * S;
+          ctx.beginPath();
+          ctx.moveTo(-size * 0.5, -size * 0.2);
+          ctx.lineTo(size * 0.5, -size * 0.15);
+          ctx.lineTo(size * 0.3, size * 0.4);
+          ctx.stroke();
+          ctx.restore();
+        }
+      });
+    }
+    // 白〜紫の閃光（弾ける瞬間の中心発光）
+    particles.push({
+      delay: WIDEFORCE_HIT_MS - 10,
+      maxLife: 260,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const a = (1 - t) * 0.9;
+        glow(ctx, cx, cy, lerp(BOX_R * 0.9, BOX_R * 1.9, easeOutCubic(t)), a, WHITE, LAV, PURPLE_HI);
+      }
+    });
+    // 衝撃のリング（外側へ広がって薄れる。剣盾の「弾ける」感を強調）
+    for (let i = 0; i < 2; i++) {
+      particles.push({
+        delay: WIDEFORCE_HIT_MS + i * 40,
+        maxLife: 360,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const r = lerp(BOX_R * 0.6, BOX_R * 2.4, e) * S / S; // BOX_Rは既にS倍済み
+          const a = (1 - t) * 0.55;
+          if (a <= 0.01) return;
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.scale(1, 0.82);
+          ctx.strokeStyle = rgba(i === 0 ? PURPLE_HI : LAV, a);
+          ctx.lineWidth = Math.max(1, (3 - i) * S);
+          ctx.shadowColor = rgba(PURPLE, 0.9);
+          ctx.shadowBlur = 10 * S;
+          ctx.beginPath();
+          ctx.arc(0, 0, r, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      });
+    }
+
+    // ============ ⑤余韻：紫の光の粒と靄が立ちのぼって薄れる ============
+    for (let i = 0; i < 9; i++) {
+      const sa = rand(0, Math.PI * 2);
+      const dd = rand(14, 56) * S;
+      const rise = rand(16, 44) * S;
+      particles.push({
+        delay: WIDEFORCE_HIT_MS + 160 + rand(0, 140),
+        maxLife: rand(340, 520),
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const x = cx + Math.cos(sa + t * 1.3) * dd * e;
+          const y = cy + Math.sin(sa + t * 1.3) * dd * e * 0.7 - rise * e;
+          glow(ctx, x, y, lerp(9, 20, t) * S, (1 - t) * 0.32, LAV, PURPLE_HI, DEEP);
+        }
+      });
+    }
+  }
+
+  // ============================================================
+  // アマゼツ（attack512・オリジナル）専用演出
+  // 「自分がアマゼツ（宝石）を宙に放ち、世界がピンク〜紫に染まって崩れ落ちていく。
+  //   崩壊し終えたら相手にダメージが返ってくる」という、全画面規模の大技演出。
+  // 構成：①自分の手元にピンク〜紫の宝石が結晶化し、まばゆく輝く
+  //       ②宝石が高く宙へ放り投げられ、山なりに上昇していく
+  //       ③宝石が最高点で弾けるように輝いた瞬間、画面全体にガラスが割れるような
+  //         亀裂（放射状＋同心円のクモの巣状）が走り、世界がピンク〜紫に染まる
+  //       ④亀裂に沿って画面が三角形のパネルに分かれ、1枚1枚が重力に引かれて
+  //         剥がれ落ち、裏側の深淵（濃い紫〜黒）が覗きながら世界が崩壊していく
+  //       ⑤崩壊が終わり切った瞬間、一面の白い光で満たされる（ホワイトアウト）
+  //       ⑥光が引くと同時に、相手の元へ衝撃が返り、紫の閃光とリングでダメージが入る
+  //       ⑦ピンク〜紫の光の粒と靄が立ちのぼって薄れ、元の世界へ戻る（余韻）
+  // 質感：宝石本体はパワージェムの多面体カットの描き方を踏襲しつつ単色（ピンク〜紫）に絞り、
+  //       崩壊パネルは輪郭線＋グラデーション塗りで「割れたガラスの向こうに別の色の世界が
+  //       覗く」ような透明感を出す。全篇 lighter合成 と shadowBlur の発光を多用し、白飛びは
+  //       ④の深淵部分と①③の宝石のみに留め、パネル自体は妖しく発光する程度に抑える。
+  // 画面シェイクは、亀裂が走る瞬間に小さく、崩壊のピーク（大量のパネルが落ちる瞬間）に中程度、
+  // 最後の着弾（ダメージ）の瞬間に最も強く入れる（SPECIAL_IMPACT_FXで設定）。
+  //
+  // info = { from:{x,y}, to:{x,y}, scale } は spawnAuraFistSpecial と同じ（playSpecialTypeEffect が実測）。
+  // 発射は自分側(from)、最終ダメージは相手側(to)を対象にする。
+  // ============================================================
+  const AMAZETSU_FORM_MS = 420;        // ①手元に宝石が結晶化する
+  const AMAZETSU_THROW_MS = 620;       // ②宝石が宙へ放り投げられ、上昇していく
+  const AMAZETSU_CRACK_MS = 340;       // ③頂点での閃光→世界に亀裂が走るまで
+  const AMAZETSU_SHATTER_MS = 260;     // ③.5 宝石本体が砕け散る瞬間（亀裂と同時進行〜直後）
+  const AMAZETSU_COLLAPSE_MS = 1220;   // ④パネルが剥がれ落ち、世界が崩壊していく（強化：時間延長）
+  const AMAZETSU_WHITEOUT_MS = 280;    // ⑤ホワイトアウト
+  const AMAZETSU_DAMAGE_MS = 340;      // ⑥相手への着弾（ダメージ）
+  const AMAZETSU_LAUNCH_MS = AMAZETSU_FORM_MS + AMAZETSU_THROW_MS;          // 宝石が頂点に達する時刻
+  const AMAZETSU_CRACK_START_MS = AMAZETSU_LAUNCH_MS;                       // 亀裂が走り始める時刻
+  const AMAZETSU_SHATTER_START_MS = AMAZETSU_CRACK_START_MS + AMAZETSU_CRACK_MS * 0.55; // 宝石が砕ける時刻
+  const AMAZETSU_COLLAPSE_START_MS = AMAZETSU_CRACK_START_MS + AMAZETSU_CRACK_MS;  // 崩壊が始まる時刻
+  const AMAZETSU_COLLAPSE_PEAK_MS = AMAZETSU_COLLAPSE_START_MS + AMAZETSU_COLLAPSE_MS * 0.62; // 崩壊が最も激しくなる瞬間（大量のパネル・巨大破片が落ちる山場）
+  const AMAZETSU_WHITEOUT_START_MS = AMAZETSU_COLLAPSE_START_MS + AMAZETSU_COLLAPSE_MS; // ホワイトアウト開始
+  const AMAZETSU_HIT_MS = AMAZETSU_WHITEOUT_START_MS + AMAZETSU_WHITEOUT_MS;      // ダメージ＝白から戻った瞬間
+  const AMAZETSU_END_MS = AMAZETSU_HIT_MS + AMAZETSU_DAMAGE_MS + 560;             // 余韻が消えるまで
+
+  function spawnAmazetsuSpecial(particles, w, h, info) {
+    const from = (info && info.from) || { x: w * 0.28, y: h * 0.68 };
+    const to = (info && info.to) || { x: w * 0.72, y: h * 0.32 };
+    const S = (info && info.scale) || 1;
+    const seed = rand(0, 100);
+    const R = Math.max(w, h);
+
+    // 配色：ピンク〜紫の宝石世界。
+    const DEEP = '#2a1045';      // 深淵の紫黒（崩壊の裏側・輪郭の根元）
+    const PURPLE = '#8a2ee0';    // 紫（主色）
+    const PINKP = '#ff5fc0';     // ピンク寄りの主色
+    const HI = '#ffd0f2';        // 明るいハイライト（宝石の芯・パネルの縁）
+    const LAV = '#e6d0ff';       // 淡いラベンダー
+    const WHITE = '#ffffff';
+
+    // 宝石が浮かぶ位置（手元より少し前・上）と、放り投げの頂点（画面中央上部）
+    const handPos = { x: from.x, y: from.y - 10 * S };
+    const apex = { x: w * 0.5, y: h * 0.22 };
+    // 放物線の制御点（手元→頂点を山なりに結ぶ）
+    function throwPos(f) {
+      const x = lerp(handPos.x, apex.x, f);
+      const y = lerp(handPos.y, apex.y, f);
+      return { x, y };
+    }
+
+    function glow(ctx, x, y, r, a, inner, mid, outer) {
+      if (a <= 0.01 || r <= 0.5) return;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, rgba(inner, a));
+      g.addColorStop(0.35, rgba(mid, a * 0.85));
+      g.addColorStop(0.75, rgba(outer, a * 0.4));
+      g.addColorStop(1, rgba(outer, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // ---- アマゼツ本体（六角ブリリアントカットの宝石。ピンク→紫のグラデ）----
+    function drawAmazetsuGem(ctx, x, y, size, rot, alpha) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rot);
+      const pts = [];
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+        pts.push([Math.cos(a) * size * 0.9, Math.sin(a) * size]);
+      }
+      ctx.globalCompositeOperation = 'lighter';
+      const halo = ctx.createRadialGradient(0, 0, 0, 0, 0, size * 2.3);
+      halo.addColorStop(0, rgba(PINKP, alpha * 0.5));
+      halo.addColorStop(1, rgba(PURPLE, 0));
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 2.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      for (let i = 0; i < 6; i++) {
+        const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % 6];
+        const lit = (i === 0 || i === 1 || i === 5);
+        ctx.fillStyle = rgba(lit ? HI : (i === 3 ? DEEP : (i % 2 === 0 ? PINKP : PURPLE)), alpha);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(ax, ay);
+        ctx.lineTo(bx, by);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.strokeStyle = rgba(HI, alpha * 0.9);
+      ctx.lineWidth = Math.max(1, size * 0.09);
+      ctx.beginPath();
+      pts.forEach(([px, py], i) => i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py));
+      ctx.closePath();
+      ctx.stroke();
+      ctx.globalCompositeOperation = 'lighter';
+      const core = ctx.createRadialGradient(-size * 0.2, -size * 0.3, 0, -size * 0.2, -size * 0.3, size * 0.55);
+      core.addColorStop(0, rgba('#ffffff', alpha));
+      core.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.arc(-size * 0.2, -size * 0.3, size * 0.55, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // ============ ①予兆：手元にアマゼツが結晶化する ============
+    particles.push({
+      maxLife: AMAZETSU_FORM_MS + 80,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const ms = t * (AMAZETSU_FORM_MS + 80);
+        const f = clamp01(ms / AMAZETSU_FORM_MS);
+        const a = Math.sin(Math.PI * clamp01(t)) * 0.5;
+        glow(ctx, handPos.x, handPos.y, lerp(10, 46, easeOutCubic(f)) * S, a, HI, PINKP, DEEP);
+      }
+    });
+    // 手元へ集まる、螺旋を描くピンク〜紫の光の筋
+    for (let i = 0; i < 16; i++) {
+      const a0 = (i / 16) * Math.PI * 2 + rand(-0.25, 0.25);
+      const r0 = rand(50, 96) * S;
+      particles.push({
+        delay: rand(0, AMAZETSU_FORM_MS * 0.7),
+        maxLife: rand(220, 320),
+        blend: 'lighter',
+        draw(ctx, t) {
+          if (t >= 1) return;
+          const a = clamp01(t * 4) * (1 - Math.max(0, (t - 0.8) / 0.2));
+          ctx.lineCap = 'round';
+          let px_ = null, py_ = null;
+          for (let k = 0; k <= 5; k++) {
+            const tk = Math.max(0, t - k * 0.04);
+            const rad = lerp(r0, 6 * S, easeInCubic(tk));
+            const ang = a0 + tk * 2.4;
+            const x = handPos.x + Math.cos(ang) * rad;
+            const y = handPos.y + Math.sin(ang) * rad * 0.82;
+            if (px_ !== null) {
+              const seg = clamp01(1 - k / 5);
+              ctx.strokeStyle = rgba(k % 2 === 0 ? PINKP : PURPLE, a * seg * 0.8);
+              ctx.lineWidth = Math.max(0.8, 1.6 * S * seg);
+              ctx.beginPath();
+              ctx.moveTo(px_, py_);
+              ctx.lineTo(x, y);
+              ctx.stroke();
+            }
+            px_ = x; py_ = y;
+          }
+        }
+      });
+    }
+    // 結晶化していく宝石本体（①後半で姿を現す）
+    particles.push({
+      delay: AMAZETSU_FORM_MS * 0.35,
+      maxLife: AMAZETSU_FORM_MS * 0.65 + 40,
+      draw(ctx, t) {
+        if (t >= 1) return; // 投げの開始と同時に確実に消し、手元に残らないようにする
+        const build = easeOutCubic(clamp01(t));
+        const size = lerp(6, 22, build) * S;
+        drawAmazetsuGem(ctx, handPos.x, handPos.y, size, t * 2.2, build);
+      }
+    });
+
+    // ============ ②宝石が宙へ放り投げられ、山なりに上昇していく ============
+    particles.push({
+      delay: AMAZETSU_FORM_MS,
+      maxLife: AMAZETSU_THROW_MS + 20,
+      draw(ctx, t) {
+        if (t >= 1) return; // 頂点到達と同時に確実に消す（宝石が手元にも頂点にも二重表示されないように）
+        const e = easeOutCubic(clamp01(t));
+        const pos = throwPos(e);
+        const size = lerp(22, 30, e) * S;
+        drawAmazetsuGem(ctx, pos.x, pos.y, size, AMAZETSU_FORM_MS * 0.02 + t * 5, 1);
+        // 尾を引く光の軌跡
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createLinearGradient(handPos.x, handPos.y, pos.x, pos.y);
+        g.addColorStop(0, rgba(PURPLE, 0));
+        g.addColorStop(1, rgba(PINKP, 0.35));
+        ctx.strokeStyle = g;
+        ctx.lineWidth = 8 * S * (1 - e * 0.4);
+        ctx.shadowColor = rgba(PINKP, 0.8);
+        ctx.shadowBlur = 12 * S;
+        ctx.beginPath();
+        ctx.moveTo(handPos.x, handPos.y);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+        ctx.restore();
+      }
+    });
+    // 上昇の間、後方に散る光の粒
+    for (let i = 0; i < 18; i++) {
+      const along = rand(0.1, 0.95);
+      const off = rand(-14, 14);
+      particles.push({
+        delay: AMAZETSU_FORM_MS + along * AMAZETSU_THROW_MS,
+        maxLife: rand(200, 320),
+        blend: 'lighter',
+        draw(ctx, t) {
+          if (t >= 1) return;
+          const pos = throwPos(along);
+          const a = (1 - t) * 0.6;
+          const x = pos.x + off * S + Math.sin(t * 6) * 4 * S;
+          const y = pos.y + t * 18 * S;
+          ctx.fillStyle = rgba(i % 2 === 0 ? PINKP : LAV, a);
+          ctx.shadowColor = rgba(PURPLE, 0.8);
+          ctx.shadowBlur = 6 * S;
+          ctx.beginPath();
+          ctx.arc(x, y, 2 * S, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+
+    // ============ ③頂点での閃光：世界に亀裂が走る ============
+    // 頂点での爆発的な発光（強化：二段階の閃光でより鋭く強烈に）
+    particles.push({
+      delay: AMAZETSU_LAUNCH_MS - 20,
+      maxLife: AMAZETSU_CRACK_MS + 80,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const e = easeOutCubic(t);
+        const a = (1 - t) * 0.9;
+        glow(ctx, apex.x, apex.y, lerp(30, R * 0.9, e), a, WHITE, HI, PINKP);
+      }
+    });
+    // 瞬間的な全画面ホワイトフラッシュ（爆発の起点を強調）
+    particles.push({
+      delay: AMAZETSU_LAUNCH_MS - 20,
+      maxLife: 160,
+      draw(ctx, t) {
+        const a = (1 - Math.pow(t, 0.6)) * 0.75;
+        ctx.fillStyle = rgba(WHITE, a);
+        ctx.fillRect(0, 0, w, h);
+      }
+    });
+    // 頂点から放射状に走る鋭い光条（バースト状のストリーク、亀裂に先駆けて視線を集める）
+    for (let i = 0; i < 20; i++) {
+      const ang = (i / 20) * Math.PI * 2 + rand(-0.06, 0.06);
+      const len = rand(0.55, 1.05) * R;
+      particles.push({
+        delay: AMAZETSU_LAUNCH_MS - 10 + rand(0, 30),
+        maxLife: rand(220, 320),
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(clamp01(t * 1.4));
+          const a = (1 - t) * 0.85;
+          if (a <= 0.01) return;
+          const ex = apex.x + Math.cos(ang) * len * e;
+          const ey = apex.y + Math.sin(ang) * len * e * 0.86;
+          const g = ctx.createLinearGradient(apex.x, apex.y, ex, ey);
+          g.addColorStop(0, rgba(WHITE, a));
+          g.addColorStop(0.4, rgba(HI, a * 0.7));
+          g.addColorStop(1, rgba(PINKP, 0));
+          ctx.strokeStyle = g;
+          ctx.lineWidth = Math.max(1, 2.2 * S * (1 - e * 0.5));
+          ctx.shadowColor = rgba(PINKP, 0.9);
+          ctx.shadowBlur = 10 * S;
+          ctx.beginPath();
+          ctx.moveTo(apex.x, apex.y);
+          ctx.lineTo(ex, ey);
+          ctx.stroke();
+        }
+      });
+    }
+
+    // ============ ③.5 アマゼツ本体が空中で砕け散る ============
+    // 頂点まで昇りきった宝石が、亀裂と共鳴するように内側から圧壊し、
+    // 鋭い破片となって四方へ弾け飛ぶ（＝崩壊の引き金そのものであることを示す）。
+    particles.push({
+      delay: AMAZETSU_SHATTER_START_MS - 60,
+      maxLife: 140,
+      blend: 'lighter',
+      draw(ctx, t) {
+        // 砕ける直前、宝石が一瞬強く収縮して輝きを増す（溜め）
+        const sq = 1 - easeOutCubic(t) * 0.35;
+        const size = 30 * S * sq;
+        const a = 1 - t * 0.2;
+        drawAmazetsuGem(ctx, apex.x, apex.y, size, t * 8, a);
+      }
+    });
+    particles.push({
+      delay: AMAZETSU_SHATTER_START_MS,
+      maxLife: 40,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const a = (1 - t) * 1.0;
+        glow(ctx, apex.x, apex.y, lerp(20, 220, easeOutCubic(t)) * S, a, WHITE, PINKP, PURPLE);
+      }
+    });
+    // 宝石の破片（大きめの多角形カケラが勢いよく飛び散り、飛びながら小さく明滅する）
+    const SHARD_N = 22;
+    for (let i = 0; i < SHARD_N; i++) {
+      const ang = (i / SHARD_N) * Math.PI * 2 + rand(-0.2, 0.2);
+      const spd = rand(90, 260) * S;
+      const size0 = rand(4, 11) * S;
+      const spin0 = rand(0, Math.PI * 2);
+      const spinSpeed = rand(-6, 6);
+      const tint = pick([PINKP, PURPLE, HI]);
+      particles.push({
+        delay: AMAZETSU_SHATTER_START_MS,
+        maxLife: rand(420, 620),
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const dist = spd * e;
+          const x = apex.x + Math.cos(ang) * dist;
+          const y = apex.y + Math.sin(ang) * dist * 0.82 + t * t * 30 * S;
+          const alpha = (1 - Math.pow(t, 1.5)) * 0.95;
+          if (alpha <= 0.01) return;
+          const size = size0 * (1 - t * 0.4);
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(spin0 + spinSpeed * t);
+          ctx.fillStyle = rgba(tint, alpha);
+          ctx.shadowColor = rgba(PINKP, 0.9);
+          ctx.shadowBlur = 8 * S;
+          ctx.beginPath();
+          ctx.moveTo(size, 0);
+          ctx.lineTo(-size * 0.4, -size * 0.55);
+          ctx.lineTo(-size * 0.55, 0);
+          ctx.lineTo(-size * 0.4, size * 0.55);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+      });
+    }
+    // 破片が飛び散った軌跡に残る短い光の尾（勢いを強調）
+    for (let i = 0; i < 14; i++) {
+      const ang = (i / 14) * Math.PI * 2 + rand(-0.25, 0.25);
+      const spd = rand(80, 200) * S;
+      particles.push({
+        delay: AMAZETSU_SHATTER_START_MS,
+        maxLife: rand(140, 220),
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const a = (1 - t) * 0.6;
+          if (a <= 0.01) return;
+          const dist = spd * e;
+          const ex = apex.x + Math.cos(ang) * dist;
+          const ey = apex.y + Math.sin(ang) * dist * 0.82;
+          const sx2 = apex.x + Math.cos(ang) * dist * 0.4;
+          const sy2 = apex.y + Math.sin(ang) * dist * 0.4 * 0.82;
+          const g = ctx.createLinearGradient(sx2, sy2, ex, ey);
+          g.addColorStop(0, rgba(PINKP, 0));
+          g.addColorStop(1, rgba(HI, a));
+          ctx.strokeStyle = g;
+          ctx.lineWidth = Math.max(1, 1.6 * S);
+          ctx.beginPath();
+          ctx.moveTo(sx2, sy2);
+          ctx.lineTo(ex, ey);
+          ctx.stroke();
+        }
+      });
+    }
+    // 世界全体を覆うピンク〜紫の染まり（③開始〜④の間ずっと持続するベース色）
+    particles.push({
+      delay: AMAZETSU_CRACK_START_MS,
+      maxLife: AMAZETSU_COLLAPSE_MS + AMAZETSU_CRACK_MS + 40,
+      draw(ctx, t) {
+        const ms = t * (AMAZETSU_COLLAPSE_MS + AMAZETSU_CRACK_MS + 40);
+        const fadeIn = clamp01(ms / 220);
+        const a = fadeIn * 0.5;
+        const g = ctx.createRadialGradient(apex.x, apex.y, 0, apex.x, apex.y, R * 0.95);
+        g.addColorStop(0, rgba(PINKP, a * 0.5));
+        g.addColorStop(0.5, rgba(PURPLE, a * 0.55));
+        g.addColorStop(1, rgba(DEEP, a * 0.8));
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+      }
+    });
+
+    // ---- クモの巣状の亀裂ネットワークを事前計算 ----
+    // 中心(apex)から放射状の主亀裂＋同心円状の横糸で「割れたガラス」の網目を作る。
+    const CRACK_RAYS = 11;
+    const CRACK_RINGS = 4;
+    const crackNodes = []; // [ring][ray] = {x,y}
+    for (let ri = 0; ri <= CRACK_RINGS; ri++) {
+      const rad = (ri / CRACK_RINGS) * R * 1.05;
+      const row = [];
+      for (let ai = 0; ai < CRACK_RAYS; ai++) {
+        const ang = (ai / CRACK_RAYS) * Math.PI * 2 + (ri % 2 === 0 ? 0 : Math.PI / CRACK_RAYS) + rand(-0.05, 0.05);
+        const jr = rad * rand(0.92, 1.08);
+        row.push({ x: apex.x + Math.cos(ang) * jr, y: apex.y + Math.sin(ang) * jr * 0.86 });
+      }
+      crackNodes.push(row);
+    }
+    // 放射状の線（各ray方向にring0→ring最大まで結ぶ）
+    for (let ai = 0; ai < CRACK_RAYS; ai++) {
+      const path = crackNodes.map(row => row[ai]);
+      particles.push({
+        delay: AMAZETSU_CRACK_START_MS + rand(0, 60),
+        maxLife: AMAZETSU_CRACK_MS + 60,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const grow = easeOutCubic(clamp01(t * 1.3));
+          const cut = Math.max(1, Math.floor(path.length * grow));
+          const a = clamp01(t * 3) * (t > 0.75 ? (1 - (t - 0.75) / 0.25) : 1);
+          ctx.strokeStyle = rgba(HI, a * 0.85);
+          ctx.lineWidth = Math.max(1, 1.6 * S);
+          ctx.shadowColor = rgba(PINKP, 0.9);
+          ctx.shadowBlur = 8 * S;
+          ctx.beginPath();
+          ctx.moveTo(path[0].x, path[0].y);
+          for (let k = 1; k < cut; k++) ctx.lineTo(path[k].x, path[k].y);
+          ctx.stroke();
+        }
+      });
+    }
+    // 同心円状の横糸（ring間を結ぶ）
+    for (let ri = 1; ri <= CRACK_RINGS; ri++) {
+      const row = crackNodes[ri];
+      particles.push({
+        delay: AMAZETSU_CRACK_START_MS + 40 + ri * 30,
+        maxLife: AMAZETSU_CRACK_MS + 40,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const grow = easeOutCubic(clamp01(t * 1.3));
+          const cut = Math.max(1, Math.floor((row.length + 1) * grow));
+          const a = clamp01(t * 3) * (t > 0.75 ? (1 - (t - 0.75) / 0.25) : 1) * 0.7;
+          ctx.strokeStyle = rgba(PURPLE, a * 0.8);
+          ctx.lineWidth = Math.max(0.8, 1.2 * S);
+          ctx.shadowColor = rgba(PURPLE, 0.8);
+          ctx.shadowBlur = 6 * S;
+          ctx.beginPath();
+          for (let k = 0; k < cut; k++) {
+            const p = row[k % row.length];
+            if (k === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+          }
+          ctx.stroke();
+        }
+      });
+    }
+
+    // ============ ④崩壊：亀裂ネットワークから三角パネルを切り出し、剥がれ落ちる ============
+    const panels = [];
+    for (let ri = 0; ri < CRACK_RINGS; ri++) {
+      for (let ai = 0; ai < CRACK_RAYS; ai++) {
+        const a0 = crackNodes[ri][ai];
+        const a1 = crackNodes[ri][(ai + 1) % CRACK_RAYS];
+        const b0 = crackNodes[ri + 1][ai];
+        const b1 = crackNodes[ri + 1][(ai + 1) % CRACK_RAYS];
+        // 四角形を2枚の三角パネルに分割
+        panels.push([a0, a1, b0]);
+        panels.push([a1, b1, b0]);
+      }
+    }
+    // 中心付近の小さな核パネル（apex周辺、リング0の内側）
+    panels.push(crackNodes[0].slice(0, CRACK_RAYS));
+
+    const collapseGrav = 1.55; // 強化：重力を強めに効かせ、落下の勢いと迫力を増す
+    panels.forEach((poly, idx) => {
+      // パネル重心
+      let sx = 0, sy = 0;
+      poly.forEach(p => { sx += p.x; sy += p.y; });
+      sx /= poly.length; sy /= poly.length;
+      const distFromApex = Math.hypot(sx - apex.x, sy - apex.y);
+      // 中心に近いパネルほど早く、外側ほど少し遅れて崩れる（内側から崩壊が広がる）
+      const order = clamp01(distFromApex / (R * 1.05));
+      const panelDelay = AMAZETSU_COLLAPSE_START_MS + order * (AMAZETSU_COLLAPSE_MS * 0.5) + rand(0, 90);
+      const fallAng = Math.atan2(sy - apex.y, sx - apex.x) + rand(-0.3, 0.3);
+      const spin0 = rand(0, Math.PI * 2);
+      const spinSpeed = rand(-5.5, 5.5); // 強化：回転を速く、破片が舞う迫力を追加
+      const tint = pick([PINKP, PURPLE, HI, LAV]);
+      // 一部のパネルは「巨大破片」として手前にせり出しながら落ちる（画面を横切る大迫力カット）
+      const isHuge = idx % 9 === 0;
+      const hugeScale = isHuge ? rand(1.6, 2.4) : 1;
+      const life = Math.max(340, AMAZETSU_WHITEOUT_START_MS - panelDelay + 160);
+      particles.push({
+        delay: panelDelay,
+        maxLife: life,
+        draw(ctx, t) {
+          const e = easeInCubic(t);
+          const dx = Math.cos(fallAng) * e * 60 * S + Math.sin(idx) * 6 * S;
+          const dy = Math.sin(fallAng) * e * 44 * S + e * e * 210 * S * collapseGrav;
+          const alpha = 1 - Math.pow(t, 1.35);
+          if (alpha <= 0.01) return;
+          const rot = spin0 + spinSpeed * t;
+          // 巨大破片は手前にせり出すように拡大しながら落下（カメラに迫るような迫力）
+          const scl = isHuge ? lerp(1, hugeScale, easeOutCubic(t)) : 1;
+          ctx.save();
+          // パネルは重心を軸に回転させながら落とす
+          ctx.translate(sx + dx, sy + dy);
+          ctx.rotate(rot * (isHuge ? 0.08 : 0.22));
+          ctx.scale(scl, scl);
+          ctx.translate(-sx, -sy);
+          // 面の塗り（割れたガラスの向こうに深淵が覗く質感：内側は暗く、縁だけ発光）
+          ctx.beginPath();
+          poly.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+          ctx.closePath();
+          ctx.fillStyle = rgba(DEEP, alpha * 0.6);
+          ctx.fill();
+          ctx.save();
+          ctx.clip();
+          const gg = ctx.createRadialGradient(sx, sy, 0, sx, sy, Math.max(30, R * 0.3));
+          gg.addColorStop(0, rgba(tint, alpha * (isHuge ? 0.34 : 0.22)));
+          gg.addColorStop(1, rgba(tint, 0));
+          ctx.fillStyle = gg;
+          ctx.fillRect(0, 0, w, h);
+          ctx.restore();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.strokeStyle = rgba(tint, alpha * 0.8);
+          ctx.lineWidth = Math.max(0.8, (isHuge ? 2.2 : 1.4) * S);
+          ctx.shadowColor = rgba(PINKP, 0.75);
+          ctx.shadowBlur = (isHuge ? 9 : 5) * S;
+          ctx.stroke();
+          ctx.restore();
+        }
+      });
+    });
+    // 崩壊中、裏側から漏れ出す深淵の光（背景全体がだんだん暗い紫黒に沈んでいく）
+    particles.push({
+      delay: AMAZETSU_COLLAPSE_START_MS,
+      maxLife: AMAZETSU_COLLAPSE_MS + 60,
+      draw(ctx, t) {
+        const a = easeInOutSine(clamp01(t)) * 0.6;
+        ctx.fillStyle = rgba(DEEP, a);
+        ctx.fillRect(0, 0, w, h);
+      }
+    });
+    // ---- 崩壊に追従する稲妻状の副次亀裂（枝分かれしながら画面全体へ広がる）----
+    // 主亀裂ネットワークに加え、崩壊の進行と同時にギザギザした電撃状の裂け目が
+    // 追加で数本走ることで、世界が「壊れ続けている」勢いを強める。
+    const LIGHTNING_N = 6;
+    for (let i = 0; i < LIGHTNING_N; i++) {
+      const baseAng = (i / LIGHTNING_N) * Math.PI * 2 + rand(-0.3, 0.3);
+      const segN = 7;
+      const pts = [{ x: apex.x, y: apex.y }];
+      let curAng = baseAng;
+      for (let s = 1; s <= segN; s++) {
+        curAng += rand(-0.5, 0.5);
+        const rad = (s / segN) * R * rand(0.9, 1.15);
+        const prev = pts[s - 1];
+        pts.push({
+          x: apex.x + Math.cos(curAng) * rad,
+          y: apex.y + Math.sin(curAng) * rad * 0.86
+        });
+      }
+      particles.push({
+        delay: AMAZETSU_COLLAPSE_START_MS + rand(0, AMAZETSU_COLLAPSE_MS * 0.4),
+        maxLife: rand(260, 380),
+        blend: 'lighter',
+        draw(ctx, t) {
+          const grow = easeOutCubic(clamp01(t * 1.6));
+          const cut = Math.max(1, Math.floor(pts.length * grow));
+          const a = clamp01(t * 4) * (t > 0.55 ? (1 - (t - 0.55) / 0.45) : 1);
+          if (a <= 0.01) return;
+          ctx.strokeStyle = rgba(HI, a * 0.9);
+          ctx.lineWidth = Math.max(1, 2 * S);
+          ctx.shadowColor = rgba(PINKP, 1);
+          ctx.shadowBlur = 12 * S;
+          ctx.beginPath();
+          ctx.moveTo(pts[0].x, pts[0].y);
+          for (let k = 1; k < cut; k++) ctx.lineTo(pts[k].x, pts[k].y);
+          ctx.stroke();
+        }
+      });
+    }
+    // ---- 崩壊のピークで連続して広がる紫〜ピンクの衝撃波リング（大迫力の山場）----
+    for (let i = 0; i < 4; i++) {
+      particles.push({
+        delay: AMAZETSU_COLLAPSE_PEAK_MS + i * 90,
+        maxLife: 460,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const r = lerp(20 * S, R * 1.1, e);
+          const a = (1 - t) * 0.55;
+          if (a <= 0.01) return;
+          ctx.save();
+          ctx.translate(apex.x, apex.y);
+          ctx.scale(1, 0.86);
+          ctx.strokeStyle = rgba(i % 2 === 0 ? PINKP : PURPLE, a);
+          ctx.lineWidth = Math.max(1, (4 - i * 0.6) * S);
+          ctx.shadowColor = rgba(PINKP, 0.9);
+          ctx.shadowBlur = 14 * S;
+          ctx.beginPath();
+          ctx.arc(0, 0, r, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      });
+    }
+    // 崩壊ピークの瞬間、画面全体が一段強く紫に脈打つ（呼吸するような明滅）
+    particles.push({
+      delay: AMAZETSU_COLLAPSE_PEAK_MS - 40,
+      maxLife: 260,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const a = Math.sin(Math.PI * clamp01(t)) * 0.4;
+        ctx.fillStyle = rgba(PURPLE, a);
+        ctx.fillRect(0, 0, w, h);
+      }
+    });
+    // 崩壊中に舞い散る細かい光の粒（パネルの隙間から漏れる光。強化：数を増やし勢いよく吹き上がる）
+    for (let i = 0; i < 60; i++) {
+      const x0 = rand(0, w), y0 = rand(0, h);
+      const dOrder = clamp01(Math.hypot(x0 - apex.x, y0 - apex.y) / (R * 1.05));
+      const upward = i % 2 === 0;
+      particles.push({
+        delay: AMAZETSU_COLLAPSE_START_MS + dOrder * AMAZETSU_COLLAPSE_MS * 0.5 + rand(0, 240),
+        maxLife: rand(320, 560),
+        blend: 'lighter',
+        draw(ctx, t) {
+          if (t >= 1) return;
+          const a = clamp01(t * 4) * (1 - Math.max(0, (t - 0.6) / 0.4));
+          const y = upward ? y0 - t * 50 * S : y0 + t * 80 * S;
+          const x = x0 + Math.sin(t * 5 + i) * 6 * S;
+          ctx.fillStyle = rgba(i % 3 === 0 ? HI : (i % 3 === 1 ? PINKP : PURPLE), a * 0.85);
+          ctx.shadowColor = rgba(PINKP, 0.85);
+          ctx.shadowBlur = 6 * S;
+          ctx.beginPath();
+          ctx.arc(x, y, 1.8 * S, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+    // 崩壊の終盤、深淵の奥から溢れ出す最後の大きな輝き（⑤ホワイトアウトへの橋渡し）
+    particles.push({
+      delay: AMAZETSU_COLLAPSE_START_MS + AMAZETSU_COLLAPSE_MS * 0.78,
+      maxLife: AMAZETSU_COLLAPSE_MS * 0.22 + 120,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const e = easeInCubic(clamp01(t));
+        const a = e * 0.8;
+        glow(ctx, apex.x, apex.y, lerp(40, R * 1.3, e), a, WHITE, HI, PINKP);
+      }
+    });
+
+    // ============ ⑤ホワイトアウト：世界が崩れ終わり、一面が白い光に包まれる ============
+    particles.push({
+      delay: AMAZETSU_WHITEOUT_START_MS,
+      maxLife: AMAZETSU_WHITEOUT_MS + 40,
+      draw(ctx, t) {
+        const a = Math.sin(Math.PI * clamp01(t)) ;
+        ctx.fillStyle = rgba(WHITE, Math.min(1, a * 1.1));
+        ctx.fillRect(0, 0, w, h);
+      }
+    });
+
+    // ============ ⑥ダメージ：光が引き、相手へ衝撃が返る ============
+    const dcx = to.x, dcy = to.y;
+    particles.push({
+      delay: AMAZETSU_HIT_MS - 20,
+      maxLife: AMAZETSU_DAMAGE_MS + 160,
+      blend: 'lighter',
+      draw(ctx, t) {
+        const a = (1 - t) * 0.95;
+        glow(ctx, dcx, dcy, lerp(30, 140, easeOutCubic(t)) * S, a, WHITE, HI, PINKP);
+      }
+    });
+    // 衝撃リング（2重）
+    for (let i = 0; i < 2; i++) {
+      particles.push({
+        delay: AMAZETSU_HIT_MS + i * 40,
+        maxLife: 380,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const r = lerp(20 * S, 150 * S, e);
+          const a = (1 - t) * 0.6;
+          if (a <= 0.01) return;
+          ctx.save();
+          ctx.translate(dcx, dcy);
+          ctx.scale(1, 0.82);
+          ctx.strokeStyle = rgba(i === 0 ? PINKP : PURPLE, a);
+          ctx.lineWidth = Math.max(1, (3.4 - i) * S);
+          ctx.shadowColor = rgba(PINKP, 0.9);
+          ctx.shadowBlur = 12 * S;
+          ctx.beginPath();
+          ctx.arc(0, 0, r, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      });
+    }
+    // 着弾で飛び散る宝石片
+    for (let i = 0; i < 14; i++) {
+      const ang = (i / 14) * Math.PI * 2 + rand(-0.2, 0.2);
+      const spd = rand(60, 140) * S;
+      particles.push({
+        delay: AMAZETSU_HIT_MS,
+        maxLife: AMAZETSU_DAMAGE_MS + 300,
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const dist = spd * e;
+          const x = dcx + Math.cos(ang) * dist;
+          const y = dcy + Math.sin(ang) * dist * 0.85 - 6 * S * e;
+          const alpha = (1 - Math.pow(t, 1.6)) * 0.85;
+          if (alpha <= 0.01) return;
+          ctx.fillStyle = rgba(i % 2 === 0 ? PINKP : HI, alpha);
+          ctx.shadowColor = rgba(PURPLE, 0.9);
+          ctx.shadowBlur = 6 * S;
+          ctx.beginPath();
+          ctx.arc(x, y, 2.4 * S, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+
+    // ============ ⑦余韻：ピンク〜紫の光の粒と靄が立ちのぼって薄れ、世界が元に戻る ============
+    particles.push({
+      delay: AMAZETSU_HIT_MS + 60,
+      maxLife: AMAZETSU_END_MS - AMAZETSU_HIT_MS - 60,
+      draw(ctx, t) {
+        const a = (1 - easeInOutSine(clamp01(t))) * 0.3;
+        ctx.fillStyle = rgba(PURPLE, a);
+        ctx.fillRect(0, 0, w, h);
+      }
+    });
+    for (let i = 0; i < 10; i++) {
+      const sa = rand(0, Math.PI * 2);
+      const dd = rand(16, 60) * S;
+      const rise = rand(20, 50) * S;
+      particles.push({
+        delay: AMAZETSU_HIT_MS + 180 + rand(0, 160),
+        maxLife: rand(360, 540),
+        blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const x = dcx + Math.cos(sa + t * 1.3) * dd * e;
+          const y = dcy + Math.sin(sa + t * 1.3) * dd * e * 0.7 - rise * e;
+          glow(ctx, x, y, lerp(9, 20, t) * S, (1 - t) * 0.32, HI, PINKP, DEEP);
         }
       });
     }
@@ -20342,6 +21944,7 @@ function spawnBehemothBeamSpecial(particles, w, h, info) {
 273: spawnSludgeBombSpecial,     // ヘドロばくだん
 277: spawnSludgeBombSpecial,     // バッドポイズン（ヘドロばくだんと共通演出）
 53: spawnMeteorShowerSpecial,   // りゅうせいぐん
+513: spawnHakuMeteorSpecial,   // ハクアメテオ（オリジナル・りゅうせいぐんの青白版）
     73: spawnThunderSpecial,        // かみなり
     79: spawnThunderSpecial,        // ルクスノヴァ（かみなりと共通演出）
     93: spawnMoonblastSpecial, 
@@ -20407,14 +22010,17 @@ function spawnBehemothBeamSpecial(particles, w, h, info) {
   218: spawnGaiaCubeSpecial,      // ガイアキューブ（オリジナル・古代キューブを撃ち込み、大地の力を解放する、威力200）
   139: spawnRapidFlareSpecial,    // ラピッドフレア（オリジナル・疾走する炎弾を撃ち込み、自分に素早さの疾風オーラを纏う）
   198: spawnThornBindSpecial,     // いばらがため（オリジナル・足元から茨が絡みつき、力を吸い取る／HP75%ドレイン）
+  511: spawnWideForceSpecial,     // ワイドフォース（オリジナル・相手を紫の立方体のケージで包み込み、内側で発光して弾ける）
+  512: spawnAmazetsuSpecial,      // アマゼツ（オリジナル・宝石を宙に放ち世界がピンク〜紫に崩壊、崩壊後に相手へダメージ）
   };
   // 攻撃側スプライト→防御側スプライトの座標が必要な（飛翔型の）専用演出の技ID。
-  const FLIGHT_MOVE_IDS = [312,123,63,66, 153,156,157,353,354,355,253,254,273,277,315,78,132,133,215,216,233,332,317, 318, 72, 75, 76, 13, 18, 32, 33, 37, 173, 112, 113, 117, 292, 300, 103, 172, 175, 61, 222, 124, 7, 24, 25, 28, 284, 348, 227, 218, 139, 198, 43, 333, 334, 335, 338];
+  const FLIGHT_MOVE_IDS = [312,123,63,66, 153,156,157,353,354,355,253,254,273,277,315,78,132,133,215,216,233,332,317, 318, 72, 75, 76, 13, 18, 32, 33, 37, 173, 112, 113, 117, 292, 300, 103, 172, 175, 61, 222, 124, 7, 24, 25, 28, 284, 348, 227, 218, 139, 198, 43, 333, 334, 335, 338, 511, 512];
   const SPECIAL_DURATION_MS = {
     480: 1900,
     483: 1900,
     484: 1900,
     53: 3000,
+    513: 3400,   // ハクアメテオ（りゅうせいぐんの青白版・オーロラの余韻込みで尺を延長）
     73: 1700,
     79: 1700,
     93: 2200,
@@ -20484,6 +22090,8 @@ function spawnBehemothBeamSpecial(particles, w, h, info) {
   139: RAPIDFLARE_END_MS,       // ラピッドフレア：疾風オーラの余韻が消えるまで
   198: THORN_END_MS + 120,      // いばらがため：茨が枯れて崩れ、塵が消えるまで
   117: AURAFIST_END_MS + 200,            // オーラファイト：赤い火の粉と靄が消えるまで
+  511: WIDEFORCE_END_MS,                 // ワイドフォース：紫の破片と靄が消えるまで
+  512: AMAZETSU_END_MS,                  // アマゼツ：崩壊後のダメージと余韻の光が消えるまで
   };
   // 技ごとの画面シェイク・フラッシュ演出設定（インパクトの瞬間＝delayに合わせて発火）
   const SPECIAL_IMPACT_FX = {
@@ -20554,8 +22162,24 @@ function spawnBehemothBeamSpecial(particles, w, h, info) {
         { ampPx: 26, durationMs: 800, freq: 30, delay: 2060 },  // 主星の着弾
       ],
     },
+    513: { // ハクアメテオ：りゅうせいぐんと同じ着弾タイミング(2060ms)を氷青の配色で。
+           // 着弾直後に「氷結のひび割れ」に合わせた鋭い白のフラッシュを追加し、
+           // 終盤はオーロラの立ち上がりに合わせて淡い氷青の余韻フラッシュで締める。
+      flashes: [
+        { color: '#bfe9ff', peakAlpha: 0.3, durationMs: 260, delay: 1800 },  // 主星の接近（空が凍てついた青白に発光する）
+        { color: '#ffffff', peakAlpha: 0.9,  durationMs: 200, delay: 2060 }, // 着弾の白飛び
+        { color: '#eafbff', peakAlpha: 0.5, durationMs: 260, delay: 2080 }, // 氷結のひび割れが走る瞬間の鋭い白
+        { color: '#1ab0ff', peakAlpha: 0.35, durationMs: 560, delay: 2090 }, // 大爆発の冷気（氷青の余熱）
+        { color: '#7ad4ff', peakAlpha: 0.18, durationMs: 900, delay: 2320 }, // オーロラが立ち上る静かな余韻
+      ],
+      shakes: [
+        { ampPx: 4, durationMs: 1500, freq: 34, delay: 400 },   // 隕石が降り注ぐ間の連続した細かい振動
+        { ampPx: 28, durationMs: 820, freq: 32, delay: 2060 },  // 主星の着弾＋氷結のひび割れ（りゅうせいぐんよりわずかに鋭く）
+      ],
+    },
     73: { // かみなり：落雷の瞬間に真っ白な閃光を複数回明滅＋鋭く短いシェイク（雷特有のビリビリ感）
       flashes: [
+
         { color: '#ffffff', peakAlpha: 0.95, durationMs: 140, delay: 170 },
         { color: '#ffffff', peakAlpha: 0.5, durationMs: 140, delay: 225 },
         { color: '#c9b8ff', peakAlpha: 0.4, durationMs: 320, delay: 280 },
@@ -20616,6 +22240,48 @@ function spawnBehemothBeamSpecial(particles, w, h, info) {
       { color: '#ff2a3a', peakAlpha: 0.22, durationMs: 440, delay: AURAFIST_HIT_MS + 30 },        // 赤の余韻
     ],
     shakes: [],   // シェイクなし
+  };
+  // ワイドフォース：ケージそのものが「薄く透ける紫のオーラ」なので、画面フラッシュは
+  // ケージが閉じきった瞬間・弾ける瞬間に、紫〜白を淡く重ねるだけにしている。
+  // 命中の白い閃光は canvas 内（中心のグロー）が担当し、画面全体は白飛びさせない。
+  // 弾ける瞬間だけ、ケージが破裂する衝撃を示すごく軽いシェイクを加える。
+  // 時刻は spawnWideForceSpecial の定数（WIDEFORCE_*）と連動させている。
+  SPECIAL_IMPACT_FX[511] = {
+    flashes: [
+      { color: '#8a2ee0', peakAlpha: 0.12, durationMs: 220, delay: WIDEFORCE_GATHER_MS },        // 予兆：紫の気配
+      { color: '#b76bff', peakAlpha: 0.18, durationMs: 200, delay: WIDEFORCE_ARRIVE_MS },        // ケージが閉じきった瞬間
+      { color: '#ffffff', peakAlpha: 0.3, durationMs: 220, delay: WIDEFORCE_HIT_MS },             // ケージが弾けた瞬間
+      { color: '#8a2ee0', peakAlpha: 0.2, durationMs: 440, delay: WIDEFORCE_HIT_MS + 30 },        // 紫の余韻
+    ],
+    shakes: [
+      { ampPx: 6, durationMs: 240, freq: 28, delay: WIDEFORCE_HIT_MS },   // ケージが弾ける衝撃（ごく軽め）
+    ],
+  };
+  // アマゼツ：全画面規模の大技のため、他の技よりフラッシュ・シェイクの起伏を大きく取る。
+  // ①宝石の予兆はごく淡く、②頂点での閃光で強い白〜ピンクのフラッシュ、
+  // ③亀裂が走る瞬間に画面全体が小さく震え、④崩壊のピーク（大量のパネルが剥がれ落ちる瞬間）で
+  // 中程度の連続的な揺れ、⑤ホワイトアウトで画面が真っ白に染まり、
+  // ⑥光が引いて相手にダメージが返る瞬間が本技最大のフラッシュ・シェイク（威力の高い一撃技のクライマックス）。
+  // 時刻は spawnAmazetsuSpecial の定数（AMAZETSU_*）と連動させている。
+  SPECIAL_IMPACT_FX[512] = {
+    flashes: [
+      { color: '#ff5fc0', peakAlpha: 0.12, durationMs: 240, delay: 40 },                              // 予兆：宝石が結晶化し始める
+      { color: '#ffffff', peakAlpha: 0.95, durationMs: 180, delay: AMAZETSU_LAUNCH_MS - 20 },        // 頂点での閃光（強化：瞬間白フラッシュ）
+      { color: '#c86bff', peakAlpha: 0.4, durationMs: 260, delay: AMAZETSU_CRACK_START_MS + 40 },    // 亀裂が走り、世界が紫に染まる
+      { color: '#ffffff', peakAlpha: 0.9, durationMs: 160, delay: AMAZETSU_SHATTER_START_MS },       // 宝石本体が砕け散る瞬間
+      { color: '#8a2ee0', peakAlpha: 0.35, durationMs: 300, delay: AMAZETSU_COLLAPSE_PEAK_MS - 40 }, // 崩壊のピーク（強化：脈打つ紫）
+      { color: '#ffffff', peakAlpha: 0.95, durationMs: AMAZETSU_WHITEOUT_MS + 40, delay: AMAZETSU_WHITEOUT_START_MS }, // ホワイトアウト
+      { color: '#ffffff', peakAlpha: 0.9, durationMs: 200, delay: AMAZETSU_HIT_MS },                  // 白から戻り、相手への着弾
+      { color: '#ff5fc0', peakAlpha: 0.4, durationMs: 480, delay: AMAZETSU_HIT_MS + 30 },             // ピンクの余韻
+      { color: '#8a2ee0', peakAlpha: 0.24, durationMs: 620, delay: AMAZETSU_HIT_MS + 60 },            // 紫の余韻（長め）
+    ],
+    shakes: [
+      { ampPx: 5, durationMs: 200, freq: 24, delay: AMAZETSU_CRACK_START_MS },              // 亀裂が走る瞬間の小さな震え
+      { ampPx: 9, durationMs: 200, freq: 34, delay: AMAZETSU_SHATTER_START_MS },            // 宝石が砕け散る瞬間の鋭い震え
+      { ampPx: 13, durationMs: AMAZETSU_COLLAPSE_MS * 0.75, freq: 20, delay: AMAZETSU_COLLAPSE_START_MS + 80 }, // 崩壊が進む間の持続的な揺れ（強化）
+      { ampPx: 20, durationMs: 260, freq: 30, delay: AMAZETSU_COLLAPSE_PEAK_MS },           // 崩壊のピークで一段強い揺れ
+      { ampPx: 26, durationMs: 460, freq: 30, delay: AMAZETSU_HIT_MS },                     // 最終ダメージ（本技最大の衝撃）
+    ],
   };
   // スリートスピア：構えて放つ直前に淡い水色の瞬き、氷の槍が突き刺さった瞬間に
   // 白〜水色のフラッシュと軽いシェイク（威力120の刺突技らしい重さを出す）。

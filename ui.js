@@ -2123,7 +2123,7 @@ function playTypeEffect(side, moveType, big) {
 // 専用のフルスクリーン演出。スプライト枠に縛られず戦闘画面全体（battle-field）を使う。
 // パワージェム(312)・ジェムレーザー(315)・グラベルブレス(317)・ステルスロック(318)は全画面ではなく「自分→相手」へ飛翔する演出のため、被弾側(defSide)を渡して
 // 攻撃側スプライト→防御側スプライトの座標をTypeFX側で実測する。
-const SPECIAL_MOVE_FX_IDS = [511,512,198,43,333,334,335,338,139,292,300,113,103,218,227,7,24,25,28,284,348,203,222,61,124,32,33,37,173,112,75,76,72,138,123,63,66,153,156,157,353,355,354,253,254,273,277,374,93,480, 483, 132,78,215,216,13,18,233,332,484, 53, 73, 79, 133,117,172,235, 236, 237, 312, 315, 317, 318];
+const SPECIAL_MOVE_FX_IDS = [513,511,512,198,43,333,334,335,338,139,292,300,113,103,218,227,7,24,25,28,284,348,203,222,61,124,32,33,37,173,112,75,76,72,138,123,63,66,153,156,157,353,355,354,253,254,273,277,374,93,480, 483, 132,78,215,216,13,18,233,332,484, 53, 73, 79, 133,117,172,235, 236, 237, 312, 315, 317, 318];
 function playSpecialMoveEffect(moveId, defSide) {
   const wrap = $('special-fx-layer');
   if (!wrap || !window.TypeFX || !window.TypeFX.playSpecial) return Promise.resolve();
@@ -2321,6 +2321,11 @@ function displayMoveType(poke, m) {
   // 技メニューのアイコン・タイプ枠もほのお表示にする。
   if (m.id === 503 && typeof resolveEffectiveMoveType === 'function' && typeof battleField !== 'undefined') {
     return resolveEffectiveMoveType(m, battleField, poke);
+  }
+  // しんきろう：技4つ目（index 3）は、技1つ目（index 0）と同じタイプで表示する。
+  if (typeof ABILITY !== 'undefined' && poke.ability === ABILITY.SHINKIROU &&
+      Array.isArray(poke.moves) && poke.moves[3] === m && poke.moves[0] && poke.moves[0].type) {
+    return poke.moves[0].type;
   }
   return (skinType && m.type === 'normal') ? skinType : m.type;
 }
@@ -2812,6 +2817,8 @@ const ABILITY_DESC_BY_ID = {
 153: 'はがねタイプの技の威力が1.2倍になる',
 154: 'みずタイプの技の威力が1.2倍になる',
 155: '登場時、相手の攻撃と特攻を入れ替える',
+156: '技4つ目のタイプが技1つ目と同じになる（威力1.2倍）',
+157: '天候の効果を無効にする',
 80: 'ノーマルの技がこおりになる（威力1.2倍）',
 81: 'ノーマルの技がでんきになる（威力1.2倍）',
 82: 'ノーマルの技がドラゴンになる（威力1.2倍）',

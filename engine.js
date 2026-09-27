@@ -2058,7 +2058,7 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "ghost",
     "ability": 125,
     "baseStats": {
-      "hp": 100,
+      "hp": 80,
       "atk": 75,
       "def": 155,
       "spa": 75,
@@ -2074,7 +2074,7 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 210,
       "atk": 30,
       "def": 50,
-      "spa": 190,
+      "spa": 180,
       "spd": 50,
       "spe": 110
     }
@@ -2121,14 +2121,14 @@ const MEGA_EVOLUTION_DATA = {
   "557": {
     "type1": "ground",
     "type2": "rock",
-    "ability": 31,
+    "ability": 90,
     "baseStats": {
       "hp": 125,
-      "atk": 155,
-      "def": 125,
-      "spa": 45,
-      "spd": 55,
-      "spe": 45
+      "atk": 165,
+      "def": 135,
+      "spa": 15,
+      "spd": 85,
+      "spe": 55
     }
   },
   "577": {
@@ -2160,7 +2160,7 @@ const MEGA_EVOLUTION_DATA = {
   "1003": {
     "type1": "bug",
     "type2": "rock",
-    "ability": 32,
+    "ability": 66,
     "baseStats": {
       "hp": 60,
       "atk": 140,
@@ -2176,11 +2176,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 53,
     "baseStats": {
       "hp": 75,
-      "atk": 51,
+      "atk": 70,
       "def": 80,
-      "spa": 140,
+      "spa": 150,
       "spd": 130,
-      "spe": 109
+      "spe": 105
     }
   },
   "1005": {
@@ -2191,9 +2191,9 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 65,
       "atk": 150,
       "def": 110,
-      "spa": 50,
-      "spd": 100,
-      "spe": 75
+      "spa": 30,
+      "spd": 110,
+      "spe": 85
     }
   },
   "1006": {
@@ -2201,7 +2201,7 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "flying",
     "ability": 139,
     "baseStats": {
-      "hp": 128,
+      "hp": 108,
       "atk": 48,
       "def": 62,
       "spa": 118,
@@ -2215,7 +2215,7 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 150,
     "baseStats": {
       "hp": 110,
-      "atk": 135,
+      "atk": 145,
       "def": 100,
       "spa": 30,
       "spd": 98,
@@ -2292,12 +2292,12 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "ground",
     "ability": 69,
     "baseStats": {
-      "hp": 100,
-      "atk": 150,
-      "def": 104,
+      "hp": 99,
+      "atk": 171,
+      "def": 100,
       "spa": 40,
-      "spd": 115,
-      "spe": 65
+      "spd": 110,
+      "spe": 55
     }
   },
   "1021": {
@@ -2305,9 +2305,9 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "fighting",
     "ability": 89,
     "baseStats": {
-      "hp": 100,
+      "hp": 97,
       "atk": 147,
-      "def": 122,
+      "def": 112,
       "spa": 52,
       "spd": 107,
       "spe": 33
@@ -3053,6 +3053,8 @@ const ABILITY = {
   HAGANE_TSUKAI: 153, // はがねつかい（オリジナル）：鋼技の威力1.2倍
   UMI_NO_RUNE: 154,   // うみのルーン（オリジナル）：水技の威力1.2倍
   ORIGAMI_TSUKI: 155, // おりがみつき（オリジナル）：自分が場に出るたび、相手の攻撃と特攻の実数値を入れ替える
+  SHINKIROU: 156,     // しんきろう（オリジナル）：技4つ目のタイプが技1つ目と同じタイプになり、威力1.2倍
+  NOTENKI: 157,       // ノーてんき：場にいる間、天候の効果を無効化する（天候自体は変わる）
 };
 
 const KIKENYOCHI_ABILITIES = [ABILITY.KIKIKAIHI, ABILITY.KIKENYOCHI_2];
@@ -3095,10 +3097,12 @@ function hasMajorStatus(poke) {
 }
 
 // 実効素早さ
-function effectiveSpeed(poke) {
+// ノーてんき：opp（もう一方の場のポケモン）が渡された場合、そちらか自分がノーてんき持ちなら
+// すいすい等の天候依存の素早さ倍化は無効になる。
+function effectiveSpeed(poke, opp) {
   let spe = poke.stats.spe * rankMultiplier(poke.ranks.spe);
   const weatherKey = WEATHER_SPEED_BOOST_ABILITY[poke.ability];
-  if (weatherKey && battleField.weather === weatherKey) spe *= 2;
+  if (weatherKey && battleField.weather === weatherKey && !isNotenkiActive(poke, opp)) spe *= 2;
   if (poke.ability === ABILITY.HAYAASHI && hasMajorStatus(poke)) spe *= 1.5;
   const tailwindTurns = poke.side === 'player' ? battleField.tailwindPlayer : battleField.tailwindCpu;
   if (tailwindTurns > 0) spe *= 2;
@@ -3474,7 +3478,23 @@ function isMegaSolarActive(poke) {
   if (!poke || poke.ability !== ABILITY.MEGA_SOLAR) return false;
   return !battleField.chemicalGasActive || poke.ability === ABILITY.KAGAKUHENKAGASU;
 }
-function getAttackWeather(attacker) {
+
+// ---- ノーてんき ----
+// 場にノーてんき持ちがいる間、天候そのもの（battleField.weather）は変化・進行するが、
+// 天候による「効果」（ダメージ補正・タイプ相性補正・回復・ダメージ・命中率補正・優先度補正・
+// AIスコア補正など）はすべて無効になる。特性なのでかがくへんかガスで無効化されている場合は
+// 通常どおり天候の効果が働く。
+// 引数には現在場に出ている両サイドのポケモン（わかる範囲）を渡す。片方しかわからない
+// 呼び出し元は片方だけ渡せばよい（その個体がノーてんきかどうかだけ判定される）。
+function isNotenkiOn(poke) {
+  return !!poke && !poke.fainted && poke.ability === ABILITY.NOTENKI &&
+    (!battleField.chemicalGasActive || poke.ability === ABILITY.KAGAKUHENKAGASU);
+}
+function isNotenkiActive(a, b) {
+  return isNotenkiOn(a) || isNotenkiOn(b);
+}
+function getAttackWeather(attacker, defender) {
+  if (isNotenkiActive(attacker, defender)) return 'none';
   return isMegaSolarActive(attacker) ? 'sun' : battleField.weather;
 }
 
@@ -3484,7 +3504,8 @@ function calcDamage(attacker, defender, move, logFn) {
   const defTypes = getEffectiveTypes(defender);
 
   // メガソーラー：この攻撃の間だけ天候を「ひでり」として扱う（実天候はそのまま）
-  const effWeather = getAttackWeather(attacker);
+  // ノーてんき：どちらかが場にいれば天候の効果は無効（'none'扱い）
+  const effWeather = getAttackWeather(attacker, defender);
 
   // ウェザーボール(503)・だいちのはどう(504)：
   // 天候／フィールドに対応があれば、そのタイプに変化しダメージ2倍（原作仕様）。
@@ -3845,8 +3866,8 @@ const SNOW_ALWAYS_HIT_MOVES = [232, 235, 237];
 function checkAccuracy(attacker, defender, move, logFn) {
   if (move.accuracy === undefined || move.accuracy === null || move.accuracy >= 999) return true;
   if (attacker.ability === ABILITY.NO_GUARD || defender.ability === ABILITY.NO_GUARD) return true;
-  if (battleField.weather === 'rain' && RAIN_ALWAYS_HIT_MOVES.includes(move.id)) return true;
-  if (battleField.weather === 'snow' && SNOW_ALWAYS_HIT_MOVES.includes(move.id)) return true;
+  if (battleField.weather === 'rain' && RAIN_ALWAYS_HIT_MOVES.includes(move.id) && !isNotenkiActive(attacker, defender)) return true;
+  if (battleField.weather === 'snow' && SNOW_ALWAYS_HIT_MOVES.includes(move.id) && !isNotenkiActive(attacker, defender)) return true;
 
   // てんねん：自分が技を使う時は相手の回避率ランクを、自分が技を受ける時は相手の命中率ランクを無視する。
   // ログは実際にランクが0以外で意味のある無視が発生した時だけ出す。
@@ -4477,8 +4498,10 @@ function executeMultiHit(attacker, defender, move, logFn) {
 
 // 技そのものの優先度に、天候による補正（ふゆのひざし/穿星波）だけを加えた値。
 // 特性・フィールドによる補正は含まない（AIの簡易判定や表示用）。
-function movePriorityWithWeather(move) {
+// ノーてんき：poke/oppのどちらかが持っていれば天候の効果（優先度補正含む）は無効。
+function movePriorityWithWeather(move, poke, opp) {
   let p = move.priority || 0;
+  if (isNotenkiActive(poke, opp)) return p;
   if (move.id === 285 && battleField.weather === 'snow') p += 1;
   if (move.id === 57 && battleField.weather === 'starrysky') p += 1;
   return p;
@@ -4488,7 +4511,7 @@ function movePriorityWithWeather(move) {
 // 天候などで優先度が+1される技（ふゆのひざし・穿星波）も、サイコフィールドの先制無効や
 // ソニックガードの対象になるよう、「補正後の優先度」を基準に判定する。
 function effectivePriority(attacker, move, defenderFainted) {
-  let p = movePriorityWithWeather(move);
+  let p = movePriorityWithWeather(move, attacker);
 
   if (battleField.terrain === 'psychic' && p > 0) return 0;
 
@@ -4676,6 +4699,25 @@ function executeMove(attacker, defender, move, logFn, turnCtx) {
     const originalMoveType = move.type;
     move = { ...move, type: SKIN_TYPE_MAP[attacker.ability], skinBoost: true, skinOriginalType: originalMoveType };
     logFn(`${attacker.species.name}の${abilityJp(attacker.ability)}が発動！${typeJp(move.type)}タイプに変わった！`);
+  }
+
+  // ---- しんきろう（オリジナル）----
+  // 技4つ目が、技1つ目と同じタイプになる。かつ、その4つ目の技を使った時は威力1.2倍。
+  // 判定は「今使っている技が、このポケモンの技リストの4番目（index 3）と同一の技か」で行う
+  // （参照一致：poke.moves配列に入っている実データそのものかどうか）。
+  // 技1つ目が無い、または技1つ目と技4つ目が既に同じタイプの場合は見た目上の変化はないが、
+  // 威力1.2倍自体は「4つ目の技を使った」という条件のみで発動する。
+  if (attacker.ability === ABILITY.SHINKIROU &&
+      (!battleField.chemicalGasActive || attacker.ability === ABILITY.KAGAKUHENKAGASU)) {
+    const moveSlot4 = attacker.moves && attacker.moves[3];
+    const moveSlot1 = attacker.moves && attacker.moves[0];
+    if (moveSlot4 && moveSlot1 && moveSlot4 === move && moveSlot1.type) {
+      const originalMoveType = move.type;
+      move = { ...move, type: moveSlot1.type, skinBoost: true, skinOriginalType: originalMoveType };
+      if (originalMoveType !== move.type) {
+        logFn(`${attacker.species.name}のしんきろうが発動！${typeJp(move.type)}タイプに変わった！`);
+      }
+    }
   }
 
   // ---- へんげんじざい ----
@@ -4915,19 +4957,19 @@ logFn(`${attacker.species.name}の${move.name}！`, {
   if (move.id === 501 && battleField.terrain === 'electric') {
     modifiedPower = 80; // 基本威力はそのまま、命中は後で
   }
-  if (move.id === 502 && battleField.weather === 'rain') {
+  if (move.id === 502 && battleField.weather === 'rain' && !isNotenkiActive(attacker, defender)) {
     modifiedPower = move.power * 2;
     logFn(`${move.name}の威力は${modifiedPower}になった！`);
   }
-  if (move.id === 150 && battleField.weather === 'rain') {
+  if (move.id === 150 && battleField.weather === 'rain' && !isNotenkiActive(attacker, defender)) {
     modifiedPower = 180;
     logFn(`${move.name}の威力は${modifiedPower}になった！`);
   }
-  if (move.id === 496 && battleField.weather === 'rain') {
+  if (move.id === 496 && battleField.weather === 'rain' && !isNotenkiActive(attacker, defender)) {
     modifiedPower = 130;
     logFn(`${move.name}の威力は${modifiedPower}になった！`);
   }
-  if (move.id === 498 && battleField.weather === 'sun') {
+  if (move.id === 498 && battleField.weather === 'sun' && !isNotenkiActive(attacker, defender)) {
     modifiedPower = 130;
     logFn(`${move.name}の威力は${modifiedPower}になった！`);
   }
@@ -4965,8 +5007,8 @@ logFn(`${attacker.species.name}の${move.name}！`, {
   // 命中修正
   let modifiedAccuracy = move.accuracy;
   if ((move.id === 501 && battleField.terrain === 'electric') ||
-      (move.id === 496 && battleField.weather === 'rain') ||
-      (move.id === 498 && battleField.weather === 'sun') ||
+      (move.id === 496 && battleField.weather === 'rain' && !isNotenkiActive(attacker, defender)) ||
+      (move.id === 498 && battleField.weather === 'sun' && !isNotenkiActive(attacker, defender)) ||
       (move.id === 59 && battleField.terrain !== 'none')) {
     modifiedAccuracy = 999;
   }
@@ -5109,7 +5151,7 @@ logFn(`${attacker.species.name}の${move.name}！`, {
       return;
     }
     // ほえる(508)／ふきとばし(509)：変化技として必ず命中し、ダメージを与えず
-    // 相手を強制的に交代させる。実際の交代処理はドラゴンテール(49)等と同様、
+    // 相手を強制的に交代させる。実際の交代処理はドラゴンテール(50)等と同様、
     // pendingForceSwitchをrunTurn側で見て解決する（交代自体のログはそちら側で出る）。
     if (move.id === 508 || move.id === 509) {
       defender.pendingForceSwitch = true;
@@ -5364,16 +5406,16 @@ logFn(`${attacker.species.name}の${move.name}！`, {
       break;
     }
 
-    // ドラゴンテール(49)／510：命中して相手を倒さなかった場合、相手を強制的に交代させる。
+    // ドラゴンテール(50)／510：命中して相手を倒さなかった場合、相手を強制的に交代させる。
     // 相手が瀕死になった場合（直前のbreak）は発動しない。実際の交代処理は
     // runTurn側でpendingForceSwitchを見て行う（ui.js側のコールバックで解決）。
-    if ((move.id === 49 || move.id === 510) && defender.currentHp > 0 && !defender.fainted) {
+    if ((move.id === 50 || move.id === 510) && defender.currentHp > 0 && !defender.fainted) {
       defender.pendingForceSwitch = true;
     }
   }
 
   // サンパワー / アイスブレイク（技を出したことに対する自傷なので1回のみ）
-  if (attacker.ability === ABILITY.SUN_POWER && battleField.weather === 'sun' && !attacker.fainted) {
+  if (attacker.ability === ABILITY.SUN_POWER && battleField.weather === 'sun' && !attacker.fainted && !isNotenkiActive(attacker, defender)) {
     if (!battleField.chemicalGasActive || attacker.ability === ABILITY.KAGAKUHENKAGASU) {
       const selfDmg = Math.max(1, Math.floor(attacker.maxHp / 8));
       attacker.currentHp = Math.max(0, attacker.currentHp - selfDmg);
@@ -5381,7 +5423,7 @@ logFn(`${attacker.species.name}の${move.name}！`, {
       if (attacker.currentHp <= 0) { attacker.fainted = true; logFn(`${attacker.species.name}は倒れた！`, { faint: attacker.side }); }
     }
   }
-  if (attacker.ability === ABILITY.ICE_BREAK && battleField.weather === 'snow' && !attacker.fainted) {
+  if (attacker.ability === ABILITY.ICE_BREAK && battleField.weather === 'snow' && !attacker.fainted && !isNotenkiActive(attacker, defender)) {
     if (!battleField.chemicalGasActive || attacker.ability === ABILITY.KAGAKUHENKAGASU) {
       const selfDmg = Math.max(1, Math.floor(attacker.maxHp / 8));
       attacker.currentHp = Math.max(0, attacker.currentHp - selfDmg);
@@ -5427,7 +5469,7 @@ logFn(`${attacker.species.name}の${move.name}！`, {
   }
 
   // ---- くろしお：バインド付与 ----
-  if (move.id === 502 && battleField.weather === 'rain' && !defender.fainted) {
+  if (move.id === 502 && battleField.weather === 'rain' && !defender.fainted && !isNotenkiActive(attacker, defender)) {
     if (defender.bindTurns === 0) {
       defender.bindTurns = 6;
       logFn(`${defender.species.name}はバインド状態になった！`);
@@ -5565,7 +5607,7 @@ async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onIm
 
   if (battleField.terrain === 'psychic') {
     actions.forEach((a) => {
-      if (movePriorityWithWeather(a.move) > 0) {
+      if (movePriorityWithWeather(a.move, a.poke, a.target) > 0) {
         logFn(`サイコフィールドが　${a.poke.species.name}の先制を　うちけした！`);
       }
     });
@@ -5623,13 +5665,13 @@ async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onIm
     actions.sort((a, b) => {
       const pa = effectivePriority(a.poke, a.move), pb = effectivePriority(b.poke, b.move);
       if (pa !== pb) return pb - pa;
-      return effectiveSpeed(a.poke) - effectiveSpeed(b.poke);
+      return effectiveSpeed(a.poke, b.poke) - effectiveSpeed(b.poke, a.poke);
     });
   } else {
     actions.sort((a, b) => {
       const pa = effectivePriority(a.poke, a.move), pb = effectivePriority(b.poke, b.move);
       if (pa !== pb) return pb - pa;
-      return effectiveSpeed(b.poke) - effectiveSpeed(a.poke);
+      return effectiveSpeed(b.poke, a.poke) - effectiveSpeed(a.poke, b.poke);
     });
   }
 
@@ -5715,7 +5757,8 @@ async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onIm
 
 // ---- ターン終了時フィールド効果 ----
 function applyEndOfTurnField(pokeList, logFn) {
-  if (battleField.weather === 'sand') {
+  const notenki = isNotenkiActive(pokeList[0], pokeList[1]);
+  if (battleField.weather === 'sand' && !notenki) {
     pokeList.forEach((poke) => {
       if (poke.fainted) return;
       const defTypes = getEffectiveTypes(poke);
@@ -5738,7 +5781,7 @@ function applyEndOfTurnField(pokeList, logFn) {
       logFn(`${poke.species.name}は　グラスフィールドで　HPが回復した！`, { hit: poke.side });
     });
   }
-  if (battleField.weather === 'rain') {
+  if (battleField.weather === 'rain' && !notenki) {
     pokeList.forEach((poke) => {
       if (poke.fainted || poke.ability !== ABILITY.AMEUKEZARA || poke.currentHp >= poke.maxHp) return;
       const heal = Math.max(1, Math.floor(poke.maxHp / 16));
@@ -5805,15 +5848,17 @@ function applyEndOfTurnField(pokeList, logFn) {
 }
 
 // ---- CPU AI ----
-function weatherTerrainScoreMult(moveType, moveId) {
+// ノーてんき：attacker/defenderが渡された場合、どちらかが持っていれば天候補正は無効。
+function weatherTerrainScoreMult(moveType, moveId, attacker, defender) {
   let mult = 1.0;
-  if (battleField.weather === 'sun') {
+  const notenki = isNotenkiActive(attacker, defender);
+  if (battleField.weather === 'sun' && !notenki) {
     if (moveType === 'fire') mult *= 1.5;
     else if (moveType === 'water') mult *= 0.5;
-  } else if (battleField.weather === 'rain') {
+  } else if (battleField.weather === 'rain' && !notenki) {
     if (moveType === 'water') mult *= 1.5;
     else if (moveType === 'fire') mult *= 0.5;
-  } else if (battleField.weather === 'starrysky') {
+  } else if (battleField.weather === 'starrysky' && !notenki) {
     if (moveType === 'ghost' || moveType === 'psychic' || moveType === 'steel') mult *= 1.3;
     else if (moveType === 'shine') mult *= 0.5;
     if (STARRY_SKY_BOOST_MOVE_IDS.includes(moveId)) mult *= 1.2;
@@ -6180,9 +6225,9 @@ function chooseTrainerAttack(attacker, defender, usableMoves, opponentAction) {
       if (battleField.terrain === _FIELD_SET_MOVE_INFO_AI[move.id].terrainKey) blocked = true;
     }
     // サイコフィールド中：優先度+1以上の技は必ず失敗する
-    if (!blocked && movePriorityWithWeather(move) >= 1 && battleField.terrain === 'psychic') blocked = true;
+    if (!blocked && movePriorityWithWeather(move, attacker, defender) >= 1 && battleField.terrain === 'psychic') blocked = true;
     // ソニックガード：相手がこの特性を持つ場合、優先度+1以上の技は無効
-    if (!blocked && movePriorityWithWeather(move) >= 1 && defender.ability === ABILITY.SONIC_GUARD) blocked = true;
+    if (!blocked && movePriorityWithWeather(move, attacker, defender) >= 1 && defender.ability === ABILITY.SONIC_GUARD) blocked = true;
 
     if (blocked) {
       scored.push([move, -99, -1]);
@@ -6190,7 +6235,7 @@ function chooseTrainerAttack(attacker, defender, usableMoves, opponentAction) {
     }
 
     const isDamaging = isDamagingMoveAI(move);
-    const isPriority = movePriorityWithWeather(move) > 0;
+    const isPriority = movePriorityWithWeather(move, attacker, defender) > 0;
     const dmg = isDamaging ? estimateMaxDamageAI(attacker, move, defender, atkTypes, mult) : 0;
     const canKO = isDamaging && oppCurHp != null && dmg >= oppCurHp;
     const minDmg = isDamaging && isPriority ? estimateMinDamageAI(attacker, move, defender, atkTypes, mult) : 0;
@@ -6209,11 +6254,11 @@ function chooseTrainerAttack(attacker, defender, usableMoves, opponentAction) {
     }
     // あさなぎ(498)：ひでり(sun)の時のみ使う
     else if (move.id === 498) {
-      score += battleField.weather === 'sun' ? 4 : -4;
+      score += (battleField.weather === 'sun' && !isNotenkiActive(attacker, defender)) ? 4 : -4;
     }
     // ハリケーン(496)・黒潮(502)：あめ(rain)の時のみ使う
     else if ([496, 502].includes(move.id)) {
-      score += battleField.weather === 'rain' ? 4 : -4;
+      score += (battleField.weather === 'rain' && !isNotenkiActive(attacker, defender)) ? 4 : -4;
     }
     // ゆびをふる(479)：自分の持ち技に相手への有効打(等倍以上)が一つも無い時、優先的に使う
     else if (move.id === 479) {
