@@ -7162,6 +7162,8 @@ const SHOP_ITEMS = {
 1049:100,
 1050:100,
 1058:100,
+1059:250,
+1060:250,
 };
 
 const SHOP_DISC_STORAGE_KEY = 'pokeriere_shop_disc_v1';
