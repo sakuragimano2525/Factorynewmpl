@@ -427,6 +427,7 @@ const POKEDEX_CUSTOM_ORDER = [
   505, // No.302 ヤミラミ
   291, // No.303 クチート
   239, // No.306 ボスゴドラ
+  34,
   577, // No.310 ライボルト
   482, // No.311 プラスル
   483, // No.312 マイナン
@@ -757,7 +758,7 @@ function restoreOriginalMoves(poke) {
 // 威力59以下でも例外的にダメージ技候補として採用するID
 const LOW_POWER_EXCEPTION_MOVE_IDS = [1,271,503,504,111,107,155,221,162,295,324,77,341,405,461,472,498,494,48,189,309,367,388,229,109,179,169,128];
 
-function chooseMoves(species) {
+function chooseMoves(species, ability) {
   const candidateIds = levelUpMoveIds(species);
   const statusMoves = [], damageMoves = [];
   for (const moveId of candidateIds) {
@@ -869,7 +870,11 @@ function chooseMoves(species) {
   // 内部順序（採用順）は変えず、カテゴリの並び替えのみ行う。
   const damageOnly = chosen.filter((id) => id !== 0 && GAME_DATA.moves[id]?.category !== 'status');
   const statusOnly = chosen.filter((id) => id !== 0 && GAME_DATA.moves[id]?.category === 'status');
-  const reordered = [...damageOnly, ...statusOnly];
+  // ただし特性「しんきろう」は技1つ目のタイプが技4つ目に反映される特別な特性なので、
+  // 変化技を1枠目（2つなら1・2枠目）に置き、攻撃技を後ろへ寄せる。
+  const reordered = (ability === ABILITY.SHINKIROU)
+    ? [...statusOnly, ...damageOnly]
+    : [...damageOnly, ...statusOnly];
   while (reordered.length < 4) reordered.push(0);
   return reordered;
 }
@@ -2751,7 +2756,7 @@ function createRandomPokemon(speciesId, level = 100) {
   const species = GAME_DATA.species[speciesId];
   const nature = rand(1, 24);
   const ability = rollAbility(species);
-  const moveIds = chooseMoves(species);
+  const moveIds = chooseMoves(species, ability);
   const evs = randomEvSpread(510, 252); // [hp,atk,def,spa,spd,spe]
   const iv = 31;
 
@@ -3971,15 +3976,36 @@ function checkCanMove(poke, logFn) {
 
 // ---- 場の設置技 ----
 const hazardState = {
-  player: { stealthRock: false, replugTrap: false },
-  cpu: { stealthRock: false, replugTrap: false },
+  player: { stealthRock: false, replugTrap: false, spikes: 0, toxicSpikes: 0, stickyWeb: false },
+  cpu: { stealthRock: false, replugTrap: false, spikes: 0, toxicSpikes: 0, stickyWeb: false },
 };
+
+// 場に設置する技のID（まもる無効／マジックミラー反射／setHazard対象）
+// 318=ステルスロック, 495=リプループラグ, 514=まきびし, 515=どくびし, 516=ねばねばネット
+const HAZARD_MOVE_IDS = [318, 495, 514, 515, 516];
+const SPIKES_MAX_LAYERS = 3;        // まきびし：最大3層
+const TOXIC_SPIKES_MAX_LAYERS = 2;  // どくびし：最大2層
+const SPIKES_DAMAGE_DIV = [0, 8, 6, 4]; // 層数ごとの最大HP分母（1層=1/8, 2層=1/6, 3層=1/4）
 
 function resetHazards() {
   hazardState.player.stealthRock = false;
   hazardState.player.replugTrap = false;
+  hazardState.player.spikes = 0;
+  hazardState.player.toxicSpikes = 0;
+  hazardState.player.stickyWeb = false;
   hazardState.cpu.stealthRock = false;
   hazardState.cpu.replugTrap = false;
+  hazardState.cpu.spikes = 0;
+  hazardState.cpu.toxicSpikes = 0;
+  hazardState.cpu.stickyWeb = false;
+}
+
+// 設置技の接地判定：ひこうタイプ・ふゆう持ちは まきびし／どくびし の影響を受けない
+function isGroundedForHazard(poke) {
+  const types = getEffectiveTypes(poke);
+  if (types.includes('flying')) return false;
+  if (poke.ability === ABILITY.FUYU && abilityActive(poke)) return false;
+  return true;
 }
 
 function setHazard(moveId, attackerSide, logFn) {
@@ -3998,6 +4024,27 @@ function setHazard(moveId, attackerSide, logFn) {
     }
     hazardState[targetSide].replugTrap = true;
     logFn(`相手の場にリプループラグが仕掛けられた！`);
+  } else if (moveId === 514) {
+    if (hazardState[targetSide].spikes >= SPIKES_MAX_LAYERS) {
+      logFn('しかし失敗した！');
+      return;
+    }
+    hazardState[targetSide].spikes++;
+    logFn(`相手の足元にまきびしが散らばった！`);
+  } else if (moveId === 515) {
+    if (hazardState[targetSide].toxicSpikes >= TOXIC_SPIKES_MAX_LAYERS) {
+      logFn('しかし失敗した！');
+      return;
+    }
+    hazardState[targetSide].toxicSpikes++;
+    logFn(`相手の足元にどくびしが散らばった！`);
+  } else if (moveId === 516) {
+    if (hazardState[targetSide].stickyWeb) {
+      logFn('しかし失敗した！');
+      return;
+    }
+    hazardState[targetSide].stickyWeb = true;
+    logFn(`相手の足元にねばねばネットが広がった！`);
   }
 }
 
@@ -4024,6 +4071,43 @@ function applyHazardsOnSwitchIn(poke, side, logFn) {
       }
       checkAndTriggerFundo(poke, logFn);
       applyDamageTakenEffects(poke, logFn);
+    }
+  }
+  // まきびし：接地しているポケモンのみ。層数に応じて最大HPの1/8・1/6・1/4
+  if (hz.spikes > 0 && !poke.fainted) {
+    if (isGroundedForHazard(poke)) {
+      const layers = Math.min(hz.spikes, SPIKES_MAX_LAYERS);
+      const dmg = Math.max(1, Math.floor(poke.maxHp / SPIKES_DAMAGE_DIV[layers]));
+      poke.currentHp = Math.max(0, poke.currentHp - dmg);
+      logFn(`${poke.species.name}はまきびしを踏んだ！`, { hit: side });
+      if (poke.currentHp <= 0) {
+        poke.currentHp = 0;
+        poke.fainted = true;
+        logFn(`${poke.species.name}は倒れた！`, { faint: side });
+      }
+      checkAndTriggerFundo(poke, logFn);
+      applyDamageTakenEffects(poke, logFn);
+    }
+  }
+  // どくびし：接地しているポケモンのみ。どくタイプは吸収して除去、はがねタイプは無効。
+  // 1層=どく、2層=もうどく（状態異常済み・ミストフィールド等はapplyStatus側で弾かれる）
+  if (hz.toxicSpikes > 0 && !poke.fainted) {
+    if (isGroundedForHazard(poke)) {
+      const t = getEffectiveTypes(poke);
+      if (t.includes('poison')) {
+        hz.toxicSpikes = 0;
+        logFn(`${poke.species.name}がどくびしを吸収した！`);
+      } else if (!t.includes('steel')) {
+        const sid = hz.toxicSpikes >= 2 ? STATUS.BADLY_POISON : STATUS.POISON;
+        applyStatus(poke, [100, sid], logFn);
+      }
+    }
+  }
+  // ねばねばネット：接地しているポケモンのすばやさが1段階下がる（ネットは残り続ける）
+  if (hz.stickyWeb && !poke.fainted) {
+    if (isGroundedForHazard(poke)) {
+      logFn(`${poke.species.name}はねばねばネットに引っかかった！`);
+      applyRankChange(poke, [100, 0, 0, 0, 0, -1, 0, 0], logFn);
     }
   }
   if (hz.replugTrap && !poke.fainted) {
@@ -4119,7 +4203,7 @@ function applyEndOfTurnStatus(poke, logFn) {
   if (poke.tauntTurns > 0) {
     poke.tauntTurns--;
     if (poke.tauntTurns === 0) {
-      logFn(`${poke.species.name}の挑発が解けた！`);
+      logFn(`<img src="./taunt.png" class="inline-stat-icon" onerror="this.style.display='none'"> ${poke.species.name}の ちょうはつが 解けた！`);
     }
   }
 
@@ -4595,7 +4679,7 @@ function executeMove(attacker, defender, move, logFn, turnCtx) {
   // 相手に向けた技（自分自身をtargetにするものは対象外）はまもるで防がれる。
   // ステルスロック・設置技・リフレクター等の「場」に効果を及ぼす技は本家同様まもるでは防げない。
   if (defender.protecting && attacker !== defender
-      && move.id !== 318 && move.id !== 495 && move.id !== 475 && move.id !== 476) {
+      && !HAZARD_MOVE_IDS.includes(move.id) && move.id !== 475 && move.id !== 476) {
     logFn(`${defender.species.name}はまもるので技をうけつけない！`);
     return;
   }
@@ -4629,12 +4713,12 @@ function executeMove(attacker, defender, move, logFn, turnCtx) {
   // マジックミラーは「相手に向けて撃つ変化技」のみを跳ね返す特性。
   // つるぎのまい等、相手に効果を及ぼさない自分強化オンリーの技（oppRank/oppStatusが無く、
   // かつ設置技でもない）まで跳ね返っていたバグを修正。
-  const targetsOpponent = move.oppRank || move.oppStatus || move.id === 318 || move.id === 495;
+  const targetsOpponent = move.oppRank || move.oppStatus || HAZARD_MOVE_IDS.includes(move.id);
   if (defender.ability === ABILITY.MAGIC_MIRROR && move.category === 'status' && attacker !== defender && targetsOpponent) {
     logFn(`${defender.species.name}のマジックミラーが発動！${attacker.species.name}に跳ね返した！`);
     const tempAttacker = defender;
     const tempDefender = attacker;
-    if (move.id === 318 || move.id === 495) {
+    if (HAZARD_MOVE_IDS.includes(move.id)) {
       setHazard(move.id, tempAttacker.side, logFn);
     } else {
       if (move.selfRank) applyRankChange(tempAttacker, move.selfRank, logFn);
@@ -4664,7 +4748,7 @@ function executeMove(attacker, defender, move, logFn, turnCtx) {
 
   // ---- 挑発チェック ----
   if (attacker.tauntTurns > 0 && move.category === 'status') {
-    logFn(`${attacker.species.name}は挑発されていて変化技が出せない！`);
+    logFn(`<img src="./taunt.png" class="inline-stat-icon" onerror="this.style.display='none'"> ${attacker.species.name}は ちょうはつ されていて 変化技が 出せない！`);
     return;
   }
 
@@ -4827,6 +4911,12 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     }
     hazardState.player.stealthRock = false;
     hazardState.cpu.stealthRock = false;
+    hazardState.player.spikes = 0;
+    hazardState.cpu.spikes = 0;
+    hazardState.player.toxicSpikes = 0;
+    hazardState.cpu.toxicSpikes = 0;
+    hazardState.player.stickyWeb = false;
+    hazardState.cpu.stickyWeb = false;
     logFn(`${attacker.species.name}はきりばらいで場を払った！`);
     return;
   }
@@ -5139,7 +5229,7 @@ logFn(`${attacker.species.name}の${move.name}！`, {
       logFn(`しかし当たらなかった！`);
       return;
     }
-    if (move.id === 318 || move.id === 495) {
+    if (HAZARD_MOVE_IDS.includes(move.id)) {
       setHazard(move.id, attacker.side, logFn);
       applyRankChange(attacker, move.selfRank, logFn);
       applyStatus(attacker, move.selfStatus, logFn);
@@ -5182,7 +5272,7 @@ logFn(`${attacker.species.name}の${move.name}！`, {
         return;
       }
       defender.tauntTurns = 3;
-      logFn(`${defender.species.name}は挑発された！`);
+      logFn(`<img src="./taunt.png" class="inline-stat-icon" onerror="this.style.display='none'"> ${defender.species.name}は ちょうはつ された！`);
       return;
     }
     if (move.id === 414) {
@@ -5722,9 +5812,12 @@ async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onIm
       const newActive = await onImmediateSwitch(targetSide);
       if (newActive) {
         clearShadowTrapsBy(leavingPoke, action.poke);
-        for (let j = i + 1; j < actions.length; j++) {
-          if (actions[j].poke === action.target) actions[j].poke = newActive;
-          if (actions[j].target === action.target) actions[j].target = newActive;
+        // 強制交代で場を離れたポケモンの「まだ実行されていない行動」は無効になる。
+        // （新しく出てきたポケモンが、交代前に選ばれていた技を引き継いで使ってはいけない）
+        // 逆に、このターン中に残っている相手側の技の対象は、新しく出てきたポケモンへ差し替える。
+        for (let j = actions.length - 1; j > i; j--) {
+          if (actions[j].poke === leavingPoke) { actions.splice(j, 1); continue; }
+          if (actions[j].target === leavingPoke) actions[j].target = newActive;
         }
         if (targetSide === 'player') playerPoke = newActive; else cpuPoke = newActive;
       }
@@ -6204,6 +6297,20 @@ function chooseTrainerAttack(attacker, defender, usableMoves, opponentAction) {
       const side = attacker.side === 'player' ? 'cpu' : 'player';
       if (hazardState[side] && hazardState[side].stealthRock) blocked = true;
     }
+    // まきびし(514)：相手の場に既に3層あるなら除外／どくびし(515)：既に2層あるなら除外
+    if (!blocked && (move.id === 514 || move.id === 515)) {
+      const side = attacker.side === 'player' ? 'cpu' : 'player';
+      const hzAI = hazardState[side];
+      if (hzAI) {
+        if (move.id === 514 && hzAI.spikes >= SPIKES_MAX_LAYERS) blocked = true;
+        if (move.id === 515 && hzAI.toxicSpikes >= TOXIC_SPIKES_MAX_LAYERS) blocked = true;
+      }
+    }
+    // ねばねばネット(516)：相手の場に既にあるなら除外
+    if (!blocked && move.id === 516) {
+      const side = attacker.side === 'player' ? 'cpu' : 'player';
+      if (hazardState[side] && hazardState[side].stickyWeb) blocked = true;
+    }
     // トリックルーム(474系):既にかかっているなら除外
     if (!blocked && move.id === 474 && battleField.trickRoom) blocked = true;
     // リフレクター(475)：自分の場に既にあるなら除外
@@ -6251,6 +6358,8 @@ function chooseTrainerAttack(attacker, defender, usableMoves, opponentAction) {
 
     // ステルスロック：未設置なら最優先(+9)
     if (move.id === 318) { score += 9; }
+    // まきびし／どくびし：まだ層が積める間は高めに評価（ステルスロックの次点）
+    else if (move.id === 514 || move.id === 515 || move.id === 516) { score += 7; }
     // トリックルーム/リフレクター/ひかりのかべ/おいかぜ：未設置なら+2
     else if ([474, 475, 476, 160].includes(move.id)) { score += 2; }
     // フィールド技：対応タイプの攻撃技を他に持つ場合のみ+2、持たない場合は-4

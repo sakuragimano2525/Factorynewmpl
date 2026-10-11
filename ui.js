@@ -1,5 +1,121 @@
 'use strict';
 /* =========================================================
+   ポケモン画像（アニメーションPNG）の静止化
+   ---------------------------------------------------------
+   対戦画面（NPC戦・対人戦を含む）の場に出ているポケモンだけを動かし、
+   ホーム・チーム編成・ショップ・図鑑・選出画面など、それ以外の場所では
+   アニメPNGの「1コマ目」で止めて表示する。
+   ・APNGからアニメ用チャンク(acTL/fcTL/fdAT)を取り除くと、通常のPNG（1コマ目）になる
+   ・画面に入ってきた<img>をMutationObserverで拾って静止版に差し替えるので、
+     既存の描画コードは一切変更不要
+   ・動かす場所：#sprite-opp-wrap / #sprite-self-wrap（場のポケモン）と、
+     バトル演出レイヤー（特殊演出・メガシンカ演出・天候演出）
+   ========================================================= */
+(function installSpriteFreezer() {
+  // ポケモン画像のファイル名だけが対象（6.png / 6s.png / m6x.png / A1012.png / mA1990s.png など）
+  const SPRITE_RE = /(^|\/)m?A?\d+[xy]?s?\.png$/;
+  // この中にある画像は動かす（対戦中の場のポケモンと演出）
+  const ANIMATE_SELECTOR =
+    '#sprite-opp-wrap, #sprite-self-wrap, #special-fx-layer, #mega-evo-fx-layer, #weather-fx-layer, .aineechu-fx-layer';
+
+  const PNG_SIG = [137, 80, 78, 71, 13, 10, 26, 10];
+
+  // APNG → 1コマ目だけの通常PNG(Blob)。アニメでない／解析できない場合は null。
+  function stripApng(buf) {
+    const u8 = new Uint8Array(buf);
+    if (u8.length < 16) return null;
+    for (let i = 0; i < 8; i++) if (u8[i] !== PNG_SIG[i]) return null;
+    const dv = new DataView(buf);
+    const parts = [u8.subarray(0, 8)];
+    let p = 8, animated = false;
+    while (p + 12 <= u8.length) {
+      const len = dv.getUint32(p);
+      const type = String.fromCharCode(u8[p + 4], u8[p + 5], u8[p + 6], u8[p + 7]);
+      const end = p + 12 + len;
+      if (end > u8.length) return null;
+      if (type === 'acTL') animated = true;
+      else if (type !== 'fcTL' && type !== 'fdAT') parts.push(u8.subarray(p, end));
+      p = end;
+      if (type === 'IEND') break;
+    }
+    return animated ? new Blob(parts, { type: 'image/png' }) : null;
+  }
+  window.__stripApng = stripApng; // 動作確認用
+
+  // 取得済み: url -> 静止版のURL（アニメでない画像は null）
+  const ready = new Map();
+  const pending = new Map();
+
+  // fetchできない環境（file:// など）向けの予備：読み込み直後の絵をcanvasに写して静止画にする
+  function canvasFallback(url) {
+    return new Promise((resolve) => {
+      const im = new Image();
+      im.onload = () => {
+        try {
+          const c = document.createElement('canvas');
+          c.width = im.naturalWidth; c.height = im.naturalHeight;
+          c.getContext('2d').drawImage(im, 0, 0);
+          resolve(c.toDataURL('image/png'));
+        } catch (e) { resolve(null); }
+      };
+      im.onerror = () => resolve(null);
+      im.src = url;
+    });
+  }
+
+  function getFrozen(url) {
+    if (ready.has(url)) return Promise.resolve(ready.get(url));
+    if (pending.has(url)) return pending.get(url);
+    const pr = fetch(url, { cache: 'force-cache' })
+      .then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.arrayBuffer(); })
+      .then((buf) => {
+        const blob = stripApng(buf);
+        return blob ? URL.createObjectURL(blob) : null;
+      })
+      .catch(() => canvasFallback(url))
+      .then((out) => { ready.set(url, out); pending.delete(url); return out; });
+    pending.set(url, pr);
+    return pr;
+  }
+
+  function handle(img) {
+    if (!(img instanceof HTMLImageElement)) return;
+    const src = img.getAttribute('src');
+    if (!src || !SPRITE_RE.test(src.split('?')[0])) return; // blob:/data: や他の画像は対象外
+    if (img.closest(ANIMATE_SELECTOR)) return;               // 対戦の場のポケモンは動かす
+    if (ready.has(src)) {
+      const f = ready.get(src);
+      if (f) img.src = f;
+      return;
+    }
+    // 取得中は一瞬アニメが見えないよう隠しておく
+    const prevVis = img.style.visibility;
+    img.style.visibility = 'hidden';
+    getFrozen(src).then((f) => {
+      img.style.visibility = prevVis;
+      if (f && img.getAttribute('src') === src && !img.closest(ANIMATE_SELECTOR)) img.src = f;
+    });
+  }
+
+  function scan(node) {
+    if (node.nodeType !== 1) return;
+    if (node.tagName === 'IMG') handle(node);
+    else if (node.querySelectorAll) node.querySelectorAll('img').forEach(handle);
+  }
+
+  const mo = new MutationObserver((muts) => {
+    for (const m of muts) {
+      if (m.type === 'attributes') handle(m.target);
+      else m.addedNodes.forEach(scan);
+    }
+  });
+  mo.observe(document.documentElement, {
+    childList: true, subtree: true, attributes: true, attributeFilter: ['src'],
+  });
+  document.querySelectorAll('img').forEach(handle);
+})();
+
+/* =========================================================
    Pokedrock Battle Factory - UI / Game Flow
    ========================================================= */
 
@@ -172,6 +288,32 @@ const PlayerProfile = (() => {
    localStorageに永続化する。ホーム画面の記録ボタンから確認できる。
    旧キー（メガ区別なし時代のデータ）は「メガなし」記録として引き継ぐ。
    ========================================================= */
+/* ---- NPCバトルの難易度（イージー／ノーマル／ハード） ----
+   ・相手トレーナーのポケモンだけレベルを補正する（イージー -10 / ハード +5）。
+   ・イージーはディスク・実績・最大連勝記録・メガシンカ解放が対象外（ノーマル以上で有効）。
+   ・対人戦・ダンジョンには影響しない。設定はlocalStorageに保存。 */
+const NPC_DIFFICULTY_STORAGE_KEY = 'pokeriere_npc_difficulty_v1';
+const NpcDifficulty = (() => {
+  const LABELS = { easy: 'イージー', normal: 'ノーマル', hard: 'ハード' };
+  const LEVEL_OFFSET = { easy: -10, normal: 0, hard: 5 };
+  let cur = 'normal';
+  try {
+    const raw = localStorage.getItem(NPC_DIFFICULTY_STORAGE_KEY);
+    if (raw && LABELS[raw]) cur = raw;
+  } catch (e) {}
+  function get() { return cur; }
+  function set(d) {
+    if (!LABELS[d]) return;
+    cur = d;
+    try { localStorage.setItem(NPC_DIFFICULTY_STORAGE_KEY, d); } catch (e) {}
+  }
+  function label(d) { return LABELS[d || cur]; }
+  function levelOffset() { return LEVEL_OFFSET[cur]; }
+  // ディスク・実績・記録・メガ解放が有効か（ノーマル以上）
+  function rewardsEnabled() { return cur !== 'easy'; }
+  return { get, set, label, levelOffset, rewardsEnabled };
+})();
+
 const MAX_WIN_STREAK_STORAGE_KEY_LEGACY = 'pokeriere_max_win_streak_v1';
 const MAX_WIN_STREAK_STORAGE_KEY_MEGA_OFF = 'pokeriere_max_win_streak_mega_off_v1';
 const MAX_WIN_STREAK_STORAGE_KEY_MEGA_ON = 'pokeriere_max_win_streak_mega_on_v1';
@@ -991,6 +1133,8 @@ function showScreen(name) {
   document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
   $('screen-' + name).classList.add('active');
   state.screen = name;
+  // ダンジョン画面以外へ移ったら、ダンジョン用BGM（dungeon.mp3 / dungeon2.mp3）は必ず止める
+  if (window.DungeonBgm && name !== 'dungeon-home' && name !== 'dungeon-map') window.DungeonBgm.stop();
   checkOrientation();
   if (name === 'title') { refreshTitleNameLabel(); setMegaLockActive(true); npcTeamEndRun(); state.mpChosenTeamIdx = -1; } // タイトルに戻ったらロック有効に戻す／チーム戦のランも終了
 }
@@ -1195,7 +1339,7 @@ function pushLogLine(text) {
   const stack = $('battle-log-stack');
   const el = document.createElement('div');
   el.className = 'battle-log-line';
-  el.innerHTML = text;
+  el.innerHTML = hazardLogIconHtml(text, 18) + text;
   stack.appendChild(el);
   logLines.push(el);
   while (logLines.length > LOG_STACK_MAX) {
@@ -2563,6 +2707,24 @@ function renderWatchDetail() {
   document.getElementById('watch-detail-type-change').textContent = label || '';
 }
 
+// ログ文に設置技（まきびし／どくびし／ねばねばネット）の名前が含まれるとき、対応するアイコンのimgタグを返す。
+// 画像が無ければ非表示。ホスト・ゲスト共通でテキストから判定するので、対人戦でも同じ表示になる。
+function hazardLogIconHtml(text, sizePx) {
+  if (typeof text !== 'string') return '';
+  let name = null;
+  if (text.indexOf('ねばねばネット') !== -1) name = 'sticky_web';
+  else if (text.indexOf('どくびし') !== -1) name = 'toxic_spikes';
+  else if (text.indexOf('まきびし') !== -1) name = 'spikes';
+  if (!name) return '';
+  const s = sizePx || 20;
+  return `<img src="./${name}.png" alt="" class="log-hazard-icon" style="width:${s}px;height:${s}px;vertical-align:middle;margin-right:4px;" onerror="this.style.display='none'">`;
+}
+
+// 「様子を見る」のチップ用：技アイコン付きの表示（画像が無ければアイコンだけ非表示）
+function watchIconChip(iconName, text) {
+  return `<img src="./${iconName}.png" alt="" class="watch-chip-icon" onerror="this.style.display='none'">${text}`;
+}
+
 function renderWatchField() {
   const poke = watchSelectedSide === 'self' ? state.playerActive : state.cpuActive;
   const chips = [];
@@ -2575,9 +2737,9 @@ function renderWatchField() {
   }
 
   if (battleField.tailwindPlayer > 0 && watchSelectedSide === 'self') {
-    chips.push(`おいかぜ ${battleField.tailwindPlayer}ターン`);
+    chips.push(watchIconChip('tailwind', `おいかぜ ${battleField.tailwindPlayer}ターン`));
   } else if (battleField.tailwindCpu > 0 && watchSelectedSide === 'opp') {
-    chips.push(`おいかぜ ${battleField.tailwindCpu}ターン`);
+    chips.push(watchIconChip('tailwind', `おいかぜ ${battleField.tailwindCpu}ターン`));
   }
 
   if (battleField.trickRoom) {
@@ -2585,7 +2747,7 @@ function renderWatchField() {
   }
 
   const tauntTurns = poke ? poke.tauntTurns || 0 : 0;
-  if (tauntTurns > 0) chips.push(`ちょうはつ ${tauntTurns}ターン`);
+  if (tauntTurns > 0) chips.push(watchIconChip('taunt', `ちょうはつ ${tauntTurns}ターン`));
 
   if (poke && poke.critRank > 0) chips.push(`きあいだめ`);
 
@@ -2616,7 +2778,7 @@ function renderWatchField() {
 
   if (poke && poke.encoreTurns > 0 && poke.encoreMoveId !== null) {
     const move = poke.moves.find(m => m.id === poke.encoreMoveId);
-    chips.push(`アンコール ${move ? move.name : ''} ${poke.encoreTurns}ターン`);
+    chips.push(watchIconChip('encore', `アンコール ${move ? move.name : ''} ${poke.encoreTurns}ターン`));
   }
 
   if (poke && poke.typeLockTurns > 0 && poke.typeLockType) {
@@ -2635,8 +2797,11 @@ function renderWatchField() {
 
   const hazardSideKey = watchSelectedSide === 'self' ? 'player' : 'cpu';
   const hz = (typeof hazardState !== 'undefined') ? hazardState[hazardSideKey] : null;
-  if (hz && hz.stealthRock) chips.push('ステルスロック');
+  if (hz && hz.stealthRock) chips.push(watchIconChip('stealth_rock', 'ステルスロック'));
   if (hz && hz.replugTrap) chips.push('リプループラグ');
+  if (hz && hz.spikes > 0) chips.push(watchIconChip('spikes', `まきびし ${hz.spikes}層`));
+  if (hz && hz.toxicSpikes > 0) chips.push(watchIconChip('toxic_spikes', `どくびし ${hz.toxicSpikes}層`));
+  if (hz && hz.stickyWeb) chips.push(watchIconChip('sticky_web', 'ねばねばネット'));
 
   const row = $('watch-status-row');
   row.innerHTML = chips.length
@@ -2692,7 +2857,7 @@ function logEntryHtml(entry) {
   return `
     <div class="log-entry ${sideClass} ${kindClass}">
       ${iconHtml}
-      <span class="log-entry-text">${tag ? `<span class="log-entry-tag">${tag}</span>` : ''}${entry.text}</span>
+      <span class="log-entry-text">${tag ? `<span class="log-entry-tag">${tag}</span>` : ''}${hazardLogIconHtml(entry.text, 18)}${entry.text}</span>
     </div>
   `;
 }
@@ -4052,22 +4217,28 @@ async function endBattle(playerWon) {
   clearCmdPanel();
   clearTurnTimer();
   $('cmd-dock').classList.remove('dock-wide');
+  // ダンジョン挑戦中のバトルは、連勝・ディスク・戦績などNPC戦の処理を通さず dungeon-run.js に結果を渡す
+  if (window.DungeonRun && window.DungeonRun.isBattleActive()) { window.DungeonRun.onBattleEnd(!!playerWon); return; }
   let earnedDisc = 0;
+  // イージーはディスク・実績・最大連勝記録の対象外（ノーマル以上で有効）
+  const rewardsOn = NpcDifficulty.rewardsEnabled();
   if (playerWon && !state.multiplayer) {
     state.winStreak++;
-    MaxWinStreak.reportStreak(state.winStreak, npcTeamState.active ? 'team' : state.megaEvolutionEnabled);
-    updateRecordBtnRank();
+    if (rewardsOn) {
+      MaxWinStreak.reportStreak(state.winStreak, npcTeamState.active ? 'team' : state.megaEvolutionEnabled);
+      updateRecordBtnRank();
+    }
     // ディスク報酬：メガあり/なしNPC戦・チームバトルいずれも、その戦い（winStreak）が
     // 何戦目にあたるかでディスクを加算する（1〜5戦目+10、6〜9戦目+20、10戦目ごとのボス+50、
     // それ以外の11戦目以降+25）。
-    earnedDisc = calcNpcDiscReward(state.winStreak);
+    earnedDisc = rewardsOn ? calcNpcDiscReward(state.winStreak) : 0;
     if (earnedDisc > 0) Shop.addDisc(earnedDisc);
     // 乱入戦に勝った＝乱入ボスを倒した → 実績で記録（以後そのポケモンは乱入ボスに出てこない）
-    if (state.isIntrusionBattle && state.pendingIntrusionId != null && window.Achievements) {
+    if (state.isIntrusionBattle && state.pendingIntrusionId != null && rewardsOn && window.Achievements) {
       window.Achievements.unlock(intrusionAchievementId(state.pendingIntrusionId));
     }
     // チーム戦の10連勝目ボス（ID1031）を倒した → 実績を解除し、隠しポケモンの解放を知らせる
-    if (state.isBossBattle && npcTeamState.active && window.Achievements) {
+    if (state.isBossBattle && npcTeamState.active && rewardsOn && window.Achievements) {
       const newlyUnlocked = window.Achievements.unlock('win_streak_team_10');
       if (newlyUnlocked) announceHiddenSpeciesUnlock(2000);
     }
@@ -4077,7 +4248,7 @@ async function endBattle(playerWon) {
   // 判定は「組んだ手持ち6匹」(npcTeamState.source)で行う。state.playerTeamは
   // そこから実際にバトルへ選出した3匹(NPC_PICK_COUNT)しか入っておらず、
   // isPartyOfTypeがteam.length<6で弾いてしまうため常にfalseになっていた。
-  if (!state.multiplayer && typeof TypeStreak !== 'undefined') {
+  if (!state.multiplayer && rewardsOn && typeof TypeStreak !== 'undefined') {
     const typeStreakTeam = (npcTeamState.active && npcTeamState.source) ? npcTeamState.source : state.playerTeam;
     TypeStreak.reportResult(!!npcTeamState.active, playerWon, typeStreakTeam);
   }
@@ -4093,6 +4264,7 @@ async function endBattle(playerWon) {
     isTeam: !!(npcTeamState.active),
     win: playerWon,
     streak: state.multiplayer ? null : state.winStreak,
+    difficulty: state.multiplayer ? null : NpcDifficulty.get(),
     playerTeam: snapshotTeamForHistory(state.playerTeam),
     oppTeam: snapshotTeamForHistory(state.cpuTeam),
   });
@@ -4102,7 +4274,9 @@ async function endBattle(playerWon) {
   $('result-desc').textContent = playerWon
     ? (state.multiplayer
         ? '勝利！'
-        : `${state.winStreak}連勝中！ディスク+${earnedDisc}　つぎの相手が待っている。`)
+        : (rewardsOn
+            ? `${state.winStreak}連勝中！ディスク+${earnedDisc}　つぎの相手が待っている。`
+            : `${state.winStreak}連勝中！（イージーはディスク・実績・記録なし）　つぎの相手が待っている。`))
     : `連勝は${state.winStreak}でストップ。またチャレンジしよう！`;
   overlay.classList.add('show');
 
@@ -4200,7 +4374,7 @@ function runTradeSequence() {
     const offerable = (state.isBossBattle
       ? state.cpuTeam.filter((p) => p.speciesId !== BOSS_SPECIES_ID && p.speciesId !== BOSS_SPECIES_ID_MEGA && p.speciesId !== BOSS_SPECIES_ID_TEAM)
       : state.cpuTeam
-    ).map(demegaForOffer);
+    ).map(demegaForOffer).map(normalizeOfferLevel);
     offerRow.innerHTML = offerable.map((p, idx) => tradeCardHtml(p, idx, false)).join('');
     offerOverlay.classList.add('show');
 
@@ -4396,11 +4570,33 @@ const NPC_TEAM_OPP_LEVEL = 50;
 const NPC_RANDOM_OPP_LEVEL = 100;
 // 乱入ボスだけはチーム戦でもLv60（通常の相手のLv50より少し強い）。ランダム戦は従来どおりLv100。
 const NPC_TEAM_INTRUDER_LEVEL = 60;
+// 難易度補正（イージー-10 / ハード+5）は相手が使うポケモンにだけ掛ける。
+// プレイヤーが相手からもらう時は npcOfferBaseLevel（ランダム戦100／チーム戦50）に戻す。
 function npcOpponentLevel() {
-  return (npcTeamState && npcTeamState.active) ? NPC_TEAM_OPP_LEVEL : NPC_RANDOM_OPP_LEVEL;
+  const base = (npcTeamState && npcTeamState.active) ? NPC_TEAM_OPP_LEVEL : NPC_RANDOM_OPP_LEVEL;
+  return base + NpcDifficulty.levelOffset();
 }
 function npcIntruderLevel() {
-  return (npcTeamState && npcTeamState.active) ? NPC_TEAM_INTRUDER_LEVEL : NPC_RANDOM_OPP_LEVEL;
+  const base = (npcTeamState && npcTeamState.active) ? NPC_TEAM_INTRUDER_LEVEL : NPC_RANDOM_OPP_LEVEL;
+  return base + NpcDifficulty.levelOffset();
+}
+function npcOfferBaseLevel() {
+  return (npcTeamState && npcTeamState.active) ? NPC_TEAM_OPP_LEVEL : NPC_RANDOM_OPP_LEVEL;
+}
+// 相手からもらう候補を、難易度補正前のレベル（100/50）に戻したコピーにする（実数値・HPも再計算）。
+function normalizeOfferLevel(p) {
+  const target = npcOfferBaseLevel();
+  if (!p || p.level === target) return p;
+  const copy = Object.assign({}, p);
+  copy.stats = Object.assign({}, p.stats);
+  copy.moves = p.moves.map((m) => Object.assign({}, m));
+  copy.level = target;
+  const base = copy.species.baseStats;
+  recalcMegaStats(copy, base);
+  copy.maxHp = calcStat(base.hp, copy.iv, copy.evs[0], target, true, 1);
+  copy.stats.hp = copy.maxHp;
+  copy.currentHp = copy.maxHp;
+  return copy;
 }
 
 function startNextCpuBattle() {
@@ -4477,6 +4673,32 @@ function startNextCpuBattle() {
   msgQueue = [];
   runBattleLoop();
 }
+
+/* ---------------- ダンジョン用バトル開始 ---------------- */
+// dungeon-run.js から呼ばれる。手持ち(playerTeam)と敵(cpuTeam)を受け取り、通常のバトルループを始める。
+// 終了時は endBattle 内のフックで DungeonRun.onBattleEnd(playerWon) が呼ばれる。
+function startDungeonBattle(playerTeam, cpuTeam) {
+  npcTeamEndRun();
+  state.multiplayer = false;
+  setMegaLockActive(true);           // メガシンカのロックは有効のまま
+  state.megaEvolutionEnabled = false;
+  state.isBossBattle = false;
+  state.isIntrusionBattle = false;
+  state.playerTeam = playerTeam;
+  state.cpuTeam = cpuTeam;
+  state.cpuTeam.forEach(resetPokeForBattle);
+  state.playerTeam.forEach(resetPokeForBattle);
+  state.playerActive = state.playerTeam.find((p) => !p.fainted) || state.playerTeam[0];
+  state.cpuActive = state.cpuTeam[0];
+  if (state.playerActive) state.playerActive.seenInBattle = true;
+  if (state.cpuActive) state.cpuActive.seenInBattle = true;
+  Pokedex.registerTeam(state.playerTeam);
+  setRandomBattleBackground();
+  showScreen('battle');
+  msgQueue = [];
+  runBattleLoop();
+}
+window.startDungeonBattle = startDungeonBattle;
 
 /* ---------------- Initial pick ---------------- */
 let pickPool = [];
@@ -6679,6 +6901,33 @@ function resolveRemoteAction(raw, remotePoke) {
 // 「NPCとバトル」→ まずモード選択（ランダム / チーム）を出す。
 // ランダムを選ぶと、これまで通りのメガあり／メガなし選択（startNewRun）へ進む。
 $('btn-npc-battle').addEventListener('click', () => { startMenuBgmOnFirstInteraction(); openNpcModeSelect(); });
+
+/* ---- ホーム：NPC難易度ボタン／選択ダイアログ ---- */
+function npcDiffRefreshHome() {
+  const b = $('btn-npc-difficulty');
+  if (!b) return;
+  const d = NpcDifficulty.get();
+  b.dataset.diff = d;
+  $('npc-diff-label').textContent = NpcDifficulty.label(d);
+}
+function npcDiffOpenDialog() {
+  const cur = NpcDifficulty.get();
+  document.querySelectorAll('#npc-diff-overlay .npc-diff-opt').forEach((b) => {
+    b.classList.toggle('selected', b.dataset.diff === cur);
+  });
+  $('npc-diff-overlay').classList.add('show');
+}
+$('btn-npc-difficulty').addEventListener('click', npcDiffOpenDialog);
+$('btn-npc-diff-close').addEventListener('click', () => $('npc-diff-overlay').classList.remove('show'));
+$('npc-diff-overlay').addEventListener('click', (e) => {
+  if (e.target === $('npc-diff-overlay')) { $('npc-diff-overlay').classList.remove('show'); return; }
+  const opt = e.target.closest('.npc-diff-opt');
+  if (!opt) return;
+  NpcDifficulty.set(opt.dataset.diff);
+  npcDiffRefreshHome();
+  $('npc-diff-overlay').classList.remove('show');
+});
+npcDiffRefreshHome();
 $('btn-player-battle').addEventListener('click', () => { startMenuBgmOnFirstInteraction(); showMultiplayerMenu(); });
 $('btn-to-battle').addEventListener('click', async () => {
   // 確認用「sayakadaisuki2」：最初の戦いだけ、ここで乱入を確定させてから開始する
@@ -7133,7 +7382,7 @@ function calcNpcDiscReward(battleNo) {
    所持ディスク数・購入済みポケモンはlocalStorageに永続化する。
    ディスクはNPC戦・対人戦の勝利で加算される（DiscReward参照）。 */
 const SHOP_ITEMS = {
-	1012: 50,
+	1012: 100,
   410: 50,
   411: 50,
   486: 50,
@@ -7160,18 +7409,17 @@ const SHOP_ITEMS = {
 1010: 50,
 1013: 50,
   1032: 50,
-  1042:50,
-  1043:50,
+  1042:100,
+  1043:100,
 1044:50,
 1045:50,
 1046:50,
 1047:50,
-1048:50,
-1049:50,
-1050:50,
-1058:50,
-1059:50,
-1060:50,
+1048:100,
+1049:100,
+1050:100,
+1059:250,
+1060:250,
 };
 
 const SHOP_DISC_STORAGE_KEY = 'pokeriere_shop_disc_v1';
@@ -7487,6 +7735,10 @@ $('pokedex-grid').addEventListener('click', (e) => {
   if (!cell) return;
   // メガ図鑑のロック中セル：実績が解除済みならここで解放。未解除ならヒントだけ出す。
   if (cell.dataset.megaLocked === '1') {
+    if (!NpcDifficulty.rewardsEnabled()) {
+      showPokedexToast('イージーではメガシンカを解放できない（難易度をノーマル以上に）');
+      return;
+    }
     const sid = parseInt(cell.dataset.speciesId, 10);
     if (unlockMega(sid)) {
       const nm = (GAME_DATA.species[sid] && GAME_DATA.species[sid].name) || ('#' + sid);

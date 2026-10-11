@@ -354,7 +354,7 @@ html,body{
   justify-content: center;
   flex-wrap: wrap;
   width: 100%;
-  max-width: 720px;
+  max-width: 960px;
 }
 #screen-title .title-menu-btn{
   --menu-accent: var(--accent-a);
@@ -2216,6 +2216,7 @@ html,body{
   box-shadow: var(--shadow-inset-sm);
   overflow-y:auto;
 }
+.watch-chip-icon{ width:16px; height:16px; object-fit:contain; vertical-align:middle; margin-right:4px; margin-top:-2px; }
 .watch-status-chip{
   font-size:11px; font-weight:800; color:#fff;
   padding: 4px 10px; border-radius:999px;
@@ -2612,6 +2613,50 @@ html,body{
 .mega-choice-btn-sub{ font-weight:700; font-size:11px; opacity:0.85; }
 .mega-choice-on{ background: linear-gradient(135deg, var(--accent-b), #ff6bd6); color:#fff; }
 .mega-choice-off{ background: var(--surface-deep); color: var(--ink); }
+
+/* ---- NPC難易度（ホームのボタン＋選択ダイアログ） ---- */
+.npc-diff-btn{
+  margin-top:18px;
+  display:flex; align-items:center; gap:10px;
+  padding:9px 12px 9px 20px;
+  border-radius:999px;
+  border:1px solid var(--home-line-strong);
+  background: var(--home-panel);
+  box-shadow: var(--home-shadow-sm);
+  font-family: inherit; font-weight:800; font-size:13px; color:var(--ink);
+  cursor:pointer;
+}
+.npc-diff-btn:active{ transform: scale(0.97); box-shadow: inset 0 2px 6px rgba(120,130,160,0.2); }
+.npc-diff-btn .ndb-val{
+  padding:4px 14px; border-radius:999px; color:#fff; font-weight:900; font-size:12.5px;
+  background: linear-gradient(135deg, #5b8cff, #8b6bff);
+}
+.npc-diff-btn[data-diff="easy"] .ndb-val{ background: linear-gradient(135deg, #4fd67a, #2fb85f); }
+.npc-diff-btn[data-diff="hard"] .ndb-val{ background: linear-gradient(135deg, #ff7a5c, #e63946); }
+/* 上部バー（ホーム画面の右上、アイコン群の左隣）に置いたときの見た目：画面下で見切れないようにする */
+.title-topbar .npc-diff-btn{
+  margin-top:0; flex:0 1 auto; min-width:0; white-space:nowrap;
+  padding:5px 6px 5px 14px; font-size:12px;
+}
+.title-topbar .npc-diff-btn .ndb-val{ padding:3px 12px; font-size:12px; }
+@media (max-width: 760px){
+  .title-topbar .npc-diff-btn{ padding:4px 4px 4px 4px; }
+  .title-topbar .npc-diff-btn .ndb-label{ display:none; }
+}
+.npc-diff-card{ width: min(94%, 520px); }
+.npc-diff-list{ display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
+.npc-diff-opt{
+  display:flex; flex-direction:column; align-items:flex-start; gap:4px;
+  padding:12px 18px; border-radius: var(--radius-md); text-align:left;
+  font-family: inherit; color: var(--ink);
+}
+.npc-diff-opt .ndo-title{ font-weight:900; font-size:16px; }
+.npc-diff-opt .ndo-sub{ font-weight:700; font-size:11.5px; line-height:1.5; opacity:0.85; }
+.npc-diff-opt[data-diff="easy"] .ndo-title{ color:#2fb85f; }
+.npc-diff-opt[data-diff="normal"] .ndo-title{ color:#5b8cff; }
+.npc-diff-opt[data-diff="hard"] .ndo-title{ color:#e63946; }
+.npc-diff-opt.selected{ box-shadow: inset 0 0 0 3px var(--accent-a); }
+@media (max-height: 420px){ .npc-diff-btn{ margin-top:10px; } }
 #btn-pick-confirm[disabled]{ opacity:0.4; cursor:not-allowed; }
 
 /* ---- 選出/交換カード：まだ図鑑未登録のポケモンに付ける控えめなマーク ---- */
@@ -6018,6 +6063,10 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
         <button id="btn-title-shop" class="title-settings-btn title-shop-btn" type="button" aria-label="ショップ">🛍</button>
       </div>
       <div class="title-topbar-right">
+        <button id="btn-npc-difficulty" class="npc-diff-btn" type="button" data-diff="normal" aria-label="NPCバトルの難易度">
+          <span class="ndb-label">NPC難易度</span>
+          <span class="ndb-val" id="npc-diff-label">ノーマル</span>
+        </button>
         <button id="btn-title-pokedex" class="title-settings-btn title-pokedex-btn" type="button" aria-label="図鑑">📖</button>
         <button id="btn-achievements" class="title-settings-btn" type="button" aria-label="実績">🏅</button>
         <button id="btn-title-settings" class="title-settings-btn" type="button" aria-label="オプション">⚙️</button>
@@ -6037,12 +6086,12 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
           <span class="tmb-title">NPCとバトル</span>
           <span class="tmb-sub">1人で挑戦</span>
         </button>
-        <button id="btn-title-serious" class="neu-btn title-menu-btn title-menu-btn-box" type="button" style="--menu-accent:#4fd67a; --menu-accent-2:#2fb85e;">
+        <button id="btn-title-serious" class="neu-btn title-menu-btn title-menu-btn-box" type="button" style="--menu-accent:#ff5c5c; --menu-accent-2:#e63946;">
           <span class="tmb-icon-wrap"><img class="tmb-box-icon" src="./poke_ball.png" alt="" onerror="this.style.display='none'"></span>
           <span class="tmb-title">ボックス</span>
           <span class="tmb-sub">手持ちを編集</span>
         </button>
-        <button id="btn-player-battle" class="neu-btn title-menu-btn" type="button" style="--menu-accent:#ff9d5c; --menu-accent-2:#ff6b6b;">
+        <button id="btn-player-battle" class="neu-btn title-menu-btn" type="button" style="--menu-accent:#ffa733; --menu-accent-2:#ff8a00;">
           <span class="tmb-icon-wrap"><img class="tmb-box-icon" src="./players.png" alt="" onerror="this.style.display='none'"></span>
           <span class="tmb-title">プレイヤーとバトル</span>
           <span class="tmb-sub">友達と対戦</span>
@@ -6479,6 +6528,28 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
     </div>
   </div>
 
+  <!-- NPC DIFFICULTY SELECT（ホームの「NPC難易度」ボタンから開く） -->
+  <div class="trade-overlay" id="npc-diff-overlay">
+    <div class="trade-card npc-diff-card">
+      <p class="trade-title">NPCバトルの難易度</p>
+      <div class="npc-diff-list">
+        <button class="neu-btn npc-diff-opt" type="button" data-diff="easy">
+          <span class="ndo-title">イージー</span>
+          <span class="ndo-sub">初心者おすすめ<br>実績・隠しメガシンカの解放不可</span>
+        </button>
+        <button class="neu-btn npc-diff-opt" type="button" data-diff="normal">
+          <span class="ndo-title">ノーマル</span>
+          <span class="ndo-sub">いつもどおり</span>
+        </button>
+        <button class="neu-btn npc-diff-opt" type="button" data-diff="hard">
+          <span class="ndo-title">ハード</span>
+          <span class="ndo-sub">AIがさらに強化</span>
+        </button>
+      </div>
+      <button id="btn-npc-diff-close" class="neu-btn" type="button">とじる</button>
+    </div>
+  </div>
+
   <!-- INITIAL PICK -->
   <div class="trade-overlay" id="pick-overlay">
     <div class="trade-card">
@@ -6907,6 +6978,9 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
 <script src="net.js"></script>
 <script src="typefx.js"></script>
 <script src="achievements.js"></script>
+<script src="dungeon-home.js"></script>
+<script src="dungeon-map.js"></script>
+<script src="dungeon-run.js"></script>
 <script src="ui.js"></script>
 <script src="gamepad.js"></script>
 </body>
