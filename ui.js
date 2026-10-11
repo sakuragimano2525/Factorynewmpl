@@ -78,22 +78,38 @@
     return pr;
   }
 
+  // 取得待ちで隠していた画像の表示を元に戻す
+  function unhide(img) {
+    if (img.dataset.frzPending === undefined) return;
+    img.style.visibility = img.dataset.frzVis || '';
+    delete img.dataset.frzPending;
+    delete img.dataset.frzVis;
+  }
+
   function handle(img) {
     if (!(img instanceof HTMLImageElement)) return;
     const src = img.getAttribute('src');
     if (!src || !SPRITE_RE.test(src.split('?')[0])) return; // blob:/data: や他の画像は対象外
-    if (img.closest(ANIMATE_SELECTOR)) return;               // 対戦の場のポケモンは動かす
+    if (img.closest(ANIMATE_SELECTOR)) { unhide(img); return; }   // 対戦の場のポケモンは動かす
     if (ready.has(src)) {
       const f = ready.get(src);
       if (f) img.src = f;
+      unhide(img);
       return;
     }
-    // 取得中は一瞬アニメが見えないよう隠しておく
-    const prevVis = img.style.visibility;
+    // 同じ画像を取得待ちの最中にもう一度呼ばれても、二重に「隠す」処理をしない。
+    // （ボックスの並び替えでDOMを付け替えると同じ<img>に何度も呼ばれ、2回目に「すでに隠れている状態」を
+    //   元の状態だと記憶してしまい、永久に非表示のまま＝ボックスが真っ白になっていた）
+    if (img.dataset.frzPending === src) return;
+    // 取得中は一瞬アニメが見えないよう隠しておく（元の表示状態は最初の1回だけ記憶する）
+    if (img.dataset.frzPending === undefined) img.dataset.frzVis = img.style.visibility || '';
+    img.dataset.frzPending = src;
     img.style.visibility = 'hidden';
     getFrozen(src).then((f) => {
-      img.style.visibility = prevVis;
+      // 取得中に別の画像へ差し替わっていたら、新しい方の処理に任せる
+      if (img.dataset.frzPending !== src) return;
       if (f && img.getAttribute('src') === src && !img.closest(ANIMATE_SELECTOR)) img.src = f;
+      unhide(img);
     });
   }
 
@@ -662,6 +678,22 @@ const AssetPreloader = (() => {
     imageCache.set(path, img);
     return img;
   }
+  // 大量の画像を一度に要求するとブラウザが取りこぼす／メモリが足りなくなるため、
+  // 少しずつ順番に読み込むキュー（種族画像用）。
+  const _q = [];
+  let _qRunning = false;
+  function preloadImageQueued(path) {
+    if (imageCache.has(path)) return;
+    _q.push(path);
+    if (_qRunning) return;
+    _qRunning = true;
+    const pump = () => {
+      const batch = _q.splice(0, 12);
+      batch.forEach((pth) => preloadImage(pth));
+      if (_q.length) setTimeout(pump, 80); else _qRunning = false;
+    };
+    pump();
+  }
 
   function preloadAudio(path) {
     if (audioBuffers.has(path)) return audioBuffers.get(path);
@@ -678,8 +710,8 @@ const AssetPreloader = (() => {
     try {
       const ids = Object.keys(GAME_DATA.species || {});
       ids.forEach((id) => {
-        preloadImage(`./${id}.png`);
-        preloadImage(`./${id}s.png`);
+        preloadImageQueued(`./${id}.png`);
+        preloadImageQueued(`./${id}s.png`);
       });
     } catch (e) {}
     // メガシンカ画像（m{id}.png / m{id}s.png）も、対応する種族のぶんだけ事前ロードしておく。
@@ -690,12 +722,12 @@ const AssetPreloader = (() => {
         const entry = megaData[id];
         if (entry && entry.forms) {
           ['x', 'y'].forEach((suffix) => {
-            preloadImage(`./m${id}${suffix}.png`);
-            preloadImage(`./m${id}${suffix}s.png`);
+            preloadImageQueued(`./m${id}${suffix}.png`);
+            preloadImageQueued(`./m${id}${suffix}s.png`);
           });
         } else {
-          preloadImage(`./m${id}.png`);
-          preloadImage(`./m${id}s.png`);
+          preloadImageQueued(`./m${id}.png`);
+          preloadImageQueued(`./m${id}s.png`);
         }
       });
     } catch (e) {}
@@ -8077,8 +8109,82 @@ function sbLoad() {
 // スプライト（画像が無い場合は #番号 の簡易表示に差し替える）
 function sbSpriteHtml(poke, cls, lazy) {
   const id = poke.speciesId;
-  const lz = lazy ? ' loading="lazy" decoding="async"' : '';
-  return `<img class="${cls}" src="${spritePath(poke)}" alt=""${lz} onerror="this.outerHTML='<span class=&quot;${cls}&quot; style=&quot;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#7a74a8;&quot;>#${id}</span>'">`;
+  const path = spritePath(poke);
+  // ボックス（lazy=true）は src を直接付けず data-src に入れ、sbBoxLoadImages() が
+  // 「画面に見えている付近から順番に」読み込む（300枚の同時リクエストや、ブラウザ標準の
+  // loading="lazy" が並び替え後に発火しない問題を避ける）。
+  const srcAttr = lazy ? `data-src="${path}"` : `src="${path}"`;
+  return `<img class="${cls}" ${srcAttr} alt="" decoding="async" data-sid="${id}" onerror="window.sbSpriteRetry(this)">`;
+}
+
+// 画像の読み込み失敗時：最大3回、少し待って再取得。それでもダメなら「#番号」表示にする。
+window.sbSpriteRetry = function (img) {
+  if (!img || !img.isConnected) return;
+  const base = (img.dataset.base || img.dataset.src || img.getAttribute('src') || '').split('?')[0];
+  if (!base) return;
+  img.dataset.base = base;
+  const n = parseInt(img.dataset.retry || '0', 10);
+  if (n >= 3) {
+    const span = document.createElement('span');
+    span.className = img.className;
+    span.dataset.sid = img.dataset.sid || '';
+    span.style.cssText = 'display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:900;color:#7a74a8;';
+    span.textContent = '#' + (img.dataset.sid || '');
+    img.replaceWith(span);
+    return;
+  }
+  img.dataset.retry = String(n + 1);
+  setTimeout(() => {
+    if (!img.isConnected) return;
+    img.src = (n < 2) ? base : (base + '?r=' + Date.now());
+  }, 400 * (n + 1));
+};
+
+// ボックスの画像を、見えている付近から順に読み込む。
+let sbBoxIO = null;
+function sbBoxLoadOne(img) {
+  if (!img || !img.dataset || !img.dataset.src) return;
+  const src = img.dataset.src;
+  img.removeAttribute('data-src');
+  img.src = src;
+}
+function sbBoxLoadImages() {
+  const grid = document.getElementById('sb-box-grid');
+  if (!grid) return;
+  const pending = grid.querySelectorAll('img[data-src]');
+  if (!pending.length) return;
+  if (typeof IntersectionObserver === 'undefined') {
+    pending.forEach(sbBoxLoadOne);
+    return;
+  }
+  if (!sbBoxIO) {
+    sbBoxIO = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (en.isIntersecting) { sbBoxLoadOne(en.target); sbBoxIO.unobserve(en.target); }
+      });
+    }, { root: grid, rootMargin: '400px 0px' });
+  }
+  pending.forEach((img) => { if (!img.dataset.obs) { img.dataset.obs = '1'; sbBoxIO.observe(img); } });
+  // 保険：見える範囲の判定が働かなかった場合でも、少し後に残りを小分けで必ず読み込む
+  clearTimeout(sbBoxLoadImages._t);
+  sbBoxLoadImages._t = setTimeout(() => {
+    const rest = Array.from(grid.querySelectorAll('img[data-src]'));
+    const pump = () => {
+      rest.splice(0, 16).forEach(sbBoxLoadOne);
+      if (rest.length) setTimeout(pump, 120);
+    };
+    pump();
+  }, 1500);
+}
+
+// ボックス内で「読み込み切れていない／壊れた」画像だけを再取得する（真っ白・歯抜け対策）。
+function sbRecoverBoxImages() {
+  const grid = document.getElementById('sb-box-grid');
+  if (!grid) return;
+  sbBoxLoadImages();
+  grid.querySelectorAll('img.sb-cell-img[src]').forEach((img) => {
+    if (img.complete && img.naturalWidth === 0) window.sbSpriteRetry(img);
+  });
 }
 
 // ボックス／パーティ一覧／トレーニング画面で「メガシンカ関連の表示を出してよいか」の判定。
@@ -8092,7 +8198,7 @@ function sbMegaVisible(p) {
 // メガシンカできるポケモンは、マスの右下に mega.png を付ける（未解放のメガはネタバレになるので出さない）。
 function sbMegaBadgeHtml(p) {
   if (!sbMegaVisible(p)) return '';
-  return '<img class="sb-mega" src="./mega.png" alt="メガ" loading="lazy" onerror="this.style.display=\'none\'">';
+  return '<img class="sb-mega" src="./mega.png" alt="メガ" onerror="this.style.display=\'none\'">';
 }
 
 // ショップ購入制のポケモンかどうか、購入済みかどうか（Shop側の判定をそのまま使う）。
@@ -8388,6 +8494,10 @@ function sbRenderBox() {
   if (sel && sel.value !== sbState.sortKey) sel.value = sbState.sortKey;
   sbRenderSortOpts();
   sbRenderTypeFilterBtn();
+  // 見えている付近の画像を読み込み、少し後に読み込み漏れも拾い直す
+  sbBoxLoadImages();
+  setTimeout(sbRecoverBoxImages, 600);
+  setTimeout(sbRecoverBoxImages, 2500);
 }
 // タイプ絞り込みボタンの見た目を現在の状態に合わせる（設定中はタイプのアイコン＋名前で強調、未設定は「タイプ絞込」）
 function sbRenderTypeFilterBtn() {
@@ -8882,7 +8992,7 @@ function sbPartyColHtml(pt, i) {
     const p = members[k];
     if (!p) { rows.push('<div class="ps-row empty"></div>'); continue; }
     const item = sbMegaVisible(p)
-      ? '<img class="ps-item" src="./mega.png" alt="メガ" loading="lazy" onerror="this.style.display=\'none\'">'
+      ? '<img class="ps-item" src="./mega.png" alt="メガ" onerror="this.style.display=\'none\'">'
       : '';
     rows.push(`<div class="ps-row"><span class="ps-name">${p.species.name}</span>${item}<span class="ps-img-wrap">${sbSpriteHtml(p, 'ps-img', true)}</span></div>`);
   }
@@ -9245,7 +9355,7 @@ function pdtCardHtml(p, no) {
   const noHtml = `<span class="pdt-card-no">${no}</span>`;
   if (!p) return `<div class="pdt-card empty">${noHtml}</div>`;
   const megaIcon = sbMegaVisible(p)
-    ? '<img class="pdt-card-mega" src="./mega.png" alt="メガ" loading="lazy" onerror="this.style.display=\'none\'">'
+    ? '<img class="pdt-card-mega" src="./mega.png" alt="メガ" onerror="this.style.display=\'none\'">'
     : '';
   const abilityName = (typeof abilityNameById === 'function') ? (abilityNameById(p.ability) || '') : '';
   // タイプアイコン（種族のタイプ。重複は除く）を名前の右に並べる
@@ -9284,7 +9394,7 @@ function pdtStatCardHtml(p, no) {
   const noHtml = `<span class="pdt-card-no">${no}</span>`;
   if (!p) return `<div class="pdt-card empty">${noHtml}</div>`;
   const megaIcon = sbMegaVisible(p)
-    ? '<img class="pdt-card-mega" src="./mega.png" alt="メガ" loading="lazy" onerror="this.style.display=\'none\'">'
+    ? '<img class="pdt-card-mega" src="./mega.png" alt="メガ" onerror="this.style.display=\'none\'">'
     : '';
   const types = [p.species.type1, p.species.type2].filter((t, i, arr) => t && arr.indexOf(t) === i);
   const typesHtml = types.map((t) => {
@@ -10520,3 +10630,6 @@ window.addEventListener('resize', () => { if (trSel) trPlaceAdjust(); });
 // ボックス画面の詳細パネルなどでも同じアイコンを使えるよう、キー→SVGを引けるようにする
 const TR_STAT_ICON = {};
 TR_STAT_ROWS.forEach(([label, key, svg]) => { TR_STAT_ICON[key] = svg; });
+
+document.addEventListener('visibilitychange', () => { if (!document.hidden) sbRecoverBoxImages(); });
+window.addEventListener('pageshow', () => sbRecoverBoxImages());
