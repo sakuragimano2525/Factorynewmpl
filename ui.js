@@ -8148,6 +8148,26 @@ function sbBoxLoadOne(img) {
   img.removeAttribute('data-src');
   img.src = src;
 }
+// ボックス以外（パーティ一覧・チーム選択・パーティ詳細など）の data-src 画像は、
+// 数が少ないのでDOMに入った瞬間にそのまま読み込む（ボックス内は従来どおり sbBoxLoadImages が担当）。
+(function sbInstallLazyImageFallback() {
+  function load(img) {
+    if (!img || !img.dataset || !img.dataset.src) return;
+    const grid = document.getElementById('sb-box-grid');
+    if (grid && grid.contains(img)) return;
+    sbBoxLoadOne(img);
+  }
+  function scan(node) {
+    if (node.nodeType !== 1) return;
+    if (node.tagName === 'IMG') load(node);
+    else if (node.querySelectorAll) node.querySelectorAll('img[data-src]').forEach(load);
+  }
+  new MutationObserver((muts) => {
+    muts.forEach((m) => m.addedNodes.forEach(scan));
+  }).observe(document.documentElement, { childList: true, subtree: true });
+  document.querySelectorAll('img[data-src]').forEach(load);
+})();
+
 function sbBoxLoadImages() {
   const grid = document.getElementById('sb-box-grid');
   if (!grid) return;
