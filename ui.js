@@ -5393,10 +5393,31 @@ function startMultiplayerPick() {
   state.megaEvolutionEnabled = !!Net.megaEnabled;
   const ids = buildPickPoolIds();
   pickPool = ids.map((id) => createRandomPokemon(id, 100));
+  pickPool.forEach(arrangeShinkirouMovesForRandom); // 対人ランダム：しんきろう持ちは変化技を先頭へ
   pickedIds = [];
   renderPickRow();
   $('pick-overlay').classList.add('show');
   startPickTimer(() => { confirmPick(); });
+}
+
+// 対人戦「ランダム」専用：特性が「しんきろう」（メガシンカ後にしんきろうになる場合も含む）のポケモンは、
+// 変化技を技リストの先頭（1つ目）に寄せ、攻撃技が4つ目に来るようにする。
+// （しんきろうは「4つ目の技が1つ目の技と同じタイプになる」特性のため、4つ目が変化技だと
+//   効果が活きない。通常は変化技が後ろに寄せられるので、ここで並びを逆にする）
+// 攻撃技同士・変化技同士の相対順は変えない。空き枠(0)は最後に詰める。
+function arrangeShinkirouMovesForRandom(poke) {
+  if (!poke || !Array.isArray(poke.moves) || typeof ABILITY === 'undefined') return;
+  let hasMirage = poke.ability === ABILITY.SHINKIROU;
+  if (!hasMirage && typeof getMegaEvolutionData === 'function') {
+    const mega = getMegaEvolutionData(poke);
+    hasMirage = !!mega && mega.ability === ABILITY.SHINKIROU;
+  }
+  if (!hasMirage) return;
+  const isStatus = (m) => m && m.category === 'status';
+  const statusMoves = poke.moves.filter(isStatus);
+  if (statusMoves.length === 0) return; // 変化技が無ければそのまま
+  const others = poke.moves.filter((m) => m && !isStatus(m));
+  poke.moves = [...statusMoves, ...others];
 }
 
 /* =========================================================
@@ -6129,7 +6150,11 @@ async function runMultiplayerBattleHost() {
     const guestRaw = await new Promise((resolve) => {
       if (surrenderedByOpponent) { resolve('__surrender__'); return; }
       let settled = false;
-      const finish = (v) => { if (settled) return; settled = true; clearInterval(check); resolve(v); };
+      // check は finish より先に宣言しておく。ゲストの行動が既に届いている場合、
+      // waitForOpponentAction 内で finish が同期的に呼ばれることがあり、
+      // その時点で check が未初期化だと例外で resolve されず永久に待ち続けてしまう。
+      let check = null;
+      const finish = (v) => { if (settled) return; settled = true; if (check) clearInterval(check); resolve(v); };
       // 【AI確認】onPeek は「相手の行動を検知した瞬間（＝消費する直前）」に呼ばれる。
       // waitForOpponentAction 側の1本のリスナーで検知〜表示〜消費までを行うため、
       // 同じパスに複数のリスナーを同時に張ることによる競合・フリーズを避けられる。
@@ -6142,10 +6167,11 @@ async function runMultiplayerBattleHost() {
           if (target) pushLogLine(`【AI確認】相手は「${target.species.name}」に交代しようとしている`);
         }
       } : null;
-      Net.waitForOpponentAction(finish, onPeek);
-      const check = setInterval(() => {
+      check = setInterval(() => {
         if (surrenderedByOpponent) finish('__surrender__');
       }, 200);
+      Net.waitForOpponentAction(finish, onPeek);
+      if (settled && check) { clearInterval(check); check = null; }
     });
     hideOpponentWaitingBadge();
     if (guestRaw === '__surrender__') {

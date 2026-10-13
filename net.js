@@ -534,13 +534,16 @@ const Net = {
     if (!this.roomRef) return;
     const path = this.isHost ? 'battle/guestAction' : 'battle/hostAction';
     const ref = this.roomRef.child(path);
+    let consumed = false;
     const handler = (snap) => {
       const data = snap.val();
-      if (data) {
+      if (data && !consumed) {
+        consumed = true;
         ref.off('value', handler);
         if (onPeek) { try { onPeek(data); } catch (e) {} }
         ref.set(null);
-        cb(data);
+        // cb内の例外でFirebaseのリスナー処理が巻き込まれないよう、次のtickで呼ぶ
+        setTimeout(() => { try { cb(data); } catch (e) { console.error(e); } }, 0);
       }
     };
     ref.on('value', handler);
