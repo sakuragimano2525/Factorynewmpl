@@ -1107,10 +1107,10 @@ const MEGA_EVOLUTION_DATA = {
   "15": {
     "type1": "bug",
     "type2": "poison",
-    "ability": 25,
+    "ability": 68,
     "baseStats": {
       "hp": 97,
-      "atk": 200,
+      "atk": 225,
       "def": 40,
       "spa": 100,
       "spd": 80,

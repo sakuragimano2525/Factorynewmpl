@@ -526,7 +526,11 @@ const Net = {
     await this.roomRef.child(path).set(serializeAction(action));
   },
 
-  waitForOpponentAction(cb) {
+  // cb: 実際に消費した時に呼ばれる（従来通り）
+  // onPeek: 値を検知した瞬間（消費前）に呼ばれる任意コールバック。【AI確認】用の先読み表示のみに使う。
+  //   同じ1本のリスナーで検知→表示→消費まで行うため、同じパスに複数の
+  //   on('value') を同時に張ることによる競合・フリーズを避けられる。
+  waitForOpponentAction(cb, onPeek) {
     if (!this.roomRef) return;
     const path = this.isHost ? 'battle/guestAction' : 'battle/hostAction';
     const ref = this.roomRef.child(path);
@@ -534,32 +538,13 @@ const Net = {
       const data = snap.val();
       if (data) {
         ref.off('value', handler);
+        if (onPeek) { try { onPeek(data); } catch (e) {} }
         ref.set(null);
         cb(data);
       }
     };
     ref.on('value', handler);
     this._unsubs.push(() => ref.off('value', handler));
-  },
-
-  /* ---- 【AI確認】用：相手の行動を「消費せず」覗き見するリスナー ----
-     waitForOpponentAction は値を読んだ瞬間に null へリセットしてしまう
-     （本来のターン進行ロジックが二重に拾わないようにするため）ので、
-     自分がまだ行動選択中の間に相手の行動を先読み表示したい用途には使えない。
-     このリスナーは値を読むだけで消費（set(null)）しないため、本来の
-     waitForOpponentAction の動作とは干渉しない。 */
-  peekOpponentAction(cb) {
-    if (!this.roomRef) return () => {};
-    const path = this.isHost ? 'battle/guestAction' : 'battle/hostAction';
-    const ref = this.roomRef.child(path);
-    const handler = (snap) => {
-      const data = snap.val();
-      if (data) cb(data);
-    };
-    ref.on('value', handler);
-    const unsub = () => ref.off('value', handler);
-    this._unsubs.push(unsub);
-    return unsub;
   },
 
   /* ---- ホスト → ゲストへのイベント送信 ---- */
