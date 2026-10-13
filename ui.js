@@ -7038,6 +7038,10 @@ function renderBattleHistoryList() {
     const megaTagClass = entry.isTeam ? 'record-tag team' : 'record-tag mega';
     const resultLabel = entry.win ? 'WIN' : 'LOSE';
     const resultClass = entry.win ? 'win' : 'lose';
+    // NPC戦かつ難易度ハードのときだけ「HARD」タグを表示
+    const hardTagHtml = (entry.mode === 'npc' && entry.difficulty === 'hard')
+      ? '<span class="record-tag hard">HARD</span>'
+      : '';
     const streakHtml = (entry.streak !== null && entry.streak !== undefined)
       ? `<span class="record-streak-badge"><b>${entry.streak}</b>連勝</span>`
       : '';
@@ -7047,6 +7051,7 @@ function renderBattleHistoryList() {
           <div class="record-tags">
             <span class="record-tag">${modeLabel}</span>
             <span class="${megaTagClass}">${megaLabel}</span>
+            ${hardTagHtml}
           </div>
           <div class="record-team-sprites self">${battleHistorySpritesHtml(entry.playerTeam, 'self')}</div>
         </div>
@@ -7414,7 +7419,7 @@ function calcNpcDiscReward(battleNo) {
    所持ディスク数・購入済みポケモンはlocalStorageに永続化する。
    ディスクはNPC戦・対人戦の勝利で加算される（DiscReward参照）。 */
 const SHOP_ITEMS = {
-	1012: 100,
+	1012: 50,
   410: 50,
   411: 50,
   486: 50,
@@ -7441,17 +7446,32 @@ const SHOP_ITEMS = {
 1010: 50,
 1013: 50,
   1032: 50,
-  1042:100,
-  1043:100,
+  1042:50,
+  1043:50,
 1044:50,
 1045:50,
 1046:50,
 1047:50,
-1048:100,
-1049:100,
-1050:100,
-1059:250,
-1060:250,
+1048:50,
+1049:50,
+1050:50,
+1059:50,
+1060:50,
+1061:50,
+1062:50,
+1063:50,
+1064:50,
+1065:50,
+1066:50,
+1067:50,
+1068:50,
+1069:50,
+1070:50,
+1071:50,
+1072:50,
+1073:150,
+1074:150,
+1075:150,
 };
 
 const SHOP_DISC_STORAGE_KEY = 'pokeriere_shop_disc_v1';

@@ -427,7 +427,6 @@ const POKEDEX_CUSTOM_ORDER = [
   505, // No.302 ヤミラミ
   291, // No.303 クチート
   239, // No.306 ボスゴドラ
-  34,
   577, // No.310 ライボルト
   482, // No.311 プラスル
   483, // No.312 マイナン
@@ -437,6 +436,7 @@ const POKEDEX_CUSTOM_ORDER = [
   48, // No.323 バクーダ
   42, // No.324 コータス
   1044,
+34,
   165, // No.326 ブーピッグ
   390, // No.330 フライゴン
   344, // No.334 チルタリス
@@ -607,12 +607,21 @@ const POKEDEX_CUSTOM_ORDER = [
 1033, // センノガハラ
 1001, // フレカリス
 1032, // トウリュウガ
+1063,
 1036, // アンロウジ
+1061,
+1062,
 596, // メイデナー
 1007, // ムルルイン
 1035, // ゴキブリュレ
 1050,
+1064,
   17, // クシャムシャ
+  1065,
+  1066,
+  1067,
+  1068,
+  1069,
   254, // プラナイト
   255, // プラレイド
   486, // メロフライ
@@ -629,6 +638,8 @@ const POKEDEX_CUSTOM_ORDER = [
   410, // スノヒメ
   411, // メヒノス
   489, // エクレール
+  1070,
+  1071,
 603, // リミナルコア
   604, // ネハンジョウ
   1002, // ゴウエモン
@@ -655,6 +666,10 @@ const POKEDEX_CUSTOM_ORDER = [
 1052,
 1056,
 1058,
+1072,
+1073,
+1074, 
+1075,
   1990, // ウーズメルス
   2000, // アリアスカル
   1057,
@@ -758,7 +773,7 @@ function restoreOriginalMoves(poke) {
 // 威力59以下でも例外的にダメージ技候補として採用するID
 const LOW_POWER_EXCEPTION_MOVE_IDS = [1,271,503,504,111,107,155,221,162,295,324,77,341,405,461,472,498,494,48,189,309,367,388,229,109,179,169,128];
 
-function chooseMoves(species, ability) {
+function chooseMoves(species) {
   const candidateIds = levelUpMoveIds(species);
   const statusMoves = [], damageMoves = [];
   for (const moveId of candidateIds) {
@@ -870,11 +885,7 @@ function chooseMoves(species, ability) {
   // 内部順序（採用順）は変えず、カテゴリの並び替えのみ行う。
   const damageOnly = chosen.filter((id) => id !== 0 && GAME_DATA.moves[id]?.category !== 'status');
   const statusOnly = chosen.filter((id) => id !== 0 && GAME_DATA.moves[id]?.category === 'status');
-  // ただし特性「しんきろう」は技1つ目のタイプが技4つ目に反映される特別な特性なので、
-  // 変化技を1枠目（2つなら1・2枠目）に置き、攻撃技を後ろへ寄せる。
-  const reordered = (ability === ABILITY.SHINKIROU)
-    ? [...statusOnly, ...damageOnly]
-    : [...damageOnly, ...statusOnly];
+  const reordered = [...damageOnly, ...statusOnly];
   while (reordered.length < 4) reordered.push(0);
   return reordered;
 }
@@ -1032,9 +1043,9 @@ const MEGA_EVOLUTION_DATA = {
         "ability": 70,
         "baseStats": {
           "hp": 78,
-          "atk": 120,
+          "atk": 140,
           "def": 111,
-          "spa": 120,
+          "spa": 124,
           "spd": 85,
           "spe": 100
         }
@@ -1045,9 +1056,9 @@ const MEGA_EVOLUTION_DATA = {
         "ability": 46,
         "baseStats": {
           "hp": 78,
-          "atk": 94,
+          "atk": 110,
           "def": 88,
-          "spa": 139,
+          "spa": 147,
           "spd": 115,
           "spe": 100
         }
@@ -1099,11 +1110,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 68,
     "baseStats": {
       "hp": 97,
-      "atk": 175,
+      "atk": 200,
       "def": 40,
-      "spa": 0,
+      "spa": 100,
       "spd": 80,
-      "spe": 152
+      "spe": 153
     }
   },
   "18": {
@@ -1137,8 +1148,8 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "psychic",
     "ability": 25,
     "baseStats": {
-      "hp": 60,
-      "atk": 90,
+      "hp": 80,
+      "atk": 115,
       "def": 85,
       "spa": 70,
       "spd": 85,
@@ -1163,11 +1174,11 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "shine",
     "ability": 125,
     "baseStats": {
-      "hp": 65,
-      "atk": 150,
-      "def": 60,
-      "spa": 75,
-      "spd": 70,
+      "hp": 70,
+      "atk": 170,
+      "def": 90,
+      "spa": 35,
+      "spd": 80,
       "spe": 125
     }
   },
@@ -1179,7 +1190,7 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 100,
       "atk": 130,
       "def": 110,
-      "spa": 30,
+      "spa": 20,
       "spd": 100,
       "spe": 110
     }
@@ -1189,9 +1200,9 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "ground",
     "ability": 66,
     "baseStats": {
-      "hp": 100,
+      "hp": 70,
       "atk": 135,
-      "def": 100,
+      "def": 110,
       "spa": 135,
       "spd": 105,
       "spe": 20
@@ -1204,12 +1215,12 @@ const MEGA_EVOLUTION_DATA = {
         "type2": null,
         "ability": 117,
         "baseStats": {
-          "hp": 25,
-          "atk": 125,
+          "hp": 70,
+          "atk": 145,
           "def": 95,
-          "spa": 80,
+          "spa": 110,
           "spd": 95,
-          "spe": 110
+          "spe": 125
         }
       },
       "Y": {
@@ -1218,9 +1229,9 @@ const MEGA_EVOLUTION_DATA = {
         "ability": 69,
         "baseStats": {
           "hp": 70,
-          "atk": 90,
-          "def": 65,
-          "spa": 150,
+          "atk": 110,
+          "def": 80,
+          "spa": 170,
           "spd": 80,
           "spe": 130
         }
@@ -1232,12 +1243,12 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "dark",
     "ability": 96,
     "baseStats": {
-      "hp": 100,
-      "atk": 75,
-      "def": 100,
+      "hp": 80,
+      "atk": 91,
+      "def": 95,
       "spa": 155,
       "spd": 100,
-      "spe": 115
+      "spe": 95
     }
   },
   "60": {
@@ -1258,12 +1269,12 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "fire",
     "ability": 140,
     "baseStats": {
-      "hp": 70,
+      "hp": 80,
       "atk": 128,
       "def": 95,
       "spa": 128,
-      "spd": 85,
-      "spe": 75
+      "spd": 89,
+      "spe": 115
     }
   },
   "70": {
@@ -1272,11 +1283,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 56,
     "baseStats": {
       "hp": 120,
-      "atk": 135,
+      "atk": 140,
       "def": 90,
-      "spa": 135,
+      "spa": 140,
       "spd": 75,
-      "spe": 20
+      "spe": 15
     }
   },
   "73": {
@@ -1302,7 +1313,7 @@ const MEGA_EVOLUTION_DATA = {
       "def": 70,
       "spa": 140,
       "spd": 100,
-      "spe": 100
+      "spe": 120
     }
   },
   "81": {
@@ -1323,7 +1334,7 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "dragon",
     "ability": 107,
     "baseStats": {
-      "hp": 65,
+      "hp": 85,
       "atk": 125,
       "def": 105,
       "spa": 125,
@@ -1362,9 +1373,9 @@ const MEGA_EVOLUTION_DATA = {
     "type2": null,
     "ability": 76,
     "baseStats": {
-      "hp": 55,
-      "atk": 40,
-      "def": 75,
+      "hp": 65,
+      "atk": 25,
+      "def": 70,
       "spa": 165,
       "spd": 105,
       "spe": 150
@@ -1393,7 +1404,7 @@ const MEGA_EVOLUTION_DATA = {
       "def": 230,
       "spa": 15,
       "spd": 95,
-      "spe": 20
+      "spe": 50
     }
   },
   "139": {
@@ -1404,7 +1415,7 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 80,
       "atk": 135,
       "def": 130,
-      "spa": 0,
+      "spa": 4,
       "spd": 110,
       "spe": 156
     }
@@ -1418,7 +1429,7 @@ const MEGA_EVOLUTION_DATA = {
       "atk": 155,
       "def": 85,
       "spa": 155,
-      "spd": 85,
+      "spd": 95,
       "spe": 110
     }
   },
@@ -1428,7 +1439,7 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 143,
     "baseStats": {
       "hp": 75,
-      "atk": 145,
+      "atk": 135,
       "def": 100,
       "spa": 70,
       "spd": 120,
@@ -1443,7 +1454,7 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 80,
       "atk": 130,
       "def": 130,
-      "spa": 55,
+      "spa": 35,
       "spd": 100,
       "spe": 75
     }
@@ -1479,7 +1490,7 @@ const MEGA_EVOLUTION_DATA = {
     "type2": null,
     "ability": 98,
     "baseStats": {
-      "hp": 65,
+      "hp": 75,
       "atk": 137,
       "def": 160,
       "spa": 60,
@@ -1518,8 +1529,8 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "flying",
     "ability": 70,
     "baseStats": {
-      "hp": 80,
-      "atk": 125,
+      "hp": 90,
+      "atk": 130,
       "def": 85,
       "spa": 50,
       "spd": 95,
@@ -1547,7 +1558,7 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 60,
       "atk": 55,
       "def": 80,
-      "spa": 160,
+      "spa": 170,
       "spd": 95,
       "spe": 130
     }
@@ -1560,7 +1571,7 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 100,
       "atk": 130,
       "def": 230,
-      "spa": 0,
+      "spa": 10,
       "spd": 80,
       "spe": 50
     }
@@ -1570,10 +1581,10 @@ const MEGA_EVOLUTION_DATA = {
     "type2": null,
     "ability": 156,
     "baseStats": {
-      "hp": 64,
+      "hp": 84,
       "atk": 155,
       "def": 105,
-      "spa": 105,
+      "spa": 103,
       "spd": 80,
       "spe": 108
     }
@@ -1622,10 +1633,10 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "normal",
     "ability": 133,
     "baseStats": {
-      "hp": 86,
+      "hp": 76,
       "atk": 78,
       "def": 102,
-      "spa": 119,
+      "spa": 139,
       "spd": 86,
       "spe": 126
     }
@@ -1687,12 +1698,12 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "steel",
     "ability": 138,
     "baseStats": {
-      "hp": 75,
-      "atk": 40,
-      "def": 120,
-      "spa": 125,
+      "hp": 95,
+      "atk": 30,
+      "def": 125,
+      "spa": 144,
       "spd": 120,
-      "spe": 65
+      "spe": 91
     }
   },
   "309": {
@@ -1703,7 +1714,7 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 60,
       "atk": 65,
       "def": 110,
-      "spa": 175,
+      "spa": 195,
       "spd": 110,
       "spe": 90
     }
@@ -1716,8 +1727,8 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 95,
       "atk": 135,
       "def": 130,
-      "spa": 110,
-      "spd": 90,
+      "spa": 130,
+      "spd": 91,
       "spe": 99
     }
   },
@@ -1754,10 +1765,10 @@ const MEGA_EVOLUTION_DATA = {
     "baseStats": {
       "hp": 108,
       "atk": 160,
-      "def": 115,
+      "def": 125,
       "spa": 110,
       "spd": 95,
-      "spe": 72
+      "spe": 92
     }
   },
   "344": {
@@ -1895,11 +1906,11 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "fighting",
     "ability": 89,
     "baseStats": {
-      "hp": 65,
+      "hp": 80,
       "atk": 146,
       "def": 94,
       "spa": 35,
-      "spd": 96,
+      "spd": 121,
       "spe": 135
     }
   },
@@ -1922,7 +1933,7 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 19,
     "baseStats": {
       "hp": 75,
-      "atk": 59,
+      "atk": 30,
       "def": 72,
       "spa": 149,
       "spd": 125,
@@ -1986,7 +1997,7 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "ice",
     "ability": 14,
     "baseStats": {
-      "hp": 15,
+      "hp": 95,
       "atk": 165,
       "def": 117,
       "spa": 95,
@@ -2090,10 +2101,10 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "steel",
     "ability": 75,
     "baseStats": {
-      "hp": 100,
-      "atk": 155,
+      "hp": 110,
+      "atk": 160,
       "def": 100,
-      "spa": 0,
+      "spa": 30,
       "spd": 65,
       "spe": 103
     }
@@ -2106,7 +2117,7 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 83,
       "atk": 80,
       "def": 125,
-      "spa": 110,
+      "spa": 150,
       "spd": 116,
       "spe": 101
     }
@@ -2118,7 +2129,7 @@ const MEGA_EVOLUTION_DATA = {
     "baseStats": {
       "hp": 155,
       "atk": 110,
-      "def": 145,
+      "def": 140,
       "spa": 30,
       "spd": 90,
       "spe": 30
@@ -2155,12 +2166,12 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "fairy",
     "ability": 91,
     "baseStats": {
-      "hp": 100,
+      "hp": 90,
       "atk": 30,
-      "def": 126,
-      "spa": 110,
-      "spd": 126,
-      "spe": 66
+      "def": 66,
+      "spa": 151,
+      "spd": 122,
+      "spe": 104
     }
   },
   "1003": {
@@ -2208,8 +2219,8 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 139,
     "baseStats": {
       "hp": 108,
-      "atk": 48,
-      "def": 62,
+      "atk": 40,
+      "def": 72,
       "spa": 118,
       "spd": 129,
       "spe": 145
@@ -2259,8 +2270,8 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "fighting",
     "ability": 3,
     "baseStats": {
-      "hp": 100,
-      "atk": 90,
+      "hp": 80,
+      "atk": 143,
       "def": 100,
       "spa": 90,
       "spd": 100,
@@ -2272,8 +2283,8 @@ const MEGA_EVOLUTION_DATA = {
     "type2": null,
     "ability": 135,
     "baseStats": {
-      "hp": 100,
-      "atk": 125,
+      "hp": 85,
+      "atk": 136,
       "def": 80,
       "spa": 135,
       "spd": 90,
@@ -2285,10 +2296,10 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "dark",
     "ability": 16,
     "baseStats": {
-      "hp": 100,
+      "hp": 75,
       "atk": 120,
       "def": 135,
-      "spa": 45,
+      "spa": 35,
       "spd": 135,
       "spe": 68
     }
@@ -2301,7 +2312,7 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 99,
       "atk": 171,
       "def": 100,
-      "spa": 40,
+      "spa": 45,
       "spd": 110,
       "spe": 55
     }
@@ -2316,7 +2327,7 @@ const MEGA_EVOLUTION_DATA = {
       "def": 112,
       "spa": 52,
       "spd": 107,
-      "spe": 33
+      "spe": 43
     }
   },
   "1023": {
@@ -2326,7 +2337,7 @@ const MEGA_EVOLUTION_DATA = {
     "baseStats": {
       "hp": 68,
       "atk": 142,
-      "def": 58,
+      "def": 78,
       "spa": 78,
       "spd": 109,
       "spe": 145
@@ -2403,7 +2414,7 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 75,
     "baseStats": {
       "hp": 130,
-      "atk": 148,
+      "atk": 150,
       "def": 75,
       "spa": 70,
       "spd": 110,
@@ -2468,11 +2479,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 121,
     "baseStats": {
       "hp": 95,
-      "atk": 74,
+      "atk": 64,
       "def": 95,
       "spa": 80,
       "spd": 100,
-      "spe": 116
+      "spe": 86
     }
   },
   "1039": {
@@ -2496,7 +2507,7 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 70,
       "atk": 135,
       "def": 85,
-      "spa": 10,
+      "spa": 20,
       "spd": 105,
       "spe": 125
     }
@@ -2506,11 +2517,11 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "electric",
     "ability": 155,
     "baseStats": {
-      "hp": 80,
-      "atk": 20,
-      "def": 83,
-      "spa": 210,
-      "spd": 86,
+      "hp": 20,
+      "atk": 53,
+      "def": 136,
+      "spa": 53,
+      "spd": 137,
       "spe": 151
     }
   }
@@ -2756,7 +2767,7 @@ function createRandomPokemon(speciesId, level = 100) {
   const species = GAME_DATA.species[speciesId];
   const nature = rand(1, 24);
   const ability = rollAbility(species);
-  const moveIds = chooseMoves(species, ability);
+  const moveIds = chooseMoves(species);
   const evs = randomEvSpread(510, 252); // [hp,atk,def,spa,spd,spe]
   const iv = 31;
 
@@ -5812,12 +5823,9 @@ async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onIm
       const newActive = await onImmediateSwitch(targetSide);
       if (newActive) {
         clearShadowTrapsBy(leavingPoke, action.poke);
-        // 強制交代で場を離れたポケモンの「まだ実行されていない行動」は無効になる。
-        // （新しく出てきたポケモンが、交代前に選ばれていた技を引き継いで使ってはいけない）
-        // 逆に、このターン中に残っている相手側の技の対象は、新しく出てきたポケモンへ差し替える。
-        for (let j = actions.length - 1; j > i; j--) {
-          if (actions[j].poke === leavingPoke) { actions.splice(j, 1); continue; }
-          if (actions[j].target === leavingPoke) actions[j].target = newActive;
+        for (let j = i + 1; j < actions.length; j++) {
+          if (actions[j].poke === action.target) actions[j].poke = newActive;
+          if (actions[j].target === action.target) actions[j].target = newActive;
         }
         if (targetSide === 'player') playerPoke = newActive; else cpuPoke = newActive;
       }
