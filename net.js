@@ -550,6 +550,26 @@ const Net = {
     this._unsubs.push(() => ref.off('value', handler));
   },
 
+  // 相手の行動を「見るだけ」で監視する（値は消費しない・消さない）。【AI確認】用。
+  // 相手が行動を送った瞬間に onPeek(data) を1回だけ呼ぶ。戻り値の関数で監視を止める。
+  // 実際の受け取り（消費）は waitForOpponentAction が別に行うので、互いに干渉しない。
+  peekOpponentAction(onPeek) {
+    if (!this.roomRef) return null;
+    const path = this.isHost ? 'battle/guestAction' : 'battle/hostAction';
+    const ref = this.roomRef.child(path);
+    let fired = false;
+    const handler = (snap) => {
+      const data = snap.val();
+      if (!data || fired) return;
+      fired = true;
+      try { onPeek(data); } catch (e) { console.error(e); }
+    };
+    ref.on('value', handler);
+    const unsub = () => ref.off('value', handler);
+    this._unsubs.push(unsub);
+    return unsub;
+  },
+
   /* ---- ホスト → ゲストへのイベント送信 ---- */
   async pushEvents(events) {
     if (!this.roomRef || !this.isHost) return;

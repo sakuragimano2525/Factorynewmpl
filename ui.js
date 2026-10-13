@@ -6143,22 +6143,12 @@ async function runMultiplayerBattleHost() {
     queueTurnDivider(state.turnNumber);
     await drainMessages();
 
-    const myAction = await waitForPlayerAction();
-    await Net.sendAction(myAction);
-    showOpponentWaitingBadge();
-
-    const guestRaw = await new Promise((resolve) => {
-      if (surrenderedByOpponent) { resolve('__surrender__'); return; }
-      let settled = false;
-      // check は finish より先に宣言しておく。ゲストの行動が既に届いている場合、
-      // waitForOpponentAction 内で finish が同期的に呼ばれることがあり、
-      // その時点で check が未初期化だと例外で resolve されず永久に待ち続けてしまう。
-      let check = null;
-      const finish = (v) => { if (settled) return; settled = true; if (check) clearInterval(check); resolve(v); };
-      // 【AI確認】onPeek は「相手の行動を検知した瞬間（＝消費する直前）」に呼ばれる。
-      // waitForOpponentAction 側の1本のリスナーで検知〜表示〜消費までを行うため、
-      // 同じパスに複数のリスナーを同時に張ることによる競合・フリーズを避けられる。
-      const onPeek = debugCpuMovePeekEnabled ? (raw) => {
+    // 【AI確認】M1RA1：ゲストが技を選んだ瞬間に表示するため、自分の行動選択中（待機の前）から
+    // 相手の行動を「見るだけ」のリスナーで監視する。値は消費しない（消費は下の
+    // waitForOpponentAction だけが行う）ので、行動の受け渡しには影響せずフリーズしない。
+    let stopPeek = null;
+    if (debugCpuMovePeekEnabled) {
+      stopPeek = Net.peekOpponentAction((raw) => {
         if (raw && raw.type === 'move') {
           const move = state.cpuActive.moves.find((m) => m.id === raw.moveId);
           if (move) pushLogLine(`【AI確認】相手は「${move.name}」を選んでいる`);
@@ -6166,11 +6156,25 @@ async function runMultiplayerBattleHost() {
           const target = state.cpuTeam[raw.idx];
           if (target) pushLogLine(`【AI確認】相手は「${target.species.name}」に交代しようとしている`);
         }
-      } : null;
+      });
+    }
+
+    const myAction = await waitForPlayerAction();
+    await Net.sendAction(myAction);
+    showOpponentWaitingBadge();
+
+    const guestRaw = await new Promise((resolve) => {
+      if (surrenderedByOpponent) { if (stopPeek) stopPeek(); resolve('__surrender__'); return; }
+      let settled = false;
+      // check は finish より先に宣言しておく。ゲストの行動が既に届いている場合、
+      // waitForOpponentAction 内で finish が同期的に呼ばれることがあり、
+      // その時点で check が未初期化だと例外で resolve されず永久に待ち続けてしまう。
+      let check = null;
+      const finish = (v) => { if (settled) return; settled = true; if (check) clearInterval(check); if (stopPeek) stopPeek(); resolve(v); };
       check = setInterval(() => {
         if (surrenderedByOpponent) finish('__surrender__');
       }, 200);
-      Net.waitForOpponentAction(finish, onPeek);
+      Net.waitForOpponentAction(finish);
       if (settled && check) { clearInterval(check); check = null; }
     });
     hideOpponentWaitingBadge();
