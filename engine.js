@@ -402,6 +402,7 @@ const POKEDEX_CUSTOM_ORDER = [
   174, // No.212 ハッサム
   12, // No.214 ヘラクロス
   54, // No.219 マグカルゴ
+  781,
   372, // No.224 オクタン
   499, // No.225 デリバード
   76, // No.226 マンタイン
@@ -416,6 +417,8 @@ const POKEDEX_CUSTOM_ORDER = [
   1017, // No.257 バシャーモ
   9, // No.260 ラグラージ
   287, // No.264 マッスグマ
+  696,
+  698,
   156, // No.272 ルンパッパ
   159, // No.275 ダーテング
   264, // No.277 オオスバメ
@@ -454,6 +457,8 @@ const POKEDEX_CUSTOM_ORDER = [
   456, // No.376 メタグロス
   215, // No.398 ムクホーク
   32, // No.407 ロズレイド
+  752,
+  753,
   331, // No.416 ビークイン
   508, // No.426 フワライド
   366, // No.428 ミミロップ
@@ -495,21 +500,25 @@ const POKEDEX_CUSTOM_ORDER = [
   191, // No.512 ヤナッキー
   193, // No.514 バオッキー
   195, // No.516 ヒヤッキー
+  783,
   513, // No.530 ドリュウズ
   585, // No.531 タブンネ
   516, // No.534 ローブシン
+  745,
   367, // No.538 ナゲキ
   368, // No.539 ダゲキ
   325, // No.545 ペンドラー
   298, // No.547 エルフーン
   562, // No.549 ドレディア
   236, // No.553 ワルビアル
+  746,
   209, // No.558 イワパレス
   1019, // No.560 ズルズキン
   71, // No.561 シンボラー
   485, // No.571 ゾロアーク
   266, // No.573 チラチーノ
   290, // No.584 バイバニラ
+  755,
   197, // No.589 シュバルゴ
   217, // No.594 ママンボウ
   587, // No.596 デンチュラ
@@ -546,6 +555,7 @@ const POKEDEX_CUSTOM_ORDER = [
   358, // No.689 ガメノデス
   89, // No.691 ドラミドロ
   360, // No.693 ブロスター
+  748,
   272, // No.697 ガチゴラス
   274, // No.699 アマルルガ
   437, // No.700 ニンフィア
@@ -761,6 +771,9 @@ function buildMoveObject(id) {
     drainRatio: m.drainRatio || null, recoilRatio: m.recoilRatio || null,
     selfDestruct: !!m.selfDestruct, chargeTurn: !!m.chargeTurn,
     damageFormula: m.damageFormula || null, callRandomMove: !!m.callRandomMove,
+    kimarite: !!m.kimarite,
+    turnScaledPower: !!m.turnScaledPower,
+    waitScaledPower: !!m.waitScaledPower,
     locked: false };
 }
 
@@ -1117,7 +1130,7 @@ const MEGA_EVOLUTION_DATA = {
       "def": 40,
       "spa": 100,
       "spd": 80,
-      "spe": 153
+      "spe": 253
     }
   },
   "18": {
@@ -1259,10 +1272,10 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "dark",
     "ability": 75,
     "baseStats": {
-      "hp": 100,
+      "hp": 90,
       "atk": 145,
       "def": 109,
-      "spa": 50,
+      "spa": 80,
       "spd": 130,
       "spe": 91
     }
@@ -1650,7 +1663,7 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 118,
     "baseStats": {
       "hp": 74,
-      "atk": 38,
+      "atk": 37,
       "def": 116,
       "spa": 153,
       "spd": 121,
@@ -1923,7 +1936,7 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 116,
     "baseStats": {
       "hp": 88,
-      "atk": 147,
+      "atk": 167,
       "def": 172,
       "spa": 84,
       "spd": 115,
@@ -1948,11 +1961,11 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "dark",
     "ability": 142,
     "baseStats": {
-      "hp": 92,
-      "atk": 135,
-      "def": 77,
-      "spa": 133,
-      "spd": 81,
+      "hp": 72,
+      "atk": 155,
+      "def": 107,
+      "spa": 153,
+      "spd": 111,
       "spe": 142
     }
   },
@@ -2057,7 +2070,7 @@ const MEGA_EVOLUTION_DATA = {
       "def": 130,
       "spa": 130,
       "spd": 100,
-      "spe": 65
+      "spe": 115
     }
   },
   "489": {
@@ -3365,6 +3378,8 @@ const battleField = {
   tailwindCpu: 0,
   trickRoom: false,
   trickRoomTurns: 0,
+  // クレッシェンド(379)用：バトル開始からの経過ターン数（1ターン目=1）
+  turnCount: 0,
   // 本家と同様、1回の戦闘で各トレーナー（プレイヤー/相手）につき1匹しかメガシンカできない。
   // 誰か1匹がメガシンカした時点で、そのサイドは以降このバトル中ずっとメガシンカ不可になる。
   megaUsedPlayer: false,
@@ -3389,6 +3404,7 @@ function resetField(playerTeam, cpuTeam) {
   battleField.tailwindCpu = 0;
   battleField.trickRoom = false;
   battleField.trickRoomTurns = 0;
+  battleField.turnCount = 0;
   battleField.megaUsedPlayer = false;
   battleField.megaUsedCpu = false;
   battleField.playerTeam = Array.isArray(playerTeam) ? playerTeam : null;
@@ -3523,6 +3539,38 @@ function getAttackWeather(attacker, defender) {
 }
 
 // ---- ダメージ計算（壁対応） ----
+// 経過ターン・待機ターンで威力が変わる技の「実際の威力」を返す（calcDamageと技メニュー表示で共用）。
+//  ・クレッシェンド(turnScaledPower)：バトルの経過ターンごとに+15（1ターン目=15、最大250）
+//  ・シアーハート(waitScaledPower)：場に出てから（or 前回使ってから）の待機ターン 0→20 / 1→40 / 2→80 / 3以上→160
+// battleField.turnCount は現在のターン番号（ui.js の queueTurnDivider が毎ターン開始時に設定）。forDisplay は互換のため残している。
+// 対象外の技は null を返す。
+function getDynamicMovePower(poke, move, forDisplay) {
+  if (!move) return null;
+  if (move.turnScaledPower) {
+    // turnCount は常に「現在のターン番号」。技選択中・AI判断中・ダメージ計算中のどれでも同じ威力になる。
+    const t = Math.max(1, battleField.turnCount || 0);
+    return Math.min(250, 15 + 15 * (t - 1));
+  }
+  if (move.waitScaledPower) {
+    const w = Math.max(0, (poke && poke.shearHeartTurns) || 0);
+    return [20, 40, 80, 160][Math.min(w, 3)];
+  }
+  return null;
+}
+
+// げきりん(43)・しゅうげき(517)：2〜3ターン連続使用し、終了後に自分が混乱する技
+const GEKIRIN_LIKE_MOVE_IDS = [43, 517];
+function isGekirinLikeMove(move) {
+  return !!move && GEKIRIN_LIKE_MOVE_IDS.includes(move.id);
+}
+
+// ワンダーパウダー用：相手の特攻（実効値）が自分の特攻（実効値）より高いか
+function isOppSpaHigherThanSelf(attacker, defender) {
+  const selfSpa = attacker.stats.spa * rankMultiplier(attacker.ranks.spa);
+  const oppSpa = defender.stats.spa * rankMultiplier(defender.ranks.spa);
+  return oppSpa > selfSpa;
+}
+
 function calcDamage(attacker, defender, move, logFn) {
   // ふゆう（実効タイプを使用）
   const defTypes = getEffectiveTypes(defender);
@@ -3542,6 +3590,13 @@ function calcDamage(attacker, defender, move, logFn) {
     logFn(`${typeJp(effMoveType)}タイプに変わり、威力が${effMovePower}になった！`);
   }
   move = { ...move, type: effMoveType, power: effMovePower };
+
+  // 経過ターン／待機ターンで威力が変わる技（クレッシェンド・シアーハート）
+  if (move.turnScaledPower || move.waitScaledPower) {
+    const dyn = getDynamicMovePower(attacker, move, false);
+    move = { ...move, power: dyn };
+    if (logFn) logFn(`${move.name}の威力は${dyn}！`);
+  }
 
   if (defender.ability === ABILITY.FUYU && move.type === 'ground' && attacker.ability !== ABILITY.KATAYABURI) {
     if (!battleField.chemicalGasActive || defender.ability === ABILITY.KAGAKUHENKAGASU) {
@@ -4610,6 +4665,35 @@ function movePriorityWithWeather(move, poke, opp) {
   return p;
 }
 
+// ---- きまりて（オリジナル技の追加効果） ----
+// 相手が「交代」か「交代技」を選んでいる時、威力が KIMARITE_POWER になり、
+// 必ず相手の交代処理より先に攻撃が行われ、相手の交代はキャンセルされる。
+// 行動順は優先度ではなく「並べ替え」で最前列に固定するため、
+// サイコフィールドの先制無効やソニックガードの影響を受けない。
+// 技の判定は、Gamedata側で move.kimarite = true を付けるか、
+// 下の KIMARITE_MOVE_ID に技IDを入れるかのどちらでも可能。
+const KIMARITE_MOVE_ID = 110;
+const KIMARITE_POWER = 150;
+// 自分が場を離れる「交代技」のID（とんぼがえり等／バトンタッチ）。新しい交代技を足したらここにも追加する。
+const SWITCH_OUT_MOVE_IDS = [3, 349, 80, 477];
+
+function isKimariteMove(move) {
+  return !!move && (move.kimarite === true || (KIMARITE_MOVE_ID !== null && move.id === KIMARITE_MOVE_ID));
+}
+function isSwitchOutMove(move) {
+  return !!move && SWITCH_OUT_MOVE_IDS.includes(move.id);
+}
+// action は { type: 'switch' } / { type: 'move', move } / { type: 'none' } 形式
+function isSwitchOutAction(action) {
+  if (!action) return false;
+  if (action.type === 'switch') return true;
+  return action.type === 'move' && isSwitchOutMove(action.move);
+}
+// myAction（きまりて）が、oppAction（交代／交代技）に対して発動するか
+function isKimariteTriggered(myAction, oppAction) {
+  return !!myAction && myAction.type === 'move' && isKimariteMove(myAction.move) && isSwitchOutAction(oppAction);
+}
+
 // ---- 優先度計算 ----
 // 天候などで優先度が+1される技（ふゆのひざし・穿星波）も、サイコフィールドの先制無効や
 // ソニックガードの対象になるよう、「補正後の優先度」を基準に判定する。
@@ -4656,7 +4740,20 @@ function calcVariablePower(moveId, currentHp, maxHp) {
 }
 
 // ---- 1ターンの技実行 ----
+// シアーハート：使用した時点で待機ターンをリセット（外れても・失敗しても「使った」扱い）。
+// そのターン終了時の+1カウントを避けるため _shearUsed を立てておく。
 function executeMove(attacker, defender, move, logFn, turnCtx) {
+  try {
+    return executeMoveCore(attacker, defender, move, logFn, turnCtx);
+  } finally {
+    if (move && move.waitScaledPower && attacker) {
+      attacker.shearHeartTurns = 0;
+      attacker._shearUsed = true;
+    }
+  }
+}
+
+function executeMoveCore(attacker, defender, move, logFn, turnCtx) {
   // じきゅうりょく等「ダメージを受けた時」の特性を、このexecuteMove内で実際に
   // ダメージを受けた側だけに正しく発動させるため、開始時点のHPを記録しておく。
   const attackerHpAtMoveStart = attacker.currentHp;
@@ -4893,11 +4990,11 @@ logFn(`${attacker.species.name}の${move.name}！`, {
   }
 
   // ---- げきりん：強制連続使用の管理 ----
-  if (move.id === 43) {
+  if (isGekirinLikeMove(move)) {
     if (attacker.gekirinTurns <= 0) {
       // 新規発動：2〜3ターン継続（本ターンを含む）
       attacker.gekirinTurns = rand(2, 3);
-      attacker.gekirinMoveId = 43;
+      attacker.gekirinMoveId = move.id;
     }
     attacker.gekirinTurns--;
     if (attacker.gekirinTurns <= 0) {
@@ -5053,6 +5150,15 @@ logFn(`${attacker.species.name}の${move.name}！`, {
 
   // ---- 威力変動技 ----
   let modifiedPower = move.power;
+  // きまりて：相手が交代／交代技を選んでいる時は威力固定
+  if (turnCtx && turnCtx.kimarite) {
+    modifiedPower = KIMARITE_POWER;
+    logFn(`${move.name}の威力は${modifiedPower}になった！`);
+  } else if (isKimariteMove(move)) {
+    // 発動条件を満たさない時の基礎威力は0。最低ダメージが入らないよう、ここで不発にする。
+    logFn(`しかし　うまく　決まらなかった！`);
+    return;
+  }
   if (move.id === 109 || move.id === 179) {
     modifiedPower = calcVariablePower(move.id, attacker.currentHp, attacker.maxHp);
     logFn(`${move.name}の威力は${modifiedPower}になった！`);
@@ -5091,6 +5197,11 @@ logFn(`${attacker.species.name}の${move.name}！`, {
   }
   if (move.id === 494 && (defender.status === STATUS.POISON || defender.status === STATUS.BADLY_POISON)) {
     modifiedPower = 150;
+    logFn(`${move.name}の威力は${modifiedPower}になった！`);
+  }
+  // ワンダーパウダー(19)：相手の特攻が自分の特攻より高い時、威力2倍（ランク補正込みの実効値で比較）
+  if (move.id === 19 && isOppSpaHigherThanSelf(attacker, defender)) {
+    modifiedPower = move.power * 2;
     logFn(`${move.name}の威力は${modifiedPower}になった！`);
   }
   // 有刺鉄線：相手が状態異常の時、威力2倍
@@ -5478,7 +5589,7 @@ logFn(`${attacker.species.name}の${move.name}！`, {
         applyRankChange(attacker, move.selfRank, logFn, null, defender);
         applyStatus(defender, move.oppStatus, logFn, effectiveAbilityId(attacker));
         // げきりん(43)は専用の連続技処理で混乱を扱うためここでは除外
-        if (move.id !== 43) applyStatus(attacker, move.selfStatus, logFn);
+        if (!isGekirinLikeMove(move)) applyStatus(attacker, move.selfStatus, logFn);
         // 有刺鉄線：場に何かのフィールドが張られている時、相手を確定でもうどく状態にする
         if (move.id === 500 && battleField.terrain && battleField.terrain !== 'none' && defender.currentHp > 0) {
           applyStatus(defender, [100, STATUS.BADLY_POISON], logFn, effectiveAbilityId(attacker));
@@ -5510,7 +5621,7 @@ logFn(`${attacker.species.name}の${move.name}！`, {
       // げきりん(43)は専用の連続技処理で混乱を扱うため、ここでも除外する。
       if (!suppressSecondary && !attacker.fainted) {
         applyRankChange(attacker, move.selfRank, logFn, null, defender);
-        if (move.id !== 43) applyStatus(attacker, move.selfStatus, logFn);
+        if (!isGekirinLikeMove(move)) applyStatus(attacker, move.selfStatus, logFn);
       }
       break;
     }
@@ -5688,7 +5799,18 @@ logFn(`${attacker.species.name}の${move.name}！`, {
 // その場で交代させるための非同期コールバック（ui.js側で実装）。
 // 呼び出しシグネチャ: onImmediateSwitch(side) -> Promise<新しいアクティブポケモン or null>
 // null は「交代できなかった（控えなし／バインド中など）」を意味し、その場合は元のポケモンのまま続行する。
-async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onImmediateSwitch) {
+// opts.opponentSwitching: true の時、相手は（このrunTurnの外で）交代しようとしていたものとして扱う。
+//   ui側が「きまりて」を交代処理より先に単独実行する際に使う（相手側のactionは 'none' で渡される）。
+// 戻り値: { kimariteActed } … きまりてが実際に行動できたか（trueなら相手の交代はキャンセルされる）
+async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onImmediateSwitch, opts) {
+  opts = opts || {};
+  // turnCount は UI 側（queueTurnDivider）が「今のターン番号」を1ターンに1回だけ設定する。
+  // runTurn は1ターンに複数回呼ばれる（きまりて先行・交代ターン等）／1回も呼ばれない場合があるため、ここでは加算しない。
+  // シアーハート用：このターン「場にいて技を選んだ」ポケモン（交代ターンで出てきたポケモン等は数えない）
+  const shearActors = [];
+  if (playerAction && playerAction.type === 'move') shearActors.push(playerPoke);
+  if (cpuAction && cpuAction.type === 'move') shearActors.push(cpuPoke);
+  let kimariteActed = false;
   // ---- まもるの状態リセット ----
   // まもるは「使ったそのターンだけ」有効な状態。ここで一旦解除しておき、
   // このターン中にまもるが選択された場合はexecuteMove内で改めてtrueになる。
@@ -5721,6 +5843,15 @@ async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onIm
       }
     });
   }
+
+  // ---- きまりて：発動判定 ----
+  // 相手が交代技を選んでいる（相手のactionが交代技）か、ui側から「相手は交代中」と渡された場合に発動。
+  actions.forEach((a) => {
+    const other = actions.find((o) => o !== a);
+    const otherAsAction = other ? { type: 'move', move: other.move } : null;
+    a.kimarite = isKimariteMove(a.move) &&
+      (opts.opponentSwitching === true || isSwitchOutAction(otherAsAction));
+  });
 
   // ---- メガシンカの解決 ----
   // 本家仕様：メガシンカは「行動順を決める素早さ判定より前」に確定する。
@@ -5783,19 +5914,35 @@ async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onIm
       return effectiveSpeed(b.poke, a.poke) - effectiveSpeed(a.poke, b.poke);
     });
   }
+  // きまりて：優先度・素早さ・トリックルーム・サイコフィールド・ソニックガードを一切無視して最前列に固定
+  {
+    const kimIdx = actions.findIndex((a) => a.kimarite);
+    if (kimIdx > 0) actions.unshift(actions.splice(kimIdx, 1)[0]);
+  }
 
   for (let i = 0; i < actions.length; i++) {
     const action = actions[i];
     if (action.poke.fainted || action.target.fainted) continue;
     if (!checkCanMove(action.poke, logFn)) continue;
+    if (action.kimarite) {
+      kimariteActed = true;
+      logFn(`${action.poke.species.name}の${action.move.name}が　相手の交代より　先に決まった！`);
+    }
     // ふいうち(29)用：相手がこのターン「攻撃技」を選んでいて、かつまだ行動していない場合のみ成功。
     // 相手が変化技を選んだ・交代した（=このターンactionsに技として存在しない）・既に行動済みなら失敗。
     // 対戦（CPU戦・トレーナー戦・対人戦のホスト側）はどれもこのrunTurnを通るため、ここで一括対応できる。
     const oppAction = actions.find((o, idx) => o !== action && o.poke === action.target);
     const oppIdx = oppAction ? actions.indexOf(oppAction) : -1;
     const opponentWillAttack = !!(oppAction && oppIdx > i && oppAction.move && oppAction.move.category !== 'status');
-    executeMove(action.poke, action.target, action.move, logFn, { opponentWillAttack });
+    executeMove(action.poke, action.target, action.move, logFn, { opponentWillAttack, kimarite: !!action.kimarite });
     if (action.target.fainted || action.poke.fainted) break;
+
+    // きまりて：相手の交代技（とんぼがえり等）の「交代する部分」だけをキャンセルする（攻撃自体は行われる）。
+    if (kimariteActed && !action.kimarite && action.poke.pendingSwitchOut) {
+      action.poke.pendingSwitchOut = false;
+      action.poke.batonPass = null;
+      logFn(`${action.poke.species.name}の交代は　きまりてに　封じられた！`);
+    }
 
     // とんぼがえり等で交代予約が立った場合、原作同様にここで即座に交代を解決する。
     // まだ実行されていない後続の行動があれば、そのtargetを新しいポケモンに差し替える。
@@ -5826,9 +5973,15 @@ async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onIm
       const newActive = await onImmediateSwitch(targetSide);
       if (newActive) {
         clearShadowTrapsBy(leavingPoke, action.poke);
+        // 追い出されたポケモンが「まだ実行していない行動」（ゆきなだれ等の後攻技）は
+        // 交代で無効になる。後から出てきたポケモンがその技を引き継いで使ってしまわないよう、
+        // 未実行の行動リストから削除する（後ろから消してインデックスのずれを防ぐ）。
+        for (let j = actions.length - 1; j > i; j--) {
+          if (actions[j].poke === leavingPoke) actions.splice(j, 1);
+        }
+        // 相手側の未実行の行動は、新しく出てきたポケモンを狙うように差し替える。
         for (let j = i + 1; j < actions.length; j++) {
-          if (actions[j].poke === action.target) actions[j].poke = newActive;
-          if (actions[j].target === action.target) actions[j].target = newActive;
+          if (actions[j].target === leavingPoke) actions[j].target = newActive;
         }
         if (targetSide === 'player') playerPoke = newActive; else cpuPoke = newActive;
       }
@@ -5845,6 +5998,12 @@ async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onIm
   [playerPoke, cpuPoke].forEach((p) => { if (!p.fainted) applyIzanaiEndOfTurn(p, logFn); });
   // ランダムアクト：ターン終了時に技を全て入れ替える
   [playerPoke, cpuPoke].forEach((p) => { if (!p.fainted) applyRandomActEndOfTurn(p, logFn); });
+  // シアーハート：技を選んだターンが終わるごとに待機ターン+1（そのターンに使った場合はリセット済みなので加算しない）
+  shearActors.forEach((p) => {
+    if (!p || p.fainted) return;
+    if (p._shearUsed) { p._shearUsed = false; return; }
+    p.shearHeartTurns = (p.shearHeartTurns || 0) + 1;
+  });
   const alivePokes = [playerPoke, cpuPoke].filter((p) => !p.fainted);
   if (alivePokes.length > 0) applyEndOfTurnField(alivePokes, logFn);
 
@@ -5861,6 +6020,7 @@ async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onIm
       }
     }
   });
+  return { kimariteActed };
 }
 
 
@@ -6088,6 +6248,11 @@ const _AI_MULTI_HIT_POWER_OVERRIDE = {
   472: 100, 48: 80, 309: 80, 189: 80, 461: 80, 388: 150, 367: 100,
 };
 
+// AIのダメージ見積もり用：クレッシェンド／シアーハートは「今のターンの威力」で評価する
+function getAIMovePower(attacker, move) {
+  const dyn = getDynamicMovePower(attacker, move, false);
+  return dyn !== null ? dyn : (move.power || 0);
+}
 function isDamagingMoveAI(move) {
   return move.category !== 'status' && (move.power || 0) > 0;
 }
@@ -6151,7 +6316,7 @@ function estimateMaxDamageAI(attacker, move, defender, atkTypes, mult) {
   const defRank = defender.ranks[defStatKey];
   const effAtk = atkVal * rankMultiplier(atkRank);
   const effDef = defVal * rankMultiplier(defRank);
-  let power = _AI_MULTI_HIT_POWER_OVERRIDE[move.id] ?? (move.power || 0);
+  let power = _AI_MULTI_HIT_POWER_OVERRIDE[move.id] ?? getAIMovePower(attacker, move);
   // きしかいせい(109)／不倶戴天(179)：残りHP割合による威力補正（damage()本体と同じ基準）
   if (move.id === 109 || move.id === 179) {
     const remRatio = attacker.maxHp > 0 ? attacker.currentHp / attacker.maxHp : 1;
@@ -6167,6 +6332,8 @@ function estimateMaxDamageAI(attacker, move, defender, atkTypes, mult) {
       else if (remRatio <= 0.30) power *= 4;
     }
   }
+  // ワンダーパウダー(19)：相手の特攻の方が高ければ威力2倍
+  if (move.id === 19 && isOppSpaHigherThanSelf(attacker, defender)) power *= 2;
   const effType = resolveEffectiveMoveType(move, battleField);
   const stab = atkTypes.includes(effType) ? 1.5 : 1;
   const lv = attacker.level || 100;
@@ -6422,7 +6589,7 @@ function chooseTrainerAttack(attacker, defender, usableMoves, opponentAction) {
         const boostedAtkVal = otherIsSpecial ? boostedSpAtk : boostedAtk;
         const defStatKey = otherIsSpecial ? 'spd' : 'def';
         const effDef = defender.stats[defStatKey] * rankMultiplier(defender.ranks[defStatKey]);
-        const power = other.power || 0;
+        const power = getAIMovePower(attacker, other);
         const stab = atkTypes.includes(other.type) ? 1.5 : 1;
         const lv = attacker.level || 100;
         const otherDmg = 0.01 * stab * otherMult * 100 * ((0.2 * lv + 1) * boostedAtkVal * power / (25 * effDef) + 2);

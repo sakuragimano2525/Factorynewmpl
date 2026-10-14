@@ -1353,6 +1353,8 @@ function getFieldContinueMessages() {
 // その直前に、天候・フィールドがあと何ターン続きそうかのメッセージも積む。
 // netMeta.turn / netMeta.weatherFx を立てて送ることで、ゲスト側でも同じ区切り・演出を再現する。
 function queueTurnDivider(turnNumber) {
+  // クレッシェンド等「ターン経過で威力が変わる技」用：エンジン側に現在のターン番号を伝える（1ターンに1回）
+  battleField.turnCount = turnNumber;
   getFieldContinueMessages().forEach(({ text: msg, weatherFx }) => {
     queueMessage(
       msg,
@@ -2455,6 +2457,8 @@ function moveEffectivenessInfo(m, attacker, defender) {
 }
 
 function moveDetailLineHtml(m, attacker, defender) {
+  const dynPower = (typeof getDynamicMovePower === 'function') ? getDynamicMovePower(attacker, m, true) : null;
+  if (dynPower !== null) m = { ...m, power: dynPower };
   const power = (m.power === null || m.power === undefined) ? '-' : m.power;
   const acc = (m.accuracy === null || m.accuracy === undefined || m.accuracy >= 999) ? '-' : m.accuracy;
   const cat = MOVE_CATEGORY_JP[m.category] || m.category;
@@ -2469,6 +2473,8 @@ function moveDetailLineHtml(m, attacker, defender) {
    対戦中ならではの情報として、今の相手に対する相性（こうかばつぐん等）も表示する。 */
 function battleMoveInfoHtml(m) {
   if (!m) return '';
+  const dynPower = (typeof getDynamicMovePower === 'function') ? getDynamicMovePower(state.playerActive, m, true) : null;
+  if (dynPower !== null) m = { ...m, power: dynPower };
   const power = (m.power === null || m.power === undefined) ? '-' : m.power;
   const acc = (m.accuracy === null || m.accuracy === undefined || m.accuracy >= 999) ? '-' : m.accuracy;
   const catIcon = trMoveCategoryIconHtml(m.category);
@@ -3970,6 +3976,8 @@ async function doSwitch(newActive, side) {
   newActive.side = side;
   newActive.deaigashiraLocked = false; // 場に出た最初のターンはであいがしら使用可能
   newActive.turnsOnField = 0; // 場に出てからのターン数をリセット（であいがしら等の初手限定判定用）
+  newActive.shearHeartTurns = 0; // シアーハートの待機ターンも交代でリセット
+  newActive._shearUsed = false;
   newActive.gekirinTurns = 0; // 交代でげきりんの強制状態は解除
   newActive.gekirinMoveId = null;
   newActive.protecting = false; // 交代でまもる状態は解除
@@ -4162,13 +4170,28 @@ async function runBattleLoop() {
         ? chooseCpuAction(state.cpuActive, state.playerActive, state.cpuTeam, state.megaEvolutionEnabled, playerAction)
         : null;
 
+      // きまりて：CPUがきまりてを選んでいる場合、プレイヤーの交代より先に攻撃が行われ、
+      // 攻撃が決まれば交代はキャンセルされる（動けなかった場合のみ交代は通常通り行う）。
+      let cpuActionConsumedByKimarite = false;
+      if (preSwitchCpuAction && isKimariteTriggered(preSwitchCpuAction, playerAction) && !state.playerActive.fainted) {
+        const kimResult = await runTurn({ type: 'none' }, preSwitchCpuAction, state.playerActive, state.cpuActive,
+                                        makeLogFn(), resolveImmediateSwitch, { opponentSwitching: true });
+        await drainMessages();
+        cpuActionConsumedByKimarite = true;
+        if (kimResult && kimResult.kimariteActed) {
+          await postTurnCleanupAndRender();
+          state.turnNumber++;
+          continue;
+        }
+      }
+
       const newP = state.playerTeam[playerAction.idx];
       queueMessage(`${state.playerActive.species.name}、もどれ！`);
       await drainMessages();
       await doSwitch(newP, 'player');
       queueMessage(`ゆけっ！${newP.species.name}！`);
       await drainMessages();
-      if (!state.playerActive.fainted) {
+      if (!state.playerActive.fainted && !cpuActionConsumedByKimarite) {
         // 交代前に決めた行動が「技」ならそれをそのまま維持する（要件1）。
         // 交代前に決めた行動が「弱点をつく控えへの交代」だった場合は、プレイヤーの
         // 交代後のポケモンを基準に判定をし直す（元のポケモン基準の交代判断を、
@@ -4202,6 +4225,15 @@ async function runCpuAction(cpuAction, playerAction) {
   if (cpuAction.type === 'switch') {
     const outgoing = state.cpuActive;
     const newC = state.cpuTeam[cpuAction.idx];
+    // きまりて：プレイヤーがきまりてを選んでいる場合、CPUの交代より先に攻撃し、
+    // 攻撃が決まれば交代はキャンセルされる（動けなかった場合のみ交代は通常通り行う）。
+    let playerActionConsumedByKimarite = false;
+    if (isKimariteTriggered(playerAction, cpuAction) && !state.playerActive.fainted && !outgoing.fainted) {
+      const kimResult = await runTurn(playerAction, { type: 'none' }, state.playerActive, state.cpuActive,
+                                      makeLogFn(), resolveImmediateSwitch, { opponentSwitching: true });
+      playerActionConsumedByKimarite = true;
+      if (kimResult && kimResult.kimariteActed) return;
+    }
     if (newC && newC !== outgoing && !newC.fainted) {
       queueMessage(`相手は${outgoing.species.name}をひっこめた！`);
       await drainMessages();
@@ -4210,7 +4242,7 @@ async function runCpuAction(cpuAction, playerAction) {
       await drainMessages();
     }
     // CPUは交代のみでこのターンを終えるが、プレイヤー側の行動（技）は通常通り処理する。
-    if (playerAction && playerAction.type === 'move' && !state.playerActive.fainted && !state.cpuActive.fainted) {
+    if (!playerActionConsumedByKimarite && playerAction && playerAction.type === 'move' && !state.playerActive.fainted && !state.cpuActive.fainted) {
       await runTurn(playerAction, { type: 'none' }, state.playerActive, state.cpuActive, makeLogFn(), resolveImmediateSwitch);
     }
     return;
@@ -4521,6 +4553,8 @@ function resetPokeForBattle(poke) {
   poke.infernoUsed = false;
   poke.deaigashiraLocked = false;
   poke.turnsOnField = 0;
+  poke.shearHeartTurns = 0;
+  poke._shearUsed = false;
   poke.gekirinTurns = 0;
   poke.gekirinMoveId = null;
   poke.mustRechargeTurns = 0;
@@ -6046,6 +6080,8 @@ function buildTurnEndPayload() {
     k: 'turn-end',
     hostTurnsOnField: host.turnsOnField || 0,
     guestTurnsOnField: guest.turnsOnField || 0,
+    hostShearHeartTurns: host.shearHeartTurns || 0,
+    guestShearHeartTurns: guest.shearHeartTurns || 0,
     hostTypeLockTurns: host.typeLockTurns || 0,
     hostTypeLockType: host.typeLockType || null,
     guestTypeLockTurns: guest.typeLockTurns || 0,
@@ -6215,8 +6251,25 @@ async function runMultiplayerBattleHost() {
 
     msgQueue = [];
 
+    // きまりて：片方が交代、もう片方がきまりての場合、交代より先にきまりてを単独で実行する。
+    // 攻撃が決まれば交代はキャンセルされ、このターンの行動はすべて消費済みになる。
+    // きまりて側が動けなかった場合のみ、交代は通常通り行う（きまりて側の行動は消費済み）。
+    let turnConsumedByKimarite = false;
+    let switchCancelledByKimarite = false;
+    if ((myAction.type === 'switch' || guestAction.type === 'switch') &&
+        (isKimariteTriggered(myAction, guestAction) || isKimariteTriggered(guestAction, myAction)) &&
+        state.playerActive && !state.playerActive.fainted && state.cpuActive && !state.cpuActive.fainted) {
+      const kimResult = await runTurn(
+        myAction.type === 'move' ? myAction : { type: 'none' },
+        guestAction.type === 'move' ? guestAction : { type: 'none' },
+        state.playerActive, state.cpuActive, makeLogFn(), resolveImmediateSwitchMultiplayer,
+        { opponentSwitching: true });
+      await drainMessages();
+      turnConsumedByKimarite = true;
+      switchCancelledByKimarite = !!(kimResult && kimResult.kimariteActed);
+    }
 
-    if (myAction.type === 'switch') {
+    if (myAction.type === 'switch' && !switchCancelledByKimarite) {
       const newP = state.playerTeam[myAction.idx];
       queueMessage(`${state.playerActive.species.name}、もどれ！`);
       await drainMessages();
@@ -6225,7 +6278,7 @@ async function runMultiplayerBattleHost() {
       await drainMessages();
     }
 
-    if (guestAction.type === 'switch') {
+    if (guestAction.type === 'switch' && !switchCancelledByKimarite) {
       const newC = state.cpuTeam[guestAction.idx];
       if (newC && newC !== state.cpuActive && !newC.fainted) {
         queueMessage(`相手は${state.cpuActive.species.name}をひっこめた！`);
@@ -6236,7 +6289,7 @@ async function runMultiplayerBattleHost() {
       }
     }
 
-    if (state.playerActive && !state.playerActive.fainted &&
+    if (!turnConsumedByKimarite && state.playerActive && !state.playerActive.fainted &&
         state.cpuActive && !state.cpuActive.fainted) {
       const playerAct = myAction.type === 'switch' ? { type: 'none' } : myAction;
       const cpuAct = guestAction.type === 'switch' ? { type: 'none' } : guestAction;
@@ -6691,6 +6744,7 @@ async function handleGuestEvent(ev) {
       if (poke.moves) poke.moves.forEach((m) => { if (m) m.locked = false; });
       poke.deaigashiraLocked = false;
       poke.turnsOnField = 0;
+      poke.shearHeartTurns = 0;
       poke.gekirinTurns = 0;
       poke.gekirinMoveId = null;
       poke.protecting = false;
@@ -6723,6 +6777,8 @@ async function handleGuestEvent(ev) {
     if (state.cpuActive && ev.hostTurnsOnField !== undefined) {
       state.cpuActive.turnsOnField = ev.hostTurnsOnField;
     }
+    if (state.playerActive && ev.guestShearHeartTurns !== undefined) state.playerActive.shearHeartTurns = ev.guestShearHeartTurns;
+    if (state.cpuActive && ev.hostShearHeartTurns !== undefined) state.cpuActive.shearHeartTurns = ev.hostShearHeartTurns;
     if (state.playerActive && ev.guestTypeLockTurns !== undefined) {
       state.playerActive.typeLockTurns = ev.guestTypeLockTurns;
       state.playerActive.typeLockType = ev.guestTypeLockType || null;
