@@ -670,6 +670,9 @@ const POKEDEX_CUSTOM_ORDER = [
 1073,
 1074, 
 1075,
+1076,
+1077,
+1078,
   1990, // ウーズメルス
   2000, // アリアスカル
   1057,
@@ -1660,9 +1663,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 84,
     "baseStats": {
       "hp": 90,
-      "atk": 150,
+      "atk": 170,
       "def": 100,
-      "spa": 150,
+      "spa": 170,
       "spd": 90,
       "spe": 120
     }
@@ -1829,7 +1832,7 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 141,
     "baseStats": {
       "hp": 75,
-      "atk": 145,
+      "atk": 155,
       "def": 120,
       "spa": 55,
       "spd": 90,
@@ -2115,11 +2118,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 68,
     "baseStats": {
       "hp": 83,
-      "atk": 80,
+      "atk": 60,
       "def": 125,
       "spa": 150,
-      "spd": 116,
-      "spe": 101
+      "spd": 126,
+      "spe": 111
     }
   },
   "549": {
@@ -2127,12 +2130,12 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "steel",
     "ability": 70,
     "baseStats": {
-      "hp": 155,
-      "atk": 110,
-      "def": 140,
-      "spa": 30,
-      "spd": 90,
-      "spe": 30
+      "hp": 75,
+      "atk": 150,
+      "def": 130,
+      "spa": 80,
+      "spd": 110,
+      "spe": 70
     }
   },
   "557": {
@@ -2271,8 +2274,8 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 3,
     "baseStats": {
       "hp": 80,
-      "atk": 143,
-      "def": 100,
+      "atk": 163,
+      "def": 80,
       "spa": 90,
       "spd": 100,
       "spe": 100
@@ -2440,11 +2443,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 133,
     "baseStats": {
       "hp": 90,
-      "atk": 135,
+      "atk": 75,
       "def": 102,
-      "spa": 135,
+      "spa": 175,
       "spd": 88,
-      "spe": 85
+      "spe": 105
     }
   },
   "1034": {
@@ -2476,14 +2479,14 @@ const MEGA_EVOLUTION_DATA = {
   "1038": {
     "type1": "ghost",
     "type2": "psychic",
-    "ability": 121,
+    "ability": 25,
     "baseStats": {
       "hp": 95,
-      "atk": 64,
+      "atk": 94,
       "def": 95,
-      "spa": 80,
+      "spa": 120,
       "spd": 100,
-      "spe": 86
+      "spe": 46
     }
   },
   "1039": {
