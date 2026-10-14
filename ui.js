@@ -1366,6 +1366,27 @@ function queueTurnDivider(turnNumber) {
   pushBattleLogHistory({ text, side: null, kind: 'turn', speciesId: null, shiny: false });
 }
 
+// 【AI確認】M1RA1用：ホスト側だけに出す専用表示。ログ欄が行動メニューの裏に隠れて見えない場合でも、
+// 画面上部に固定表示してリアルタイムに見えるようにする。ゲストには一切送信しない（ローカル表示のみ）。
+function showPeekBadge(text) {
+  let el = document.getElementById('debug-peek-badge');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'debug-peek-badge';
+    el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);top:calc(env(safe-area-inset-top,0px) + 8px);'
+      + 'z-index:99999;pointer-events:none;max-width:90vw;padding:6px 12px;border-radius:10px;'
+      + 'background:rgba(20,20,30,.88);color:#fff;font-size:13px;font-weight:700;text-align:center;'
+      + 'box-shadow:0 2px 8px rgba(0,0,0,.4);';
+    document.body.appendChild(el);
+  }
+  el.textContent = text;
+  el.style.display = 'block';
+}
+function hidePeekBadge() {
+  const el = document.getElementById('debug-peek-badge');
+  if (el) el.style.display = 'none';
+}
+
 function hideMessageToast() {}
 function pushLogLine(text) {
   const stack = $('battle-log-stack');
@@ -6149,17 +6170,24 @@ async function runMultiplayerBattleHost() {
     let stopPeek = null;
     if (debugCpuMovePeekEnabled) {
       stopPeek = Net.peekOpponentAction((raw) => {
+        let text = null;
         if (raw && raw.type === 'move') {
           const move = state.cpuActive.moves.find((m) => m.id === raw.moveId);
-          if (move) pushLogLine(`【AI確認】相手は「${move.name}」を選んでいる`);
+          if (move) text = `【AI確認】相手は「${move.name}」を選んでいる`;
         } else if (raw && raw.type === 'switch') {
           const target = state.cpuTeam[raw.idx];
-          if (target) pushLogLine(`【AI確認】相手は「${target.species.name}」に交代しようとしている`);
+          if (target) text = `【AI確認】相手は「${target.species.name}」に交代しようとしている`;
         }
+        if (!text) return;
+        // ホスト画面のみ：ログ欄 ＋ ログ履歴 ＋ 画面上部の固定表示（行動選択中でも見える）
+        pushLogLine(text);
+        pushBattleLogHistory({ text, side: null, kind: 'plain', speciesId: null, shiny: false });
+        showPeekBadge(text);
       });
     }
 
     const myAction = await waitForPlayerAction();
+    hidePeekBadge();
     await Net.sendAction(myAction);
     showOpponentWaitingBadge();
 
@@ -6308,6 +6336,7 @@ async function postTurnCleanupMultiplayerHost() {
 // 降参なし（＝両者フェイントでの通常決着）の時だけ、勝敗にかかわらずホスト・ゲスト双方に
 // ディスク+10を付与する（対人戦は「降参ボタンを押さずに試合が終わった時のみお互いに+10」）。
 async function endMultiplayerBattleHost(hostWon, bySurrender) {
+  hidePeekBadge();
   state.battleBusy = false;
   clearTurnTimer();
   hideOpponentWaitingBadge();
