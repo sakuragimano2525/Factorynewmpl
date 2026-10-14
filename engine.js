@@ -1403,9 +1403,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 87,
     "baseStats": {
       "hp": 70,
-      "atk": 130,
+      "atk": 200,
       "def": 80,
-      "spa": 70,
+      "spa": 0,
       "spd": 80,
       "spe": 125
     }
@@ -1637,7 +1637,7 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 69,
     "baseStats": {
       "hp": 78,
-      "atk": 137,
+      "atk": 147,
       "def": 100,
       "spa": 64,
       "spd": 93,
@@ -2518,7 +2518,7 @@ const MEGA_EVOLUTION_DATA = {
   "1054": {
     "type1": "bug",
     "type2": "ground",
-    "ability": 124,
+    "ability": 139,
     "baseStats": {
       "hp": 70,
       "atk": 135,
