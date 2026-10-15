@@ -1152,7 +1152,7 @@ html,body{
 }
 .mega-evo-fx-layer.mega-fx-active{ opacity:1; }
 
-/* ---- 前兆の白フラッシュ（メガリング反応時、瞬間的に画面が明滅） ---- */
+/* ---- 前兆の白フラッシュ（メガリング反応の瞬間） ---- */
 .mega-fx-prelude-flash{
   position:absolute; inset:0;
   background: radial-gradient(circle at var(--fx-cx,50%) var(--fx-cy,50%), rgba(255,255,255,0.95), rgba(255,255,255,0) 70%);
@@ -1165,148 +1165,269 @@ html,body{
   100%{ opacity:0; }
 }
 
-/* ---- 画面全体を包む虹色オーラの脈動（変身中ずっと薄く続く背景うねり） ---- */
-.mega-fx-aura-bg{
+/* ---- 暗転：周囲を暗くして、中心のポケモンに視線を集める ---- */
+.mega-fx-dim{
   position:absolute; inset:0;
-  background: radial-gradient(ellipse at var(--fx-cx,50%) var(--fx-cy,50%), rgba(255,214,110,0.35), rgba(122,47,245,0.28) 38%, rgba(0,0,0,0) 72%);
+  background: radial-gradient(circle at var(--fx-cx,50%) var(--fx-cy,50%), rgba(30,10,70,0) 0%, rgba(8,0,30,0.66) 78%);
   opacity:0;
-  animation: megaAuraBg 3.4s ease-in-out forwards;
+  animation: megaDim 3.9s ease-in-out forwards;
 }
-@keyframes megaAuraBg{
+@keyframes megaDim{
   0%{ opacity:0; }
-  8%{ opacity:1; }
-  85%{ opacity:0.9; }
+  12%{ opacity:1; }
+  86%{ opacity:1; }
   100%{ opacity:0; }
 }
 
-/* ---- 中心から広がる同心円の光の輪（本家のメガシンカ演出のような多重リング） ---- */
+/* ---- キーストーンの輝き：開幕の十字の閃光 ---- */
+.mega-fx-glint{
+  position:absolute;
+  left: var(--fx-cx,50%); top: var(--fx-cy,50%);
+  width: var(--fx-size,120px); height: var(--fx-size,120px);
+  margin-left: calc(var(--fx-size,120px) / -2);
+  margin-top: calc(var(--fx-size,120px) / -2);
+  opacity:0;
+  animation: megaGlint 0.95s ease-out forwards;
+}
+.mega-fx-glint::before, .mega-fx-glint::after{
+  content:''; position:absolute; left:50%; top:50%;
+  transform: translate(-50%,-50%);
+  background: linear-gradient(90deg, rgba(255,255,255,0), #fff 50%, rgba(255,255,255,0));
+  width:100%; height:4px; border-radius:4px;
+  box-shadow: 0 0 14px 4px rgba(255,255,255,0.8);
+}
+.mega-fx-glint::after{
+  width:4px; height:100%;
+  background: linear-gradient(180deg, rgba(255,255,255,0), #fff 50%, rgba(255,255,255,0));
+}
+@keyframes megaGlint{
+  0%{ opacity:0; transform: scale(0.1) rotate(0deg); }
+  30%{ opacity:1; transform: scale(0.95) rotate(40deg); }
+  100%{ opacity:0; transform: scale(1.35) rotate(90deg); }
+}
+
+/* ---- 中心の発光（エネルギーが溜まるほど強く大きくなる） ---- */
+.mega-fx-core{
+  position:absolute;
+  left: var(--fx-cx,50%); top: var(--fx-cy,50%);
+  width: var(--fx-size,120px); height: var(--fx-size,120px);
+  margin-left: calc(var(--fx-size,120px) / -2);
+  margin-top: calc(var(--fx-size,120px) / -2);
+  border-radius:50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(255,200,255,0.6) 30%, rgba(120,160,255,0.35) 55%, rgba(255,255,255,0) 72%);
+  mix-blend-mode: screen;
+  opacity:0; transform: scale(0.3);
+  animation: megaCore 3.4s ease-in forwards;
+}
+@keyframes megaCore{
+  0%{ opacity:0; transform: scale(0.3); }
+  15%{ opacity:0.7; transform: scale(0.6); }
+  60%{ opacity:0.85; transform: scale(0.95); }
+  100%{ opacity:1; transform: scale(1.6); }
+}
+
+/* ---- 放射状の光条（ゆっくり回転しながら広がる） ---- */
+.mega-fx-beams{
+  position:absolute;
+  left: var(--fx-cx,50%); top: var(--fx-cy,50%);
+  width: var(--fx-beam-size,500px); height: var(--fx-beam-size,500px);
+  margin-left: calc(var(--fx-beam-size,500px) / -2);
+  margin-top: calc(var(--fx-beam-size,500px) / -2);
+  border-radius:50%;
+  background: repeating-conic-gradient(rgba(255,255,255,0.8) 0deg 2.5deg, rgba(255,255,255,0) 2.5deg 18deg);
+  -webkit-mask-image: radial-gradient(circle, #000 0%, rgba(0,0,0,0.6) 35%, transparent 70%);
+  mask-image: radial-gradient(circle, #000 0%, rgba(0,0,0,0.6) 35%, transparent 70%);
+  opacity:0;
+  animation: megaBeams 3.4s linear forwards;
+}
+@keyframes megaBeams{
+  0%{ opacity:0; transform: rotate(0deg) scale(0.4); }
+  20%{ opacity:0.75; }
+  85%{ opacity:1; }
+  100%{ opacity:1; transform: rotate(200deg) scale(1.2); }
+}
+
+/* ---- 虹色のハロー（本家の七色のエネルギーを表現。逆回転） ---- */
+.mega-fx-halo{
+  position:absolute;
+  left: var(--fx-cx,50%); top: var(--fx-cy,50%);
+  width: var(--fx-halo-size,300px); height: var(--fx-halo-size,300px);
+  margin-left: calc(var(--fx-halo-size,300px) / -2);
+  margin-top: calc(var(--fx-halo-size,300px) / -2);
+  border-radius:50%;
+  background: conic-gradient(#ff6b8b, #ffd36b, #9dff6b, #6bffe0, #6b8dff, #c46bff, #ff6b8b);
+  -webkit-mask-image: radial-gradient(circle, transparent 36%, #000 50%, transparent 68%);
+  mask-image: radial-gradient(circle, transparent 36%, #000 50%, transparent 68%);
+  mix-blend-mode: screen;
+  opacity:0;
+  animation: megaHalo 3.4s ease-in-out forwards;
+}
+@keyframes megaHalo{
+  0%{ opacity:0; transform: rotate(0deg) scale(0.5); }
+  25%{ opacity:0.85; }
+  85%{ opacity:0.95; }
+  100%{ opacity:0.9; transform: rotate(-420deg) scale(1.25); }
+}
+
+/* ---- 外から中心へ収束していく光の輪（チャージ） ---- */
 .mega-fx-ring{
   position:absolute;
-  left: var(--fx-cx, 50%);
-  top: var(--fx-cy, 50%);
-  width: var(--fx-ring-size, 40px);
-  height: var(--fx-ring-size, 40px);
-  margin-left: calc(var(--fx-ring-size, 40px) / -2);
-  margin-top: calc(var(--fx-ring-size, 40px) / -2);
-  border-radius: 50%;
-  border: 3px solid rgba(255,255,255,0.9);
-  box-shadow: 0 0 18px 3px rgba(180,120,255,0.75), inset 0 0 14px 2px rgba(255,220,140,0.6);
+  left: var(--fx-cx,50%); top: var(--fx-cy,50%);
+  width: var(--fx-ring-size,80px); height: var(--fx-ring-size,80px);
+  margin-left: calc(var(--fx-ring-size,80px) / -2);
+  margin-top: calc(var(--fx-ring-size,80px) / -2);
+  border-radius:50%;
+  border: 2px solid rgba(255,255,255,0.9);
+  box-shadow: 0 0 14px 2px hsl(var(--h,280) 100% 70%), inset 0 0 10px hsl(var(--h,280) 100% 75%);
   opacity:0;
-  animation: megaRingExpand 1.7s cubic-bezier(.2,.7,.3,1) infinite;
-  animation-delay: var(--fx-delay, 0s);
+  animation: megaRingIn 1.1s ease-in infinite;
+  animation-delay: var(--fx-delay,0s);
 }
-@keyframes megaRingExpand{
-  0%{ transform: scale(0.15); opacity:0; }
-  10%{ opacity:0.95; }
-  75%{ opacity:0.35; }
-  100%{ transform: scale(3.4); opacity:0; }
+@keyframes megaRingIn{
+  0%{ transform: scale(3.4); opacity:0; }
+  25%{ opacity:0.9; }
+  100%{ transform: scale(0.3); opacity:0; }
 }
 
-/* ---- 中心から回転しながら放射される光条（八芒星のような閃光） ---- */
-.mega-fx-rays{
+/* ---- 渦を巻いて中心へ吸い込まれる虹色の光の粒 ---- */
+.mega-fx-spark{
   position:absolute;
-  left: var(--fx-cx, 50%);
-  top: var(--fx-cy, 50%);
-  width: 4px; height: 4px;
-}
-.mega-fx-ray{
-  position:absolute;
-  left:0; top:0;
-  width: 3px;
-  height: var(--fx-ray-len, 220px);
-  transform-origin: top center;
-  transform: translateX(-50%) rotate(var(--fx-ray-angle, 0deg));
-  background: linear-gradient(180deg, rgba(255,255,255,0.95) 0%, rgba(255,208,120,0.55) 40%, rgba(255,255,255,0) 100%);
+  left: var(--fx-cx,50%); top: var(--fx-cy,50%);
+  width: var(--s,6px); height: var(--s,6px);
+  margin-left: calc(var(--s,6px) / -2);
+  margin-top: calc(var(--s,6px) / -2);
+  border-radius:50%;
+  background: hsl(var(--h,280) 100% 80%);
+  box-shadow: 0 0 8px 3px hsl(var(--h,280) 100% 65%);
   opacity:0;
-  animation: megaRaySpin 3.4s linear forwards, megaRayFade 3.4s ease-in-out forwards;
+  animation: megaSparkIn var(--dur,1.3s) cubic-bezier(.4,0,.8,.6) infinite;
+  animation-delay: var(--delay,0s);
 }
-@keyframes megaRaySpin{
-  0%{ transform: translateX(-50%) rotate(var(--fx-ray-angle, 0deg)); }
-  100%{ transform: translateX(-50%) rotate(calc(var(--fx-ray-angle, 0deg) + 300deg)); }
+@keyframes megaSparkIn{
+  0%{ transform: rotate(var(--a,0deg)) translateX(var(--r,150px)) scale(0.4); opacity:0; }
+  15%{ opacity:1; }
+  100%{ transform: rotate(calc(var(--a,0deg) + 300deg)) translateX(0px) scale(1); opacity:0.1; }
 }
-@keyframes megaRayFade{
+
+/* ---- 二重らせん（メガシンカのマークのように絡み合う2本の光の帯） ---- */
+.mega-fx-helix{
+  position:absolute;
+  left: var(--fx-cx,50%); top: var(--fx-cy,50%);
+  width:0; height:0;
+  opacity:0;
+  animation: megaHelixLife 3.4s ease-in-out forwards;
+}
+@keyframes megaHelixLife{
   0%{ opacity:0; }
-  10%{ opacity:0.85; }
-  88%{ opacity:0.55; }
+  18%{ opacity:1; }
+  90%{ opacity:1; }
   100%{ opacity:0; }
 }
+.mega-fx-helix-dot{
+  position:absolute;
+  left:0; top: var(--y,0px);
+  width: var(--ds,7px); height: var(--ds,7px);
+  margin-left: calc(var(--ds,7px) / -2);
+  margin-top: calc(var(--ds,7px) / -2);
+  border-radius:50%;
+  background: hsl(var(--h,280) 100% 82%);
+  box-shadow: 0 0 7px 2px hsl(var(--h,280) 100% 65%);
+  animation: megaHelixSwing 1.2s infinite alternate;
+  animation-delay: var(--ph,0s);
+}
+@keyframes megaHelixSwing{
+  0%{ transform: translateX(calc(var(--hw,40px) * -1)) scale(0.6); animation-timing-function: cubic-bezier(.12,0,.39,0); }
+  50%{ transform: translateX(0px) scale(1.3); animation-timing-function: cubic-bezier(.61,1,.88,1); }
+  100%{ transform: translateX(var(--hw,40px)) scale(0.6); }
+}
 
-/* ---- 中心に生まれる、ポケモンの姿を覆い隠す繭のような発光体 ---- */
-.mega-fx-cocoon-wrap{
-  position:absolute;
-  pointer-events:none;
-  display:flex; align-items:center; justify-content:center;
+/* ---- 変身中のポケモン：真っ白なシルエットになり、虹色の光を脈打たせる ---- */
+.sprite.mega-fx-glow{ animation: megaSpriteGlow 3.5s ease-in forwards; }
+@keyframes megaSpriteGlow{
+  0%{ filter: brightness(1) invert(0) drop-shadow(0 0 0 rgba(255,255,255,0)); }
+  12%{ filter: brightness(0) invert(1) drop-shadow(0 0 6px #ffffff); }
+  30%{ filter: brightness(0) invert(1) drop-shadow(0 0 14px #ff9be8); }
+  50%{ filter: brightness(0) invert(1) drop-shadow(0 0 20px #8ad4ff); }
+  70%{ filter: brightness(0) invert(1) drop-shadow(0 0 26px #fff3a0); }
+  100%{ filter: brightness(0) invert(1) drop-shadow(0 0 36px #ffffff); }
 }
-.mega-fx-cocoon{
-  width: 96%; height:96%;
-  border-radius:50%;
-  background: radial-gradient(circle at 50% 42%, rgba(255,255,255,0.98) 0%, rgba(255,230,170,0.92) 30%, rgba(190,120,255,0.85) 62%, rgba(120,50,220,0.55) 100%);
-  filter: blur(1.5px);
+
+/* ---- クライマックス：画面全体の閃光 ---- */
+.mega-fx-flash{
+  position:absolute; inset:0;
+  background: #fff;
   opacity:0;
-  transform: scale(0.35);
-  animation: megaCocoonGrow 3.5s cubic-bezier(.16,.8,.25,1) forwards;
-  box-shadow: 0 0 40px 14px rgba(200,140,255,0.65);
+  animation: megaFlash 0.5s ease-out forwards;
 }
-@keyframes megaCocoonGrow{
-  0%{ opacity:0; transform: scale(0.3); }
-  10%{ opacity:1; transform: scale(0.55); }
-  45%{ opacity:1; transform: scale(1.05); }
-  70%{ opacity:1; transform: scale(0.92); }
-  92%{ opacity:1; transform: scale(1.12); }
-  100%{ opacity:0; transform: scale(1.5); }
-}
-/* 繭の表面を這う細かい光の筋（内側でエネルギーが渦巻いている見た目） */
-.mega-fx-cocoon-wrap::before{
-  content:'';
-  position:absolute;
-  inset: -6%;
-  border-radius:50%;
-  background: conic-gradient(from 0deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.9) 8%, rgba(255,255,255,0) 22%, rgba(255,255,255,0) 50%, rgba(255,255,255,0.7) 58%, rgba(255,255,255,0) 72%, rgba(255,255,255,0) 100%);
-  opacity:0;
-  animation: megaCocoonSwirl 1.1s linear infinite, megaFadeInOut 3.5s ease-in-out forwards;
-  mix-blend-mode: screen;
-}
-@keyframes megaCocoonSwirl{
-  from{ transform: rotate(0deg); }
-  to{ transform: rotate(360deg); }
-}
-@keyframes megaFadeInOut{
+@keyframes megaFlash{
   0%{ opacity:0; }
-  10%{ opacity:0.9; }
-  88%{ opacity:0.7; }
+  25%{ opacity:1; }
   100%{ opacity:0; }
 }
-
-/* ---- クライマックス：3.4秒で変身完了する瞬間の閃光弾け ---- */
-.mega-fx-burst{
+/* 閃光の中心から広がる衝撃波（虹色の輪） */
+.mega-fx-shock{
   position:absolute;
-  left: var(--fx-cx, 50%);
-  top: var(--fx-cy, 50%);
-  width: var(--fx-burst-size, 260px);
-  height: var(--fx-burst-size, 260px);
-  margin-left: calc(var(--fx-burst-size, 260px) / -2);
-  margin-top: calc(var(--fx-burst-size, 260px) / -2);
+  left: var(--fx-cx,50%); top: var(--fx-cy,50%);
+  width: var(--fx-burst-size,260px); height: var(--fx-burst-size,260px);
+  margin-left: calc(var(--fx-burst-size,260px) / -2);
+  margin-top: calc(var(--fx-burst-size,260px) / -2);
   border-radius:50%;
-  background: radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,255,255,0.85) 22%, rgba(255,255,255,0) 68%);
+  background: conic-gradient(#ff6b8b, #ffd36b, #9dff6b, #6bffe0, #6b8dff, #c46bff, #ff6b8b);
+  -webkit-mask-image: radial-gradient(circle, transparent 56%, #000 60%, #000 68%, transparent 72%);
+  mask-image: radial-gradient(circle, transparent 56%, #000 60%, #000 68%, transparent 72%);
+  opacity:0; transform: scale(0.2);
+  animation: megaShock 0.5s ease-out forwards;
+}
+@keyframes megaShock{
+  0%{ opacity:1; transform: scale(0.2); }
+  100%{ opacity:0; transform: scale(3.4); }
+}
+/* 閃光と同時に四方へ走る光条 */
+.mega-fx-burst-rays{
+  position:absolute;
+  left: var(--fx-cx,50%); top: var(--fx-cy,50%);
+  width: var(--fx-beam-size,500px); height: var(--fx-beam-size,500px);
+  margin-left: calc(var(--fx-beam-size,500px) / -2);
+  margin-top: calc(var(--fx-beam-size,500px) / -2);
+  border-radius:50%;
+  background: repeating-conic-gradient(rgba(255,255,255,0.95) 0deg 3deg, rgba(255,255,255,0) 3deg 15deg);
+  -webkit-mask-image: radial-gradient(circle, #000 0%, rgba(0,0,0,0.5) 45%, transparent 72%);
+  mask-image: radial-gradient(circle, #000 0%, rgba(0,0,0,0.5) 45%, transparent 72%);
+  opacity:0; transform: scale(0.3);
+  animation: megaBurstRays 0.5s ease-out forwards;
+}
+@keyframes megaBurstRays{
+  0%{ opacity:1; transform: scale(0.3) rotate(0deg); }
+  100%{ opacity:0; transform: scale(1.8) rotate(25deg); }
+}
+/* 四方へ飛び散るきらめき */
+.mega-fx-confetti{
+  position:absolute;
+  left: var(--fx-cx,50%); top: var(--fx-cy,50%);
+  width: var(--s,8px); height: var(--s,8px);
+  margin-left: calc(var(--s,8px) / -2);
+  margin-top: calc(var(--s,8px) / -2);
+  border-radius:50%;
+  background: hsl(var(--h,50) 100% 85%);
+  box-shadow: 0 0 10px 3px hsl(var(--h,50) 100% 70%);
   opacity:0;
-  transform: scale(0.2);
-  animation: megaBurstFlash 0.45s ease-out forwards;
+  animation: megaConfetti 0.5s ease-out forwards;
 }
-@keyframes megaBurstFlash{
-  0%{ opacity:0; transform: scale(0.2); }
-  25%{ opacity:1; transform: scale(1); }
-  100%{ opacity:0; transform: scale(1.9); }
+@keyframes megaConfetti{
+  0%{ opacity:1; transform: rotate(var(--a,0deg)) translateX(0px) scale(1); }
+  100%{ opacity:0; transform: rotate(var(--a,0deg)) translateX(var(--r,160px)) scale(0.3); }
 }
+/* 閃光の瞬間に、チャージ系の演出はまとめて消す */
+.mega-evo-fx-layer.mega-fx-climax .mega-fx-ring,
+.mega-evo-fx-layer.mega-fx-climax .mega-fx-spark{ display:none; }
 
-/* ---- 変身完了後、光が晴れていく最後の余韻（3.9秒で完全に消える） ---- */
+/* ---- 変身完了後、光が晴れていく最後の余韻 ---- */
 .mega-fx-afterglow{
   position:absolute;
-  left: var(--fx-cx, 50%);
-  top: var(--fx-cy, 50%);
-  width: var(--fx-ring-size, 40px);
-  height: var(--fx-ring-size, 40px);
-  margin-left: calc(var(--fx-ring-size, 40px) / -2);
-  margin-top: calc(var(--fx-ring-size, 40px) / -2);
+  left: var(--fx-cx,50%); top: var(--fx-cy,50%);
+  width: var(--fx-ring-size,80px); height: var(--fx-ring-size,80px);
+  margin-left: calc(var(--fx-ring-size,80px) / -2);
+  margin-top: calc(var(--fx-ring-size,80px) / -2);
   border-radius:50%;
   box-shadow: 0 0 60px 26px rgba(255,225,160,0.55);
   opacity:0;

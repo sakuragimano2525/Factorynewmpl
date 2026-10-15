@@ -1567,15 +1567,15 @@ function playFaint(side) {
 /* ---------------- メガシンカ演出 ---------------- */
 // 演出タイムライン（合計 3.9秒。呼び出し元のメッセージ処理タイムアウトが4.0秒固定のため、
 // 確実にその内側で完了するよう少し余裕を持たせている）：
-//   0.00s  前兆フラッシュ＋オーラ立ち上がり、リング/光条/繭が発生。ポケモンの絵は即座に隠す。
-//   0.00-3.40s  リング拡散・光条回転・オーラの脈動が繰り返され、繭がじわじわ膨張／収縮。
-//   3.40-3.50s  クライマックスの閃光弾け（burst）。
-//   3.50s  メガシンカ後の画像に差し替え、姿が光の中から現れる（reveal）。
+//   0.00s  効果音(mepa.mp3)。暗転＋十字の閃光。ポケモンが真っ白なシルエットに変わり始める。
+//   0.00-3.40s  虹色の光の粒が渦を巻いて中心へ収束／光の輪がチャージ／二重らせんが絡み合う／
+//               光条と虹色のハローが回転しながら広がり、中心の発光が強まっていく。
+//   3.40s  クライマックス：画面全体の閃光＋虹色の衝撃波＋四方へ走る光条ときらめき。
+//   3.50s  閃光のピークでメガシンカ後の画像に差し替え、新しい姿が光の中から現れる（reveal）。
 //   3.50-3.90s  余韻（afterglow）がフェードして演出終了、バトル進行を再開。
 const MEGA_FX_TOTAL_MS = 3900;
 const MEGA_FX_REVEAL_AT_MS = 3500;
 const MEGA_FX_BURST_AT_MS = 3400;
-const MEGA_FX_RAY_COUNT = 10;
 
 function playMegaEvolveEffect(side, poke, snapshot) {
   const layer = $('mega-evo-fx-layer');
@@ -1591,7 +1591,6 @@ function playMegaEvolveEffect(side, poke, snapshot) {
   // メガシンカが実際に起きた瞬間のHP・状態異常のスナップショット。
   // このターンの技実行はrunTurn内で既に同期的に全て終わっているため、poke自身の
   // 現在値を見ると「この演出が始まった後に起きたはずの出来事」まで反映されてしまう。
-  // 3.5秒の変身完了時点でも、まだこのターンの結果を見せるべきではないため、
   // 演出中は一貫してこのスナップショットの値でHUDを描画する。
   const hpSnap = snapshot && snapshot.hp !== undefined ? snapshot.hp : poke.currentHp;
   const statusSnap = snapshot ? { status: snapshot.status || 0, confuseTurns: snapshot.confuseTurns || 0 } : null;
@@ -1600,86 +1599,113 @@ function playMegaEvolveEffect(side, poke, snapshot) {
   const layerRect = layer.getBoundingClientRect();
   const targetRect = (img || wrap).getBoundingClientRect();
 
-  // メガシンカ演出中心座標（レイヤー基準の%）。ポケモンのスプライト中心に合わせる。
+  // 演出中心座標（レイヤー基準の%）。ポケモンのスプライト中心に合わせる。
   const cx = layerRect.width > 0 ? ((targetRect.left + targetRect.width / 2 - layerRect.left) / layerRect.width) * 100 : 50;
   const cy = layerRect.height > 0 ? ((targetRect.top + targetRect.height / 2 - layerRect.top) / layerRect.height) * 100 : 50;
-  const ringSize = Math.max(targetRect.width, targetRect.height) * 0.55;
-  const rayLen = Math.max(layerRect.width, layerRect.height) * 0.55;
-  const burstSize = Math.max(targetRect.width, targetRect.height) * 1.6;
+  const spriteMax = Math.max(targetRect.width, targetRect.height) || 100;
+  const fxSize = spriteMax * 1.5;
+  const ringSize = spriteMax * 0.6;
+  const beamSize = Math.max(layerRect.width, layerRect.height) * 1.0;
+  const haloSize = spriteMax * 2.2;
+  const burstSize = spriteMax * 1.6;
+  const sparkR = spriteMax * 1.5;
+
+  const add = (cls, vars, parent) => {
+    const d = document.createElement('div');
+    d.className = cls;
+    if (vars) Object.keys(vars).forEach((k) => d.style.setProperty(k, vars[k]));
+    (parent || layer).appendChild(d);
+    return d;
+  };
 
   layer.innerHTML = '';
+  layer.classList.remove('mega-fx-climax');
   layer.style.setProperty('--fx-cx', cx.toFixed(2) + '%');
   layer.style.setProperty('--fx-cy', cy.toFixed(2) + '%');
+  layer.style.setProperty('--fx-size', fxSize.toFixed(0) + 'px');
+  layer.style.setProperty('--fx-beam-size', beamSize.toFixed(0) + 'px');
+  layer.style.setProperty('--fx-halo-size', haloSize.toFixed(0) + 'px');
   layer.classList.add('mega-fx-active');
 
-  // 前兆フラッシュ
-  const prelude = document.createElement('div');
-  prelude.className = 'mega-fx-prelude-flash';
-  layer.appendChild(prelude);
+  // 暗転・前兆フラッシュ・十字の閃光
+  add('mega-fx-dim');
+  add('mega-fx-prelude-flash');
+  add('mega-fx-core');
+  add('mega-fx-beams');
+  add('mega-fx-halo');
+  add('mega-fx-glint');
 
-  // 背景オーラ
-  const auraBg = document.createElement('div');
-  auraBg.className = 'mega-fx-aura-bg';
-  layer.appendChild(auraBg);
-
-  // 多重リング（発生タイミングをずらして複数出す）
-  const RING_COUNT = 5;
-  for (let i = 0; i < RING_COUNT; i++) {
-    const ring = document.createElement('div');
-    ring.className = 'mega-fx-ring';
-    ring.style.setProperty('--fx-ring-size', ringSize.toFixed(0) + 'px');
-    ring.style.setProperty('--fx-delay', (i * 0.32).toFixed(2) + 's');
-    layer.appendChild(ring);
+  // 外から中心へ収束する光の輪（色を少しずつ変える）
+  for (let i = 0; i < 4; i++) {
+    add('mega-fx-ring', {
+      '--fx-ring-size': ringSize.toFixed(0) + 'px',
+      '--fx-delay': (0.3 + i * 0.3).toFixed(2) + 's',
+      '--h': String(Math.round(i * 70 + 200) % 360),
+    });
   }
 
-  // 回転する光条
-  const raysWrap = document.createElement('div');
-  raysWrap.className = 'mega-fx-rays';
-  raysWrap.style.left = cx.toFixed(2) + '%';
-  raysWrap.style.top = cy.toFixed(2) + '%';
-  for (let i = 0; i < MEGA_FX_RAY_COUNT; i++) {
-    const ray = document.createElement('div');
-    ray.className = 'mega-fx-ray';
-    ray.style.setProperty('--fx-ray-angle', ((360 / MEGA_FX_RAY_COUNT) * i).toFixed(1) + 'deg');
-    ray.style.setProperty('--fx-ray-len', rayLen.toFixed(0) + 'px');
-    ray.style.animationDelay = (Math.random() * 0.15).toFixed(2) + 's';
-    raysWrap.appendChild(ray);
+  // 渦を巻いて中心へ吸い込まれる虹色の光の粒
+  const SPARK_COUNT = 30;
+  for (let i = 0; i < SPARK_COUNT; i++) {
+    add('mega-fx-spark', {
+      '--a': (Math.random() * 360).toFixed(0) + 'deg',
+      '--r': (sparkR * (0.7 + Math.random() * 0.6)).toFixed(0) + 'px',
+      '--h': String(Math.floor(Math.random() * 360)),
+      '--s': (4 + Math.random() * 5).toFixed(1) + 'px',
+      '--dur': (1.0 + Math.random() * 0.7).toFixed(2) + 's',
+      '--delay': (0.15 + Math.random() * 2.3).toFixed(2) + 's',
+    });
   }
-  layer.appendChild(raysWrap);
 
-  // ポケモンの姿を覆い隠す発光の繭（スプライトとほぼ同じ位置・サイズに重ねる）
-  const cocoonWrap = document.createElement('div');
-  cocoonWrap.className = 'mega-fx-cocoon-wrap';
-  cocoonWrap.style.left = (targetRect.left - layerRect.left) + 'px';
-  cocoonWrap.style.top = (targetRect.top - layerRect.top) + 'px';
-  cocoonWrap.style.width = targetRect.width + 'px';
-  cocoonWrap.style.height = targetRect.height + 'px';
-  const cocoon = document.createElement('div');
-  cocoon.className = 'mega-fx-cocoon';
-  cocoonWrap.appendChild(cocoon);
-  layer.appendChild(cocoonWrap);
+  // 二重らせん（メガシンカのマーク）：2本の帯が位相を半周期ずらして絡み合う
+  const helix = add('mega-fx-helix');
+  const HELIX_DOTS = 13;
+  const helixH = targetRect.height * 1.25;
+  const helixW = Math.max(targetRect.width * 0.3, 22);
+  for (let strand = 0; strand < 2; strand++) {
+    for (let i = 0; i < HELIX_DOTS; i++) {
+      const t = i / (HELIX_DOTS - 1);
+      add('mega-fx-helix-dot', {
+        '--y': ((t - 0.5) * helixH).toFixed(1) + 'px',
+        '--hw': helixW.toFixed(1) + 'px',
+        '--ds': (6 + (strand ? 1 : 0)) + 'px',
+        '--h': String(Math.round(t * 300 + (strand ? 40 : 0)) % 360),
+        // 縦方向の位置ごとに位相をずらし、2本目は半周期(1.2s)ずらす
+        '--ph': (-(i * 0.11) - (strand ? 1.2 : 0)).toFixed(2) + 's',
+      }, helix);
+    }
+  }
 
   // 効果音：mepa.mp3（演出頭で1回再生）
   playMegaSfx();
 
-  // ポケモン本体のスプライトは繭の裏に完全に隠す
-  if (img) img.classList.add('mega-fx-hidden');
+  // ポケモン本体は真っ白なシルエットにして光らせる（姿は見えたまま）
+  if (img) img.classList.add('mega-fx-glow');
 
   return new Promise((resolve) => {
-    // クライマックスの閃光弾け
+    // クライマックス：閃光＋衝撃波＋光条＋きらめき
     setTimeout(() => {
-      const burst = document.createElement('div');
-      burst.className = 'mega-fx-burst';
-      burst.style.setProperty('--fx-burst-size', burstSize.toFixed(0) + 'px');
-      layer.appendChild(burst);
+      layer.classList.add('mega-fx-climax');
+      add('mega-fx-flash');
+      add('mega-fx-shock', { '--fx-burst-size': burstSize.toFixed(0) + 'px' });
+      add('mega-fx-burst-rays');
+      for (let i = 0; i < 16; i++) {
+        add('mega-fx-confetti', {
+          '--a': ((360 / 16) * i + Math.random() * 12).toFixed(0) + 'deg',
+          '--r': (spriteMax * (0.9 + Math.random() * 0.9)).toFixed(0) + 'px',
+          '--h': String(Math.floor(Math.random() * 360)),
+          '--s': (5 + Math.random() * 6).toFixed(1) + 'px',
+        });
+      }
     }, MEGA_FX_BURST_AT_MS);
 
-    // 3.5秒でメガシンカ後の画像に切り替え、姿を現す
+    // 3.5秒（閃光のピーク）でメガシンカ後の画像に切り替え、姿を現す
     setTimeout(() => {
       if (img && img.tagName === 'IMG') {
         img.src = spritePath(poke);
-        img.classList.remove('mega-fx-hidden');
-        img.style.setProperty('--mega-reveal-flip', side === 'self' ? 'scaleX(-1)' : 'none');
+        img.classList.remove('mega-fx-glow');
+        // 'none' は transform リストに入れると無効値になるため、等倍の scaleX(1) を使う
+        img.style.setProperty('--mega-reveal-flip', side === 'self' ? 'scaleX(-1)' : 'scaleX(1)');
         img.classList.add('mega-fx-reveal');
         setTimeout(() => img.classList.remove('mega-fx-reveal'), 600);
       } else {
@@ -1690,14 +1716,13 @@ function playMegaEvolveEffect(side, poke, snapshot) {
       updateHud(poke, side, hpSnap, statusSnap);
 
       // 余韻の光を残しつつ、そのままフェードさせる
-      const afterglow = document.createElement('div');
-      afterglow.className = 'mega-fx-afterglow';
-      layer.appendChild(afterglow);
+      add('mega-fx-afterglow', { '--fx-ring-size': ringSize.toFixed(0) + 'px' });
     }, MEGA_FX_REVEAL_AT_MS);
 
     // 演出終了：レイヤーを片付けてバトル進行を再開
     setTimeout(() => {
       layer.classList.remove('mega-fx-active');
+      layer.classList.remove('mega-fx-climax');
       layer.innerHTML = '';
       resolve();
     }, MEGA_FX_TOTAL_MS);
@@ -6397,6 +6422,7 @@ async function endMultiplayerBattleHost(hostWon, bySurrender) {
   // 結果オーバーレイの裏に技メニュー等が残ったままタップできてしまわないよう、
   // ここでも念のためコマンドパネルを確実に空にしておく（降参・KO決着どちらでも）。
   clearCmdPanel();
+  closeAllBattleOverlays();
   $('cmd-dock').classList.remove('dock-wide');
   if (currentSurrenderUnsub) { currentSurrenderUnsub(); currentSurrenderUnsub = null; }
   await Net.clearSurrenderFlags();
@@ -6411,6 +6437,22 @@ async function endMultiplayerBattleHost(hostWon, bySurrender) {
   overlay.classList.add('show');
   Net.pushEvent({ k: 'end', win: hostWon, bySurrender: !!bySurrender });
   await runMultiplayerRematchFlow();
+}
+
+// 対戦終了時に、戦闘画面の中に残っているすべてのオーバーレイ（パーティ／様子を見る／
+// ログ／降参確認／技の詳細／交代確認）を閉じる。
+// これらは screen-battle の中にあり、.show が付いたままだと画面を切り替えても
+// （見えないのに）全面でタップを受け取り続け、待機部屋のボタンが全て反応しなくなる。
+// 特にチーム戦では相手パーティを見るためにパーティ画面を開く機会が多く、
+// その状態で試合が終わると発生しやすい。
+function closeAllBattleOverlays() {
+  ['party-overlay', 'watch-overlay', 'log-overlay', 'surrender-overlay',
+   'battle-move-info-overlay', 'confirm-overlay'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('show');
+  });
+  partyArmedIdx = null;
+  partyMode = 'switch';
 }
 
 /* =========================================================
@@ -6430,6 +6472,7 @@ async function returnToReadyRoomAfterBattle() {
   // その裏の古いボタンをタップできてしまい、技の音が鳴ったり交換が
   // 実行できてしまう不具合の原因になるため。
   clearCmdPanel();
+  closeAllBattleOverlays();
   clearTurnTimer();
   $('cmd-dock').classList.remove('dock-wide');
 
@@ -6458,6 +6501,7 @@ async function returnToReadyRoomAfterBattle() {
   readyRoomState = { mine: false, opponent: false };
   renderReadyRoom();
   showScreen('host-waiting');
+  closeAllBattleOverlays(); // 待機中に開かれた戦闘用オーバーレイも念のため閉じる
   waitOverlay.classList.remove('show');
   MenuBgm.start();
 
@@ -6936,6 +6980,7 @@ async function handleGuestEvent(ev) {
     // 結果オーバーレイの裏に技メニュー等が残ったままタップできてしまわないよう、
     // ゲスト側でも確実にコマンドパネルを空にしておく。
     clearCmdPanel();
+    closeAllBattleOverlays();
     $('cmd-dock').classList.remove('dock-wide');
     const guestWon = !ev.win;
     const noSurrenderWin = !ev.bySurrender;
