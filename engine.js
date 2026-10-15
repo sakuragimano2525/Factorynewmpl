@@ -1217,11 +1217,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 66,
     "baseStats": {
       "hp": 70,
-      "atk": 135,
-      "def": 110,
-      "spa": 135,
-      "spd": 105,
-      "spe": 20
+      "atk": 200,
+      "def": 120,
+      "spa": 60,
+      "spd": 145,
+      "spe": 5
     }
   },
   "50": {
@@ -1782,7 +1782,7 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 108,
       "atk": 160,
       "def": 125,
-      "spa": 110,
+      "spa": 160,
       "spd": 95,
       "spe": 92
     }
@@ -2261,9 +2261,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 75,
     "baseStats": {
       "hp": 90,
-      "atk": 85,
-      "def": 105,
-      "spa": 155,
+      "atk": 60,
+      "def": 115,
+      "spa": 180,
       "spd": 110,
       "spe": 45
     }
@@ -2495,8 +2495,8 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 25,
     "baseStats": {
       "hp": 95,
-      "atk": 94,
-      "def": 95,
+      "atk": 84,
+      "def": 105,
       "spa": 120,
       "spd": 100,
       "spe": 46
@@ -2521,9 +2521,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 139,
     "baseStats": {
       "hp": 70,
-      "atk": 135,
+      "atk": 125,
       "def": 85,
-      "spa": 20,
+      "spa": 30,
       "spd": 105,
       "spe": 125
     }
@@ -2533,10 +2533,10 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "electric",
     "ability": 155,
     "baseStats": {
-      "hp": 20,
+      "hp": 10,
       "atk": 53,
-      "def": 136,
-      "spa": 53,
+      "def": 106,
+      "spa": 83,
       "spd": 137,
       "spe": 151
     }
@@ -4673,7 +4673,7 @@ function movePriorityWithWeather(move, poke, opp) {
 // 技の判定は、Gamedata側で move.kimarite = true を付けるか、
 // 下の KIMARITE_MOVE_ID に技IDを入れるかのどちらでも可能。
 const KIMARITE_MOVE_ID = 110;
-const KIMARITE_POWER = 150;
+const KIMARITE_POWER = 300;
 // 自分が場を離れる「交代技」のID（とんぼがえり等／バトンタッチ）。新しい交代技を足したらここにも追加する。
 const SWITCH_OUT_MOVE_IDS = [3, 349, 80, 477];
 
