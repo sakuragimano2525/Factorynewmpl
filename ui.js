@@ -741,7 +741,7 @@ const AssetPreloader = (() => {
   // BGM候補の事前ロード
   // ※ iOS Safari/WebKitには、同時に保持できる<audio>要素（デコーダー）の数に上限があり、
   //   これを超えると既存のAudio要素が予告なく無効化される。
-  //   バトルBGM候補は30曲もあり、全曲を毎回事前ロードするとこの上限を超えやすく、
+  //   バトルBGM候補は45曲もあり、全曲を毎回事前ロードするとこの上限を超えやすく、
   //   「バトル中、ポケモンの交代あたりで再生中のBGMが突然消える」不具合の主因になっていた
   //   （交代演出やSEの再生でAudio要素の同時使用数がさらに増え、上限を超えてしまうため）。
   //   そのため、軽量なメニュー曲だけを事前ロードし、バトルBGM本編は
@@ -751,9 +751,9 @@ const AssetPreloader = (() => {
     preloadAudio('./mepa.mp3');
   }
 
-  // マップ背景画像（map1〜map30.png）の事前ロード
+  // マップ背景画像（map1〜map50.png）の事前ロード
   function preloadMapBackgrounds() {
-    for (let i = 1; i <= 30; i++) preloadImage(`./map${i}.png`);
+    for (let i = 1; i <= 50; i++) preloadImage(`./map${i}.png`);
   }
 
   function preloadAll() {
@@ -767,10 +767,10 @@ const AssetPreloader = (() => {
   return { preloadImage, preloadAudio, preloadAll, audioBuffers };
 })();
 
-// バトル開始のたびに、map1〜map30.png からランダムで1枚を背景に設定する
+// バトル開始のたびに、map1〜map50.png からランダムで1枚を背景に設定する
 // （NPC戦・対人戦どちらでも共通。画像は事前ロード済みなのですぐ表示される）
 function setRandomBattleBackground() {
-  const n = 1 + Math.floor(Math.random() * 30);
+  const n = 1 + Math.floor(Math.random() * 50);
   const el = $('battle-field-bg');
   if (el) el.style.backgroundImage = `url("./map${n}.png")`;
 }
@@ -855,7 +855,7 @@ function playRankDownSound() { playBattleSfx('./fall.mp3'); }
 ['./supeff.mp3', './noteff.mp3', './hit.mp3', './sup.mp3', './fall.mp3'].forEach(getBattleSfxPool);
 
 /* ---------------- バトルBGM ---------------- */
-// 曲名リスト（1〜20）。ここに好きな曲名を入れてください。
+// 曲名リスト（1〜45）。ここに好きな曲名を入れてください。
 const BATTLE_BGM_NAMES = {
   1: 'パズドラZ-天地鳴動',
   2: 'ポケリエ-さすらいクロネコ戦',
@@ -887,6 +887,21 @@ const BATTLE_BGM_NAMES = {
   28: '?????',
   29: '妖怪ウォッチ-「VS 赤魔寝鬼・白古魔」',
   30: 'ポケリエ-平和と恐怖',
+  31: 'ポケリエ-メキアMPL戦',
+  32: 'ポケリエダンジョンズ-MPLの首領戦',
+  33: 'パズドラZ-迷宮系BGM',
+  34: 'ポケモンRS-四天王(ポケリエアレンジ)',
+  35: 'ポケモンBW-四天王(ポケリエアレンジ)',
+  36: 'ポケモンDP-パルキア・ディアルガ戦(ポケリエアレンジ)',
+  37: 'ポケモンHG-ホウオウ戦',
+  38: 'ポケモンBW-キュレム戦(ポケリエアレンジ)',
+  39: 'ポケモンSS-ルギア戦',
+  40: 'ポケモンXY-カロス伝説(ポケリエアレンジ)',
+  41: 'ポケリエ-戦闘！クシャムシャ！',
+  42: 'ポケモン金銀-戦闘！スイクン(ポケリエアレンジ)',
+  43: 'ポケリエ-「平和と恐怖」',
+  44: 'ポケリエ-都市伝説MPL戦',
+  45: 'ポケリエ-パラドックスMPL戦',
 };
 function battleBgmLogLabel(n) {
   if (n === 'BOSS') return 'ポケリエバトルファクトリー - 決闘!!';
@@ -901,7 +916,7 @@ const BattleBgm = (() => {
   let currentTrackNum = null;
 
   function pickTrackPath() {
-    const n = rand(1, 30);
+    const n = rand(1, 45);
     currentTrackNum = n;
     return `./${n}.mp3`;
   }
@@ -915,7 +930,7 @@ const BattleBgm = (() => {
     const path = isTeamBoss ? './BOSS2.mp3' : (isBoss ? './BOSS.mp3' : pickTrackPath());
     if (isTeamBoss) currentTrackNum = 'BOSS2';
     else if (isBoss) currentTrackNum = 'BOSS';
-    // BGM候補30曲は事前プリロードしていない（iOSのAudio要素数上限対策のため）。
+    // BGM候補45曲は事前プリロードしていない（iOSのAudio要素数上限対策のため）。
     // 実際に再生する1曲だけをここでロードする。
     const audio = new Audio(path);
     audio.preload = 'auto';
@@ -9715,7 +9730,7 @@ AssetPreloader.preloadAll();
 // ---- iOS Safari 対策 ----
 // iOSのSafari/WebViewは「その<audio>要素自身に対して、ユーザー操作のコールスタック内で
 // 一度 play() を呼んだこと」がある要素しか、以後スクリプトからの再生を許可しない。
-// MenuBgm用の1個だけ再生しても、クリック音・バトル効果音・バトルBGM(30曲)用に
+// MenuBgm用の1個だけ再生しても、クリック音・バトル効果音・バトルBGM(45曲)用に
 // 別途生成してある大量のAudioインスタンスはロックされたままになり、
 // 「BGMは鳴るのに効果音や対戦中の曲だけ鳴らない」または「何も鳴らない」という
 // iPhoneでの不具合の主な原因になる。そこで最初のユーザー操作のタイミングで、
