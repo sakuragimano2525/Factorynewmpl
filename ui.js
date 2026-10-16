@@ -1301,7 +1301,8 @@ function sendPrivateLogToGuestOnly(text) {
 }
 
 function queueMessage(text, after, netMeta) {
-  msgQueue.push({ text, after });
+  const _logSide = netMeta && netMeta.moveUse ? netMeta.moveUse : (netMeta && netMeta.hit ? netMeta.hit : null);
+  msgQueue.push({ text, after, side: _logSide });
   // ホスト → ゲストへイベントを即時送信（ホストの演出テンポとゲストの受信をリアルタイム同期させる）。
   // hideFromGuest：ホスト側の持ち主だけに見せる非公開ログ（ランダムアクトの技変化）はゲストへ送らない。
   if (state.multiplayer && state.isHost && !(netMeta && netMeta.hideFromGuest)) {
@@ -1405,10 +1406,10 @@ function hidePeekBadge() {
 }
 
 function hideMessageToast() {}
-function pushLogLine(text) {
+function pushLogLine(text, side) {
   const stack = $('battle-log-stack');
   const el = document.createElement('div');
-  el.className = 'battle-log-line';
+  el.className = 'battle-log-line' + (side === 'player' ? ' log-side-player' : (side === 'cpu' ? ' log-side-cpu' : ''));
   el.innerHTML = hazardLogIconHtml(text, 18) + text;
   stack.appendChild(el);
   logLines.push(el);
@@ -1435,7 +1436,7 @@ function drainMessages() {
     async function showNext() {
       if (msgQueue.length === 0) { resolve(); return; }
       const item = msgQueue.shift();
-      pushLogLine(item.text);
+      pushLogLine(item.text, item.side);
       if (item.after) { try { await withTimeout(item.after(), 4000); } catch (e) {} }
       let done = false;
       const advance = () => {
@@ -6490,6 +6491,9 @@ async function returnToReadyRoomAfterBattle() {
   closeAllBattleOverlays();
   clearTurnTimer();
   $('cmd-dock').classList.remove('dock-wide');
+  // 降参/ログ/様子を見るボタンが表示状態のまま戦闘画面が非表示になると、見えないボタンが
+  // 待機部屋のボタン（準備完了など）へのタップを奪ってしまうため、ここで確実に隠す。
+  setWatchLogButtonsActive(false);
 
   // 結果表示をしばらく見せてから待機部屋へ
   await new Promise((r) => setTimeout(r, RESULT_DISPLAY_MS));
@@ -6695,6 +6699,7 @@ async function handleGuestEvent(ev) {
 
     msgQueue.push({
       text: ev.t,
+      side: logSide,
       after: async () => {
         if (isGuestHazardMove) {
           await playSpecialMoveEffect(ev.mi, guestHazardDefSide);
@@ -7017,7 +7022,7 @@ async function playGuestMessages() {
     function showNext() {
       if (msgQueue.length === 0) { resolve(); return; }
       const item = msgQueue.shift();
-      pushLogLine(item.text);
+      pushLogLine(item.text, item.side);
       const afterPromise = item.after ? withTimeout(item.after(), 4000) : Promise.resolve();
       afterPromise.then(() => {
         setTimeout(() => { showNext(); }, MSG_AUTO_MS);

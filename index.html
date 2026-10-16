@@ -6157,6 +6157,401 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
 }
 
 </style>
+
+<!-- ===== UI v2: 見た目の刷新レイヤー（元のCSSの後ろで上書き。HTML/JS/画像指定は無変更） ===== -->
+<style id="ui-v2">
+@import url('https://fonts.googleapis.com/css2?family=Dela+Gothic+One&display=swap');
+
+/* =====================================================================
+   UI v2  ― ホーム / モード選択 / 戦闘 / ダイアログ
+   既存のHTML・ID・クラス・画像指定・JSには一切手を入れず、
+   このブロックが「後から上書き」する形で見た目だけを刷新している。
+   ボックス系の画面（#screen-serious / #screen-training / #screen-partysel）は触らない。
+   ===================================================================== */
+:root{
+  --u-ink:#1b2238;
+  --u-ink-2:#3a4566;
+  --u-paper:#f3f6fc;
+  --u-panel:#ffffff;
+  --u-red:#e8404f;
+  --u-red-deep:#a31d2e;
+  --u-blue:#2f6bff;
+  --u-blue-deep:#1c3fa8;
+  --u-lip:0 4px 0 rgba(27,34,56,.16);
+  --u-lift:0 12px 26px rgba(27,34,56,.14);
+  --u-display:'Dela Gothic One','M PLUS Rounded 1c','Hiragino Maru Gothic ProN',sans-serif;
+}
+
+/* ---------- 共通：ゲーム風ボタンの押し込み表現 ---------- */
+.u-press, .confirm-btn, .settings-btn, .surrender-panel-btns button,
+.multi-menu-btn, .npc-mode-btn, .npc-diff-opt, .result-mp-actions .start-btn{
+  transition: transform .09s ease, box-shadow .09s ease;
+}
+
+/* =====================================================================
+   HOME
+   ===================================================================== */
+#screen-title{
+  background: linear-gradient(160deg, #f9fbff 0%, #e9effd 52%, #d9e4fb 100%);
+}
+#screen-title::before{               /* 左下の大きなリング（ポケボールの輪郭） */
+  content:''; position:absolute; z-index:0; pointer-events:none;
+  width:min(78vh,520px); aspect-ratio:1; left:-8vh; bottom:-22vh;
+  border-radius:50%;
+  border:clamp(18px,4.5vh,38px) solid rgba(47,107,255,.07);
+}
+#screen-title::after{                /* 右側の斜めスラブ：メニューの“台座” */
+  content:''; position:absolute; z-index:0; pointer-events:none;
+  top:0; bottom:0; right:0; width:min(58%, 560px);
+  clip-path: polygon(16% 0, 100% 0, 100% 100%, 0 100%);
+  background: linear-gradient(180deg, rgba(255,255,255,.78), rgba(196,214,250,.62));
+}
+.title-bg-orb{ display:none; }
+
+.title-topbar{ padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left)); }
+.title-topbar-left, .title-topbar-right{ gap:8px; }
+
+#screen-title .title-name-btn{
+  height:44px; padding:5px 18px 5px 5px; gap:9px;
+  background:#fff; border:0;
+  box-shadow: var(--u-lip), 0 8px 18px rgba(27,34,56,.08);
+}
+#screen-title .title-name-btn:active{ transform: translateY(3px); box-shadow: 0 1px 0 rgba(27,34,56,.16); }
+.title-name-btn .tnb-icon{ width:34px; height:34px; font-size:16px; background: linear-gradient(160deg, #3a4a7a, var(--u-ink)); }
+.title-name-btn .tnb-label{ font-size:13.5px; font-weight:900; color:var(--u-ink); }
+
+.title-topbar .title-settings-btn{
+  width:44px; height:44px; border-radius:14px; font-size:19px;
+  background-color:#fff;
+  box-shadow: var(--u-lip), 0 8px 18px rgba(27,34,56,.08);
+  transition: transform .09s ease, box-shadow .09s ease;
+}
+.title-topbar .title-settings-btn:not(.rank-bronze):not(.rank-silver):not(.rank-gold):not(.rank-rainbow){ border-color: transparent; }
+.title-topbar .title-settings-btn:active{ transform: translateY(3px); }
+.title-topbar .title-record-btn.rank-bronze{ box-shadow: 0 0 0 3px #b06a35, var(--u-lip); }
+.title-topbar .title-record-btn.rank-silver{ box-shadow: 0 0 0 3px #a7adba, var(--u-lip); }
+.title-topbar .title-record-btn.rank-gold{ box-shadow: 0 0 0 3px #e8b923, var(--u-lip); }
+.title-topbar .title-record-btn.rank-rainbow{ box-shadow: 0 0 0 3px transparent, var(--u-lip); }
+
+.title-topbar .npc-diff-btn{
+  height:44px; padding:4px 5px 4px 16px; gap:10px; border:0; background:#fff;
+  font-size:12px; color:var(--u-ink-2);
+  box-shadow: var(--u-lip), 0 8px 18px rgba(27,34,56,.08);
+}
+.title-topbar .npc-diff-btn:active{ transform: translateY(3px); box-shadow: 0 1px 0 rgba(27,34,56,.16); }
+.title-topbar .npc-diff-btn .ndb-val{ padding:0 14px; height:34px; display:flex; align-items:center; border-radius:11px; font-size:12.5px; background: linear-gradient(180deg,#4f86ff,#2a5de6); }
+/* 難易度ごとの色（元の指定を復活）：かんたん=緑 / ノーマル=青 / むずかしい=赤 */
+.title-topbar .npc-diff-btn[data-diff="easy"] .ndb-val{ background: linear-gradient(180deg,#4fd67a,#2fb85f); }
+.title-topbar .npc-diff-btn[data-diff="normal"] .ndb-val{ background: linear-gradient(180deg,#4f86ff,#2a5de6); }
+.title-topbar .npc-diff-btn[data-diff="hard"] .ndb-val{ background: linear-gradient(180deg,#ff7a5c,#e63946); }
+
+/* ヒーロー：左＝ロゴ / 右＝メニュー の2カラム */
+.title-hero{
+  display:grid;
+  grid-template-columns: minmax(0,1fr) minmax(280px,min(46vw,460px));
+  grid-template-rows: 1fr auto auto auto 1fr;
+  column-gap: clamp(24px,5vw,72px);
+  align-items:center; justify-items:start;
+  padding: 72px clamp(22px,6vw,84px) 26px;
+}
+.title-emblem{ grid-column:1; grid-row:2; width:68px; height:68px; margin:0 0 16px; animation-duration:6s; }
+.title-logo-wrap{ grid-column:1; grid-row:3; align-items:flex-start; text-align:left; }
+.title-logo{
+  font-family:var(--u-display); font-weight:400;
+  font-size: clamp(20px,3.3vw,54px); line-height:1.22; letter-spacing:0;
+  max-width: none; word-break: keep-all; overflow-wrap:anywhere;
+  background:none; -webkit-background-clip:border-box; background-clip:border-box; color:var(--u-ink);
+  animation:none; filter:none; text-shadow: 0 3px 0 rgba(47,107,255,.22);
+}
+.title-logo-sub{ margin-top:10px; font-size:clamp(11px,1.4vw,13px); letter-spacing:2.5px; color:var(--u-red); opacity:1; font-weight:900; }
+.title-underline{ display:none; }   /* 赤青黒の3色ラインは違和感があるため非表示（要素自体は残す） */
+.title-menu-row{
+  grid-column:2; grid-row:1 / 6; align-self:center;
+  flex-direction:column; flex-wrap:nowrap; gap:clamp(10px,2.4vh,16px);
+  margin:0; max-width:none; width:100%;
+}
+
+#screen-title .title-menu-btn{
+  --menu-accent:#2f6bff; --menu-accent-2:#1c3fa8;
+  display:grid; grid-template-columns:auto 1fr auto;
+  grid-template-areas:"icon title chev" "icon sub chev";
+  align-items:center; column-gap:14px; row-gap:1px;
+  flex:0 0 auto; width:100%; min-width:0;
+  min-height:clamp(62px,17vh,90px);
+  padding:10px 14px 10px 12px; text-align:left;
+  background:#fff; border:0; border-radius:20px; color:var(--u-ink);
+  box-shadow: 0 5px 0 rgba(27,34,56,.15), 0 14px 26px rgba(27,34,56,.10);
+  transition: transform .09s ease, box-shadow .09s ease;
+}
+#screen-title .title-menu-btn::before{ display:none; }
+#screen-title .title-menu-btn::after{
+  content:'›'; grid-area:chev; position:static; transform:none; filter:none; opacity:1;
+  width:32px; height:32px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background: rgba(27,34,56,.06); color:var(--menu-accent);
+  font-size:24px; font-weight:900; line-height:1; padding-bottom:3px;
+}
+#screen-title .title-menu-btn .tmb-icon-wrap{
+  grid-area:icon; width:56px; height:56px; border-radius:17px;
+  background: linear-gradient(160deg,#f4f7fe,#e3eaf8);
+  border:3px solid var(--menu-accent); box-shadow:none;
+}
+#screen-title .title-menu-btn .tmb-title{ grid-area:title; margin:0; align-self:end; font-size:clamp(16px,2.2vw,19px); font-weight:900; }
+#screen-title .title-menu-btn .tmb-sub{ grid-area:sub; margin:0; align-self:start; font-size:12px; font-weight:700; color:var(--u-ink-2); opacity:.75; }
+#screen-title .title-menu-btn:active{ transform: translateY(4px); box-shadow: 0 1px 0 rgba(27,34,56,.15), 0 4px 10px rgba(27,34,56,.10); }
+
+#screen-title .title-menu-btn.primary{
+  min-height:clamp(70px,20vh,104px);
+  background: linear-gradient(180deg,#4f86ff,#2a5de6); color:#fff;
+  box-shadow: 0 5px 0 var(--u-blue-deep), 0 16px 30px rgba(42,93,230,.32);
+}
+#screen-title .title-menu-btn.primary::after{ background: rgba(255,255,255,.92); color:#2a5de6; }
+#screen-title .title-menu-btn.primary .tmb-icon-wrap{ background: rgba(255,255,255,.92); border-color: rgba(255,255,255,.55); }
+#screen-title .title-menu-btn.primary .tmb-title{ font-size:clamp(18px,2.6vw,22px); }
+#screen-title .title-menu-btn.primary .tmb-sub{ color:#fff; opacity:.9; }
+#screen-title .title-menu-btn.primary:active{ box-shadow: 0 1px 0 var(--u-blue-deep), 0 4px 10px rgba(42,93,230,.3); }
+@media (hover:hover){ #screen-title .title-menu-btn:hover{ transform: translateY(-2px); } #screen-title .title-menu-btn:active{ transform: translateY(4px); } }
+
+@media (max-width:700px) and (min-height:300px){ .title-hero{ grid-template-columns:minmax(0,1fr) minmax(250px,300px); } }
+/* 縦長/狭い画面：ロゴを上、メニューを下に積む */
+@media (max-width:640px) and (min-height:521px){
+  .title-hero{ grid-template-columns:1fr; grid-template-rows:auto auto auto auto auto; align-content:center; justify-items:center; row-gap:0; padding-top:84px; }
+  .title-emblem{ grid-column:1; grid-row:1; }
+  .title-logo-wrap{ grid-column:1; grid-row:2; align-items:center; text-align:center; }
+  .title-underline{ grid-column:1; grid-row:3; }
+  .title-menu-row{ grid-column:1; grid-row:4; margin-top:22px; max-width:420px; }
+  #screen-title::after{ display:none; }
+}
+@media (max-height:420px){
+  .title-hero{ padding:62px clamp(20px,5vw,60px) 14px; }
+  .title-emblem{ width:48px; height:48px; margin-bottom:10px; }
+  #screen-title .title-menu-btn{ min-height:58px; padding:8px 12px 8px 10px; }
+  #screen-title .title-menu-btn.primary{ min-height:66px; }
+  #screen-title .title-menu-btn .tmb-icon-wrap{ width:44px; height:44px; border-radius:14px; }
+  .tmb-box-icon{ width:28px; height:28px; }
+}
+
+/* =====================================================================
+   MODE SELECT（対戦方法 / NPC方法）
+   ===================================================================== */
+#screen-multiplayer, #screen-npc-mode{
+  background: linear-gradient(160deg, #f9fbff 0%, #e9effd 52%, #d9e4fb 100%);
+}
+.multi-menu-title, .npc-mode-title{
+  font-family:var(--u-display); font-weight:400; letter-spacing:.5px; color:var(--u-ink);
+}
+.multi-menu-btn, .npc-mode-btn{
+  border-radius:24px; background:#fff; color:var(--u-ink);
+  box-shadow: 0 6px 0 rgba(27,34,56,.15), 0 16px 30px rgba(27,34,56,.10);
+}
+.multi-menu-btn:active, .npc-mode-btn:active{ transform: translateY(5px); box-shadow: 0 1px 0 rgba(27,34,56,.15); }
+.multi-menu-btn.primary, .npc-mode-btn.primary{
+  background: linear-gradient(180deg,#4f86ff,#2a5de6); color:#fff;
+  box-shadow: 0 6px 0 var(--u-blue-deep), 0 18px 32px rgba(42,93,230,.30);
+}
+.multi-menu-btn.primary:active, .npc-mode-btn.primary:active{ box-shadow: 0 1px 0 var(--u-blue-deep); }
+.multi-menu-back, .npc-mode-back{
+  background: var(--u-ink); color:#fff; border-radius:14px; padding:11px 30px;
+  box-shadow: 0 4px 0 #0c1122;
+}
+.multi-menu-back:active, .npc-mode-back:active{ transform: translateY(3px); box-shadow: 0 1px 0 #0c1122; }
+
+/* =====================================================================
+   BATTLE
+   ===================================================================== */
+#screen-battle .sprite-slot::before{               /* 足元の影 */
+  content:''; position:absolute; left:50%; bottom:6%; width:70%; height:15%;
+  transform:translateX(-50%); border-radius:50%; pointer-events:none;
+  background: radial-gradient(ellipse at center, rgba(14,20,38,.36), rgba(14,20,38,0) 70%);
+}
+
+/* ---- HUD ---- */
+#screen-battle .hud{
+  --hud-accent:var(--u-blue);
+  position:relative; padding:9px 14px 10px 18px;
+  border-radius:16px; background:#fff; border:0;
+  box-shadow: 0 4px 0 rgba(27,34,56,.20), 0 12px 24px rgba(14,20,38,.20);
+}
+#screen-battle .hud::before{
+  content:''; position:absolute; left:0; top:9px; bottom:9px; width:6px;
+  border-radius:0 5px 5px 0; background:var(--hud-accent);
+}
+#screen-battle .hud-opp{ --hud-accent:var(--u-red); }
+#screen-battle .hud-name{ font-size:14.5px; letter-spacing:.2px; color:var(--u-ink); }
+#screen-battle .hud-lv{
+  padding:1px 8px; border-radius:999px; background:var(--u-ink); color:#fff; font-size:10.5px; font-weight:900;
+}
+#screen-battle .hud-hpbar-outer{
+  position:relative; height:12px; margin:8px 0 0 26px; padding:2px; box-sizing:border-box;
+  border-radius:999px; background:#2a3350; box-shadow:none; overflow:visible;
+}
+#screen-battle .hud-hpbar-outer::before{
+  content:'HP'; position:absolute; left:-27px; top:50%; transform:translateY(-50%);
+  font-size:9px; font-weight:900; letter-spacing:.5px; color:#fff; background:var(--u-ink);
+  padding:1px 5px; border-radius:6px; line-height:1.3;
+}
+#screen-battle .hud-hpbar-inner{ position:relative; box-shadow:none; }
+#screen-battle .hud-hpbar-inner::after{
+  content:''; position:absolute; left:4px; right:4px; top:1px; height:36%;
+  border-radius:999px; background:rgba(255,255,255,.38);
+}
+#screen-battle .hud-hp-text{ font-size:13px; font-weight:900; color:var(--u-ink); font-variant-numeric:tabular-nums; }
+#screen-battle .hud-hp-percent{ font-size:11.5px; font-weight:900; color:var(--u-ink-2); font-variant-numeric:tabular-nums; }
+
+/* ---- タイマー / 待機（白ベース） ---- */
+#screen-battle .turn-timer-badge{
+  min-width:58px; padding:5px 10px; border-radius:14px; background:#fff; color:var(--u-ink);
+  box-shadow: 0 3px 0 rgba(27,34,56,.22), 0 8px 16px rgba(14,20,38,.18);
+}
+#screen-battle .turn-timer-badge.warn{ background:var(--u-red); color:#fff; }
+#screen-battle .turn-timer-num{ font-size:20px; font-variant-numeric:tabular-nums; }
+#screen-battle .opponent-waiting-badge{
+  background:#fff; color:var(--u-ink); border:0; border-radius:999px; padding:6px 16px;
+  box-shadow: 0 3px 0 rgba(27,34,56,.22), 0 8px 16px rgba(14,20,38,.18);
+}
+
+/* ---- メッセージ（RPG風ウィンドウ） ---- */
+#screen-battle .msg-toast{
+  padding:15px 38px 15px 24px; border-radius:16px; backdrop-filter:none;
+  background: linear-gradient(180deg, rgba(31,40,68,.97), rgba(18,24,42,.97));
+  border:2px solid rgba(255,255,255,.88);
+  box-shadow: 0 0 0 3px var(--u-ink), 0 16px 32px rgba(0,0,0,.34);
+  text-align:left; font-size:15.5px; line-height:1.55;
+}
+#screen-battle .msg-toast.show::after{
+  content:'▼'; position:absolute; right:14px; bottom:9px; font-size:10px; color:#fff;
+  animation: uMsgNext 1s ease-in-out infinite;
+}
+@keyframes uMsgNext{ 0%,100%{ opacity:.25; transform:translateY(0); } 50%{ opacity:1; transform:translateY(3px); } }
+
+/* ---- ログの短冊：自分=青 / 相手=赤 / それ以外=グレー（「ログを見る」と同じ分け方） ---- */
+#screen-battle .battle-log-line{
+  background:rgba(255,255,255,.96); color:var(--u-ink); backdrop-filter:none;
+  border-left:6px solid #9aa3b8; border-radius:8px; padding:5px 10px;
+  box-shadow: 0 2px 0 rgba(27,34,56,.14), 0 6px 12px rgba(14,20,38,.14);
+}
+#screen-battle .battle-log-line.log-side-player{ border-left-color:var(--u-blue); background:#eef3ff; }
+#screen-battle .battle-log-line.log-side-cpu{ border-left-color:var(--u-red); background:#fff0f1; }
+
+/* ---- コマンドドック ---- */
+#screen-battle .cmd-dock{ gap:7px; }
+#screen-battle .dock-surrender-btn, #screen-battle .dock-log-btn, #screen-battle .dock-watch-btn{
+  padding:7px 14px; border-radius:11px; font-size:12px; font-weight:800;
+  background:#fff; color:var(--u-ink); border:0;
+  box-shadow: 0 3px 0 rgba(27,34,56,.22), 0 6px 12px rgba(14,20,38,.16);
+}
+#screen-battle .dock-surrender-btn{ color:var(--u-red); }
+#screen-battle .dock-surrender-btn:active, #screen-battle .dock-log-btn:active, #screen-battle .dock-watch-btn:active{ transform:translateY(2px); box-shadow:0 1px 0 rgba(27,34,56,.22); }
+#screen-battle .dock-watch-btn:disabled{ opacity:.5; }
+
+#screen-battle .action-menu{ grid-template-columns:1fr; grid-template-rows:auto auto; gap:9px; }
+#screen-battle .action-menu .cmd-btn{
+  aspect-ratio:auto; border-radius:18px; flex-direction:row; justify-content:space-between;
+  padding:0 20px 0 24px; border:0; color:#fff; font-size:17px; letter-spacing:.5px;
+  transition: transform .09s ease, box-shadow .09s ease;
+}
+#screen-battle .action-menu .cmd-btn::after{ content:'›'; font-size:28px; line-height:1; opacity:.85; padding-bottom:3px; }
+#screen-battle #act-fight{
+  height:64px; font-size:21px;
+  background: linear-gradient(180deg,#ff5a68,#e23144);
+  box-shadow: 0 5px 0 var(--u-red-deep), 0 14px 24px rgba(226,49,68,.34);
+}
+#screen-battle #act-switch{
+  height:52px;
+  background: linear-gradient(180deg,#4f86ff,#2a5de6);
+  box-shadow: 0 5px 0 var(--u-blue-deep), 0 12px 22px rgba(42,93,230,.30);
+}
+#screen-battle #act-fight:active{ transform:translateY(4px); box-shadow:0 1px 0 var(--u-red-deep); }
+#screen-battle #act-switch:active{ transform:translateY(4px); box-shadow:0 1px 0 var(--u-blue-deep); }
+#screen-battle .action-menu .cmd-btn:disabled{ opacity:.5; }
+
+/* ---- 技リスト（サイズは元のまま。見た目だけ更新） ---- */
+#screen-battle .move-list{ gap:6px; grid-template-rows: repeat(4, auto) auto; }   /* 1行が長くても他の行を巻き込んで大きくならない */
+#screen-battle .move-row{
+  border-width:0 0 0 8px; border-style:none none none solid; border-radius:12px; background:#fff; color:var(--u-ink);
+  box-shadow: 0 3px 0 rgba(27,34,56,.18), 0 8px 14px rgba(14,20,38,.12);
+  transition: transform .09s ease, box-shadow .09s ease;
+}
+#screen-battle .move-row:active{ transform:translateY(2px); box-shadow:0 1px 0 rgba(27,34,56,.18); }
+#screen-battle .move-row-disabled{ opacity:.45; box-shadow:0 2px 0 rgba(27,34,56,.14); }
+#screen-battle .move-row-name{ font-weight:900; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#screen-battle .move-row-pp{ font-weight:800; color:var(--u-ink-2); font-variant-numeric:tabular-nums; white-space:nowrap; }
+#screen-battle .move-row-info-btn{ background:#eaeffb; box-shadow:none; color:var(--u-blue); }
+#screen-battle .move-row-detail{ color:var(--u-ink-2); }
+#screen-battle .move-list .move-row-back{
+  background:#fff; color:var(--u-ink); border:0; border-radius:12px; box-shadow:0 3px 0 rgba(27,34,56,.22), 0 8px 14px rgba(14,20,38,.12);
+}
+#screen-battle .move-list .move-row-back:active{ transform:translateY(2px); box-shadow:0 1px 0 rgba(27,34,56,.22); }
+
+/* ---- メガシンカボタン（アニメ・画像はそのまま） ---- */
+#screen-battle .mega-evo-btn{
+  border-radius:14px; border:2px solid rgba(255,255,255,.7);
+  box-shadow: 0 4px 0 #4a1a9c, 0 10px 22px rgba(122,47,245,.35);
+}
+#screen-battle .mega-evo-btn.selected{ box-shadow: 0 0 0 3px rgba(255,255,255,.9) inset, 0 4px 0 #2b0e66; }
+
+/* =====================================================================
+   DIALOGS / OVERLAYS（戦闘・選出・結果・確認 共通）
+   ===================================================================== */
+.surrender-overlay, .confirm-overlay, .trade-overlay, .opponent-left-overlay, .settings-overlay,
+.log-overlay, .party-overlay, .watch-overlay{
+  background: rgba(14,20,38,.72);
+}
+.result-overlay{ background: rgba(14,20,38,.84); }
+
+.surrender-panel, .confirm-card, .trade-card, .opponent-left-card, .settings-card, .result-card{
+  position:relative; background:#fff; border:0; border-radius:22px;
+  box-shadow: 0 6px 0 rgba(27,34,56,.20), 0 26px 50px rgba(14,20,38,.38);
+}
+.watch-panel, .log-panel, .party-panel{
+  border-radius:22px; box-shadow: 0 0 0 3px var(--u-ink), 0 26px 50px rgba(14,20,38,.4);
+}
+.result-card{ overflow:hidden; padding-top:44px; }
+.result-card::before{
+  content:''; position:absolute; top:0; left:0; right:0; height:10px;
+  background: var(--u-blue);
+}
+.result-title{ font-family:var(--u-display); font-weight:400; font-size:clamp(24px,4vw,38px); }
+.result-title.win{ color:#1fa35c; }
+.result-title.lose{ color:var(--u-red); }
+.result-desc, .surrender-panel-desc{ color:var(--u-ink-2); }
+.trade-title, .confirm-text, .settings-title, .surrender-panel-title, .opponent-left-title{ color:var(--u-ink); font-weight:900; }
+
+.confirm-btn, .settings-btn, .surrender-panel-btns button, .result-mp-actions .start-btn, .party-close-btn, .watch-close-btn,
+.trade-card > .neu-btn, .opponent-left-card .neu-btn{
+  border:0; border-radius:14px; background:#e9eefb; color:var(--u-ink);
+  box-shadow: 0 4px 0 rgba(27,34,56,.18); font-weight:900;
+}
+.confirm-btn:active, .settings-btn:active, .surrender-panel-btns button:active, .result-mp-actions .start-btn:active,
+.party-close-btn:active, .watch-close-btn:active, .trade-card > .neu-btn:active, .opponent-left-card .neu-btn:active{
+  transform:translateY(3px); box-shadow:0 1px 0 rgba(27,34,56,.18);
+}
+.confirm-yes, .settings-close-btn, .result-mp-actions .start-btn.primary{
+  background: linear-gradient(180deg,#4f86ff,#2a5de6); color:#fff; box-shadow: 0 4px 0 var(--u-blue-deep);
+}
+.surrender-panel-btns .surrender-confirm-btn{ background: linear-gradient(180deg,#ff5a68,#e23144); color:#fff; box-shadow:0 4px 0 var(--u-red-deep); }
+.party-close-btn, .watch-close-btn{ background:var(--u-ink); color:#fff; box-shadow:0 4px 0 #0c1122; }
+.settings-input{ border:2px solid #d5ddf0; border-radius:12px; background:#f5f7fd; box-shadow:none; }
+
+.npc-diff-opt{
+  border:3px solid transparent; border-radius:16px; background:#f3f6fc; box-shadow:0 4px 0 rgba(27,34,56,.14);
+}
+.npc-diff-opt.selected{ border-color:var(--u-blue); background:#eaf0ff; box-shadow:0 4px 0 rgba(47,107,255,.35); }
+.npc-diff-opt[data-diff="easy"].selected{ border-color:#2fb85f; background:#eefaf2; box-shadow:0 4px 0 rgba(47,184,95,.35); }
+.npc-diff-opt[data-diff="hard"].selected{ border-color:#e63946; background:#fff0f1; box-shadow:0 4px 0 rgba(230,57,70,.35); }
+
+@media (prefers-reduced-motion: reduce){
+  .title-emblem, #screen-battle .msg-toast.show::after, .turn-timer-badge.warn{ animation:none; }
+}
+
+</style>
+
+<!-- ===== 不具合修正：非表示の画面の中身が、見えないままタップを奪うのを防ぐ =====
+     .battle-bottom > * や .mp-pick-ok.ready は pointer-events:auto のため、画面が非表示(opacity:0)でも
+     タップを受け取り続けていた（対人戦のあと待機部屋の「準備完了」「チームを選ぶ」等が反応しなくなる原因）。 -->
+<style id="fix-hidden-screen-taps">
+.screen:not(.active), .screen:not(.active) *{ pointer-events:none !important; }
+</style>
 </head>
 <body>
 
