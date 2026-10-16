@@ -2779,7 +2779,13 @@ function applyMegaEvolveAbilityTrigger(poke, logFn, opponent) {
 }
 
 // Level 100固定・個体値31固定・努力値510ランダム配分・性格ランダム・特性ランダム・技はレベル技から選出
-function createRandomPokemon(speciesId, level = 100) {
+// ランダムバトル（NPC・対人）の選出プール／相手チームの色違い確率（%）。通常は5%。
+// デバッグID「shiratorihime1225」で ui.js から window.debugShinyPercent に40が入る。
+function getRandomBattleShinyPercent() {
+  return (typeof window !== 'undefined' && window.debugShinyPercent) || 5;
+}
+
+function createRandomPokemon(speciesId, level = 100, shinyPercent = 5) {
   const species = GAME_DATA.species[speciesId];
   const nature = rand(1, 24);
   const ability = rollAbility(species);
@@ -2807,7 +2813,7 @@ function createRandomPokemon(speciesId, level = 100) {
       damageFormula: null, callRandomMove: false, locked: false });
   }
 
-  const shiny = rand(1, 100) <= 5; // 5%の確率で色違い
+  const shiny = rand(1, 100) <= shinyPercent; // 通常5%の確率で色違い（ランダムバトルはデバッグIDで変動）
 
   return {
     speciesId, species, level, nature, ability, shiny,
@@ -2870,7 +2876,7 @@ function drawRandomTeam(count = 3, level = 100) {
   const pool = getFinalSpeciesIds();
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
   const chosenIds = shuffled.slice(0, count);
-  return chosenIds.map((id) => createRandomPokemon(id, level));
+  return chosenIds.map((id) => createRandomPokemon(id, level, getRandomBattleShinyPercent()));
 }
 
 // メガシンカ可能な種族の中からランダムに1匹選んで生成する。
@@ -2879,7 +2885,7 @@ function drawRandomMegaCapablePokemon(level = 100) {
   const pool = getFinalSpeciesIds().filter((id) => MEGA_EVOLUTION_DATA[id] && isMegaUsableInBattle(id));
   if (pool.length === 0) return null;
   const id = pool[Math.floor(Math.random() * pool.length)];
-  return createRandomPokemon(id, level);
+  return createRandomPokemon(id, level, getRandomBattleShinyPercent());
 }
 
 // ---- タイプ相性 ----

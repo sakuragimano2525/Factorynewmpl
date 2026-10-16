@@ -623,6 +623,13 @@ const Pokedex = (() => {
     return viewShiny.has(speciesId);
   }
 
+  // 色違い解放済み（hasShiny）の全種族の表示を、まとめて色違い/通常に切り替える。
+  function setAllView(shiny) {
+    if (shiny) { for (const id of seenShiny) viewShiny.add(id); }
+    else viewShiny.clear();
+    save();
+  }
+
   function getFavorite() { return favorite; }
   function isFavorite(speciesId) { return !!favorite && favorite.speciesId === speciesId; }
   // 登録済みポケモンのみお気に入りにできる（見つけていない種族は不可）。
@@ -642,7 +649,7 @@ const Pokedex = (() => {
   load();
   return {
     registerTeam, registerMega, has, hasShiny, hasMega, count,
-    isViewingShiny, toggleView,
+    isViewingShiny, toggleView, setAllView,
     getFavorite, isFavorite, toggleFavorite,
   };
 })();
@@ -4889,7 +4896,7 @@ function showInitialPickOverlay() {
   clearPickTimer();
   pickConfirmed = false;
   const ids = buildPickPoolIds();
-  pickPool = ids.map((id) => createRandomPokemon(id, 100));
+  pickPool = ids.map((id) => createRandomPokemon(id, 100, getRandomBattleShinyPercent()));
   pickedIds = [];
   renderPickRow();
   $('pick-overlay').classList.add('show');
@@ -5488,7 +5495,7 @@ function startMultiplayerPick() {
   // ホスト・ゲストどちらも Net.megaEnabled を見て同じ値になる（あり/なしはお互い共通）。
   state.megaEvolutionEnabled = !!Net.megaEnabled;
   const ids = buildPickPoolIds();
-  pickPool = ids.map((id) => createRandomPokemon(id, 100));
+  pickPool = ids.map((id) => createRandomPokemon(id, 100, getRandomBattleShinyPercent()));
   pickPool.forEach(arrangeShinkirouMovesForRandom); // 対人ランダム：しんきろう持ちは変化技を先頭へ
   pickedIds = [];
   renderPickRow();
@@ -7371,6 +7378,15 @@ const DEBUG_UNLOCK_TYPE_STREAK_ID = {
   'JIMENSERINA': 'ground',
 };
 
+// 「nijinoyume1225」と入力すると、「〇〇タイプ6匹入れて連勝」系のタイプ統一実績
+// （type_streak_〇〇）をすべて一括で解除する（確認用の裏機能）。
+const DEBUG_UNLOCK_ALL_TYPE_STREAK_ID = 'nijinoyume1225';
+
+// 「shiratorihime1225」と入力すると、NPCランダムバトル・対人ランダムバトルの
+// 色違い確率が5%→40%に上がる。一度入力したらページを閉じる（リロードする）まで有効。
+const DEBUG_SHINY_UP_ID = 'shiratorihime1225';
+const DEBUG_SHINY_UP_PERCENT = 40;
+
 $('btn-title-settings').addEventListener('click', () => {
   $('settings-id-input').value = '';
   $('settings-overlay').classList.add('show');
@@ -7399,6 +7415,18 @@ $('settings-confirm-btn').addEventListener('click', () => {
   if (value === DEBUG_INTRUSION_TEST_ID) {
     startMenuBgmOnFirstInteraction();
     startNewRun(0, true); // 通常どおりメガ選択→選出→最初の戦いが「3戦目・乱入確定」
+    return;
+  }
+  if (value === DEBUG_SHINY_UP_ID) {
+    window.debugShinyPercent = DEBUG_SHINY_UP_PERCENT;
+    return;
+  }
+  if (value === DEBUG_UNLOCK_ALL_TYPE_STREAK_ID) {
+    if (window.Achievements) {
+      Object.keys(TYPE_ID).forEach((type) => {
+        try { window.Achievements.unlock('type_streak_' + type); } catch (e) {}
+      });
+    }
     return;
   }
   if (value === DEBUG_ACHIEVEMENT_RESET_ID) {
@@ -7850,6 +7878,15 @@ $('pokedex-tab-normal').addEventListener('click', () => {
 $('pokedex-tab-mega').addEventListener('click', () => {
   if (pokedexTab === 'mega') return;
   pokedexTab = 'mega';
+  renderPokedex();
+});
+// 図鑑：色違い解放済みの全ポケモンを、まとめて色違い/通常色の表示に切り替える
+$('pokedex-all-shiny-btn').addEventListener('click', () => {
+  Pokedex.setAllView(true);
+  renderPokedex();
+});
+$('pokedex-all-normal-btn').addEventListener('click', () => {
+  Pokedex.setAllView(false);
   renderPokedex();
 });
 

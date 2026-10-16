@@ -1930,11 +1930,12 @@ html,body{
   box-shadow: var(--shadow-light-sm);
   width: 190px;
 }
-.hud-self{ width: 210px; }
-.hud-opp{ width: 212px; }
-.hud-name-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.hud-name{ font-weight:900; font-size:13.5px; color:var(--ink); }
-.hud-lv{ font-size:11px; font-weight:800; color:var(--ink-soft); }
+.hud-self{ width: 236px; }
+.hud-opp{ width: 238px; }
+.hud-name-row{ display:flex; align-items:center; justify-content:space-between; gap:6px; }
+/* 名前は最大8文字まで1行に収める（折り返し防止） */
+.hud-name{ font-weight:900; font-size:13.5px; color:var(--ink); white-space:nowrap; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:clip; }
+.hud-lv{ font-size:11px; font-weight:800; color:var(--ink-soft); white-space:nowrap; flex:none; }
 .hud-hpbar-outer{
   margin-top:6px; height:9px; border-radius:999px;
   background: var(--surface-deep); box-shadow: var(--shadow-inset-sm);
@@ -3238,6 +3239,16 @@ html,body{
   box-shadow: var(--shadow-light-sm);
 }
 .pokedex-tab-btn:active{ transform: scale(0.96); }
+.pokedex-bulk-btn{
+  flex-shrink:0; margin-left:6px;
+  width:30px; height:30px; border-radius:50%;
+  border:none; cursor:pointer; padding:0;
+  background: var(--surface);
+  box-shadow: var(--shadow-light-sm);
+  font-size:15px; line-height:1;
+  display:flex; align-items:center; justify-content:center;
+}
+.pokedex-bulk-btn:active{ transform: scale(0.92); box-shadow: var(--shadow-inset-sm); }
 .pokedex-grid{
   flex:1; min-height:0;
   overflow-y:auto;
@@ -3865,8 +3876,8 @@ html,body{
 
 @media (max-height: 420px){
   .hud{ padding:7px 12px 9px; width:150px; }
-  .hud-self{ width:170px; }
-  .hud-opp{ width:172px; }
+  .hud-self{ width:206px; }
+  .hud-opp{ width:208px; }
   .sprite-slot{ width:112px; height:112px; }
   .row-opp .sprite-slot{ width:90px; height:90px; }
   .row-self .sprite-slot{ width:150px; height:150px; }
@@ -6378,6 +6389,7 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
 }
 #screen-battle .hud-opp{ --hud-accent:var(--u-red); }
 #screen-battle .hud-name{ font-size:14.5px; letter-spacing:.2px; color:var(--u-ink); }
+@media (max-height: 420px){ #screen-battle .hud-name{ font-size:13px; letter-spacing:0; } }
 #screen-battle .hud-lv{
   padding:1px 8px; border-radius:999px; background:var(--u-ink); color:#fff; font-size:10.5px; font-weight:900;
 }
@@ -6447,22 +6459,22 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
 #screen-battle .action-menu{ grid-template-columns:1fr; grid-template-rows:auto auto; gap:9px; }
 #screen-battle .action-menu .cmd-btn{
   aspect-ratio:auto; border-radius:18px; flex-direction:row; justify-content:space-between;
-  padding:0 20px 0 24px; border:0; color:#fff; font-size:17px; letter-spacing:.5px;
+  padding:0 20px 0 24px; border:0; color:var(--u-ink); font-size:17px; letter-spacing:.5px;
   transition: transform .09s ease, box-shadow .09s ease;
 }
 #screen-battle .action-menu .cmd-btn::after{ content:'›'; font-size:28px; line-height:1; opacity:.85; padding-bottom:3px; }
 #screen-battle #act-fight{
   height:64px; font-size:21px;
-  background: linear-gradient(180deg,#ff5a68,#e23144);
-  box-shadow: 0 5px 0 var(--u-red-deep), 0 14px 24px rgba(226,49,68,.34);
+  background:#fff;
+  box-shadow: 0 4px 0 rgba(27,34,56,.22), 0 8px 14px rgba(14,20,38,.14);
 }
 #screen-battle #act-switch{
   height:52px;
-  background: linear-gradient(180deg,#4f86ff,#2a5de6);
-  box-shadow: 0 5px 0 var(--u-blue-deep), 0 12px 22px rgba(42,93,230,.30);
+  background:#fff;
+  box-shadow: 0 4px 0 rgba(27,34,56,.22), 0 8px 14px rgba(14,20,38,.14);
 }
-#screen-battle #act-fight:active{ transform:translateY(4px); box-shadow:0 1px 0 var(--u-red-deep); }
-#screen-battle #act-switch:active{ transform:translateY(4px); box-shadow:0 1px 0 var(--u-blue-deep); }
+#screen-battle #act-fight:active{ transform:translateY(3px); box-shadow:0 1px 0 rgba(27,34,56,.22); }
+#screen-battle #act-switch:active{ transform:translateY(3px); box-shadow:0 1px 0 rgba(27,34,56,.22); }
 #screen-battle .action-menu .cmd-btn:disabled{ opacity:.5; }
 
 /* ---- 技リスト（サイズは元のまま。見た目だけ更新） ---- */
@@ -7426,6 +7438,8 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
     <div class="pokedex-header">
       <button id="pokedex-close-btn" class="pokedex-close-btn" type="button" aria-label="とじる">×</button>
       <div class="pokedex-count" id="pokedex-count">見つけたポケモンの数 0/0</div>
+      <button id="pokedex-all-shiny-btn" class="pokedex-bulk-btn" type="button" title="色違い解放済みを全て色違いにする" aria-label="全て色違いにする">🌟</button>
+      <button id="pokedex-all-normal-btn" class="pokedex-bulk-btn" type="button" title="全て通常色にする" aria-label="全て通常色にする">⚪</button>
     </div>
     <div class="pokedex-tabs">
       <button id="pokedex-tab-normal" class="pokedex-tab-btn active" type="button" data-tab="normal">ポケモン</button>
