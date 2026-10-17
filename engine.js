@@ -192,12 +192,20 @@ function tryUnlockHiddenSpeciesByCode(inputValue) {
     const id = Number(idStr);
     const code = String(HIDDEN_SPECIES_SECRET_CODE[idStr]).toUpperCase();
     if (normalized === code) {
-      _loadSecretCodeUnlocked().add(id);
-      _saveSecretCodeUnlocked();
+      unlockHiddenSpeciesBySecretId(id);
       return true;
     }
   }
   return false;
+}
+// コード解放対象の隠しポケモンを、コード入力以外（ショップ購入など）から解放するための共通処理。
+// コード入力と同じ保存先に記録するので、図鑑・ランダム抽選・NPC・ボックスに全て反映される。
+function unlockHiddenSpeciesBySecretId(speciesId) {
+  const id = Number(speciesId);
+  if (!Object.prototype.hasOwnProperty.call(HIDDEN_SPECIES_SECRET_CODE, id)) return false;
+  _loadSecretCodeUnlocked().add(id);
+  _saveSecretCodeUnlocked();
+  return true;
 }
 function isHiddenSpeciesUnlockedBySecretCode(speciesId) {
   return _loadSecretCodeUnlocked().has(Number(speciesId));
@@ -1595,13 +1603,13 @@ const MEGA_EVOLUTION_DATA = {
   "242": {
     "type1": "ghost",
     "type2": null,
-    "ability": 156,
+    "ability": 71,
     "baseStats": {
-      "hp": 84,
+      "hp": 135,
       "atk": 155,
       "def": 105,
-      "spa": 103,
-      "spd": 80,
+      "spa": 122,
+      "spd": 90,
       "spe": 108
     }
   },
@@ -1884,9 +1892,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 88,
     "baseStats": {
       "hp": 70,
-      "atk": 10,
-      "def": 80,
-      "spa": 170,
+      "atk": 80,
+      "def": 90,
+      "spa": 160,
       "spd": 100,
       "spe": 125
     }
@@ -2365,9 +2373,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 68,
     "baseStats": {
       "hp": 70,
-      "atk": 50,
+      "atk": 70,
       "def": 100,
-      "spa": 145,
+      "spa": 125,
       "spd": 90,
       "spe": 120
     }
@@ -2442,12 +2450,12 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "fairy",
     "ability": 138,
     "baseStats": {
-      "hp": 90,
-      "atk": 140,
+      "hp": 100,
+      "atk": 90,
       "def": 100,
-      "spa": 140,
+      "spa": 150,
       "spd": 100,
-      "spe": 80
+      "spe": 140
     }
   },
   "1032": {
@@ -2531,14 +2539,14 @@ const MEGA_EVOLUTION_DATA = {
   "1057": {
     "type1": "steel",
     "type2": "electric",
-    "ability": 155,
+    "ability": 134,
     "baseStats": {
-      "hp": 10,
-      "atk": 53,
-      "def": 106,
-      "spa": 83,
-      "spd": 137,
-      "spe": 151
+      "hp": 80,
+      "atk": 60,
+      "def": 153,
+      "spa": 75,
+      "spd": 146,
+      "spe": 111
     }
   }
 }
@@ -3096,6 +3104,7 @@ const ABILITY = {
   ORIGAMI_TSUKI: 155, // おりがみつき（オリジナル）：自分が場に出るたび、相手の攻撃と特攻の実数値を入れ替える
   SHINKIROU: 156,     // しんきろう（オリジナル）：技4つ目のタイプが技1つ目と同じタイプになり、威力1.2倍
   NOTENKI: 157,       // ノーてんき：場にいる間、天候の効果を無効化する（天候自体は変わる）
+  JINGLE_BELL: 158,   // ジングルベール（オリジナル）：手持ちのジングルベール持ち1匹目で1.4倍、2匹目以降は1匹ごとに+0.4。こおりタイプ技の攻撃/特攻に乗る
 };
 
 const KIKENYOCHI_ABILITIES = [ABILITY.KIKIKAIHI, ABILITY.KIKENYOCHI_2];
@@ -3577,6 +3586,20 @@ function isOppSpaHigherThanSelf(attacker, defender) {
   return oppSpa > selfSpa;
 }
 
+// ジングルベール：攻撃側の手持ち全体のジングルベール持ちの数から、こおり技の攻撃・特攻倍率を求める。
+// 1匹=1.4倍、2匹目以降は1匹ごとに+0.4（3匹で2.2倍）。ログは出さない。
+// かがくへんかガス中は特性が無効なので倍率なし。チーム参照が無い場合は攻撃側本人のみで判定する。
+function getJingleBellMult(attacker) {
+  if (battleField.chemicalGasActive) return 1.0;
+  const team = attacker.side === 'player' ? battleField.playerTeam : battleField.cpuTeam;
+  let count = Array.isArray(team)
+    ? team.filter((p) => p && p.ability === ABILITY.JINGLE_BELL).length
+    : 0;
+  if (count === 0 && attacker.ability === ABILITY.JINGLE_BELL) count = 1;
+  if (count <= 0) return 1.0;
+  return 1.4 + 0.4 * (count - 1);
+}
+
 function calcDamage(attacker, defender, move, logFn) {
   // ふゆう（実効タイプを使用）
   const defTypes = getEffectiveTypes(defender);
@@ -3726,6 +3749,10 @@ function calcDamage(attacker, defender, move, logFn) {
       effAtk *= 1.5;
       if (logFn) logFn(`${attacker.species.name}の${abilityJp(attacker.ability)}が発動！${isAtkStat ? '攻撃' : '特攻'}が1.5倍になった！`);
     }
+  }
+  // ジングルベール：手持ちのジングルベール持ちの数に応じて、こおりタイプ技の攻撃・特攻が上がる（ログなし）
+  if (move.type === 'ice' && move.damageFormula !== 'oppAtkVsOppDef' && move.damageFormula !== 'oppSpaVsOppSpd') {
+    effAtk *= getJingleBellMult(attacker);
   }
   if (defender.ability === ABILITY.FUSHIGINA_UROKO && hasMajorStatus(defender) && isDefDef) {
     if (!battleField.chemicalGasActive || defender.ability === ABILITY.KAGAKUHENKAGASU) effDef *= 1.5;

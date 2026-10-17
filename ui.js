@@ -3126,6 +3126,7 @@ const ABILITY_DESC_BY_ID = {
 155: '登場時、相手の攻撃と特攻を入れ替える',
 156: '技4つ目のタイプが技1つ目と同じになる',
 157: '天候の効果を無効にする',
+158: 'こおりタイプのわざいりょくが あがる',
 80: 'ノーマルの技がこおりになる（威力1.2倍）',
 81: 'ノーマルの技がでんきになる（威力1.2倍）',
 82: 'ノーマルの技がドラゴンになる（威力1.2倍）',
@@ -7732,6 +7733,7 @@ const SHOP_ITEMS = {
 1076:50,
 1077:50,
 1078:50,
+1057:50, // オリガミ（シークレットコードでも解放可能。購入するとコード解放と同じ扱いになる）
 };
 
 const SHOP_DISC_STORAGE_KEY = 'pokeriere_shop_disc_v1';
@@ -7751,6 +7753,10 @@ const Shop = (() => {
       const rawOwned = localStorage.getItem(SHOP_OWNED_STORAGE_KEY);
       owned = rawOwned ? new Set(JSON.parse(rawOwned).map((n) => Number(n))) : new Set();
     } catch (e) { owned = new Set(); }
+    // 購入済みのコード解放系ポケモン（オリガミ等）は、解放状態も必ず同期しておく
+    owned.forEach((id) => {
+      if (typeof unlockHiddenSpeciesBySecretId === 'function') unlockHiddenSpeciesBySecretId(id);
+    });
   }
 
   function saveDisc() {
@@ -7774,7 +7780,13 @@ const Shop = (() => {
   // ショップに並んでいないポケモンは、そもそもロック対象ではない＝常に所持扱い。
   function isOwned(speciesId) {
     if (!(speciesId in SHOP_ITEMS)) return true;
-    return owned.has(speciesId);
+    if (owned.has(speciesId)) return true;
+    // シークレットコードで既に解放済みなら、ショップでも購入済み扱いにする
+    if (typeof isHiddenSpeciesUnlockedBySecretCode === 'function'
+        && typeof HIDDEN_SPECIES_SECRET_CODE !== 'undefined'
+        && Object.prototype.hasOwnProperty.call(HIDDEN_SPECIES_SECRET_CODE, speciesId)
+        && isHiddenSpeciesUnlockedBySecretCode(speciesId)) return true;
+    return false;
   }
 
   // 購入処理：ディスクが足りなければ何もせず false を返す。
@@ -7785,6 +7797,8 @@ const Shop = (() => {
     owned.add(speciesId);
     saveDisc();
     saveOwned();
+    // オリガミのようなコード解放系は、購入でも図鑑・ランダム抽選などを全て解放する
+    if (typeof unlockHiddenSpeciesBySecretId === 'function') unlockHiddenSpeciesBySecretId(speciesId);
     return true;
   }
 
