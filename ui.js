@@ -4538,6 +4538,7 @@ function runTradeSequence() {
   return new Promise((resolve) => {
     const offerOverlay = $('trade-overlay');
     const offerRow = $('trade-offer-row');
+    const skipBtn = $('trade-skip-btn');
     // ボス戦の場合、ボス専用ポケモン（メガなし:BOSS_SPECIES_ID / メガあり:BOSS_SPECIES_ID_MEGA / チーム:BOSS_SPECIES_ID_TEAM）はもらえないようにする
     const offerable = (state.isBossBattle
       ? state.cpuTeam.filter((p) => p.speciesId !== BOSS_SPECIES_ID && p.speciesId !== BOSS_SPECIES_ID_MEGA && p.speciesId !== BOSS_SPECIES_ID_TEAM)
@@ -4559,11 +4560,24 @@ function runTradeSequence() {
       const chosen = offerable[offerIdx];
       const ok = await askConfirm(`${chosen.species.name}をもらいますか？`);
       if (!ok) return;
-      offerRow.removeEventListener('click', onOfferClick);
+      cleanup();
       offerOverlay.classList.remove('show');
       runReplaceStep(chosen, resolve);
     };
+    // もらわずに、今の手持ちのまま次のバトルへ進む
+    const onSkipClick = async () => {
+      const ok = await askConfirm('ポケモンをもらわずに、今の手持ちのまま進みますか？');
+      if (!ok) return;
+      cleanup();
+      offerOverlay.classList.remove('show');
+      resolve();
+    };
+    const cleanup = () => {
+      offerRow.removeEventListener('click', onOfferClick);
+      if (skipBtn) skipBtn.removeEventListener('click', onSkipClick);
+    };
     offerRow.addEventListener('click', onOfferClick);
+    if (skipBtn) skipBtn.addEventListener('click', onSkipClick);
   });
 }
 

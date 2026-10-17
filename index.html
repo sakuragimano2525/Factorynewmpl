@@ -2812,6 +2812,7 @@ html,body{
 .pick-timer-badge.warn{ background: linear-gradient(135deg, #e0596b, #c23a4d); animation: pickTimerPulse 0.6s infinite; }
 @keyframes pickTimerPulse{ 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.12);} }
 .trade-card{ position:relative; }
+.trade-skip-btn{ margin-top:16px; padding:10px 22px; font-size:13px; font-weight:800; }
 .negotiate-card{ width: min(94%, 640px); }
 .nego-swap-count{ font-weight:800; font-size:12px; color:var(--ink-soft); margin: 0 0 14px; }
 .nego-btn-row{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
@@ -7488,6 +7489,7 @@ linear-gradient(165deg,#fff9e8,#f6e6bf 55%,#ebd29c)}
       <div class="trade-card">
         <p class="trade-title">このポケモンの中から選んでください</p>
         <div class="trade-offer-row" id="trade-offer-row"></div>
+        <button class="neu-btn trade-skip-btn" id="trade-skip-btn" type="button">もらわずに今の手持ちで進む</button>
       </div>
     </div>
 
