@@ -209,19 +209,9 @@ html,body{
   margin-bottom:22px;
   border-radius:50%;
   background: linear-gradient(180deg, #ff5d5d 0%, #ff5d5d 48%, var(--ink) 48%, var(--ink) 54%, #fff 54%, #fff 100%);
-  box-shadow:
-    0 10px 24px rgba(120,130,160,0.28),
-    0 2px 0 rgba(255,255,255,0.7) inset,
-    0 0 0 3px rgba(51,57,74,0.1);
+  box-shadow: 0 10px 24px rgba(120,130,160,0.28);
   position:relative;
   animation: emblemFloat 4.5s ease-in-out infinite;
-}
-.title-emblem::before{
-  content:'';
-  position:absolute; inset:0;
-  border-radius:50%;
-  background: linear-gradient(180deg, rgba(255,255,255,0.4) 0%, transparent 45%);
-  mix-blend-mode: overlay;
 }
 .title-emblem::after{
   content:'';
@@ -3155,6 +3145,8 @@ html,body{
   box-shadow: inset 0 2px 6px rgba(120,130,160,0.2);
 }
 .title-pokedex-btn{ font-size:17px; }
+/* 壁紙ボタン（🛍の右）。kabe.png をボタン内に収める */
+.title-wallpaper-btn img{ width:26px; height:26px; object-fit:contain; pointer-events:none; }
 /* 本格バトルボタン（🏆の右）。poke_ball.png をボタン内に収める */
 .title-serious-icon{
   width: 24px;
@@ -6556,6 +6548,204 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
   .title-emblem, #screen-battle .msg-toast.show::after, .turn-timer-badge.warn{ animation:none; }
 }
 
+
+/* ===== 壁紙(ホームテーマ) ===== */
+[data-theme="0"]{--t-bg:linear-gradient(160deg,#f9fbff,#e9effd 52%,#d9e4fb);--t-ring:rgba(47,107,255,.07);--t-slab:linear-gradient(180deg,rgba(255,255,255,.78),rgba(196,214,250,.62));--t-ink:#1b2238;--t-ink2:#3a4566;--t-sub:#e8404f;--t-shad:rgba(47,107,255,.22);--t-card:#fff;--t-edge:rgba(27,34,56,.16);--t-glow:rgba(27,34,56,.1);--t-a1:#ff5c5c;--t-a2:#ffa733;--t-pa:#4f86ff;--t-pb:#2a5de6;--t-pd:#1c3fa8;--t-pi:#fff;--t-top:#fff;--t-ic:linear-gradient(160deg,#f4f7fe,#e3eaf8);}
+[data-theme="1"]{--t-bg:radial-gradient(circle,rgba(255,255,255,.75) 3px,transparent 4px) 0 0/46px 46px,linear-gradient(160deg,#eafcff,#bdf0ff 55%,#8fd8f7);--t-ring:rgba(0,170,230,.12);--t-slab:linear-gradient(180deg,rgba(255,255,255,.7),rgba(150,222,250,.55));--t-ink:#0d4a6b;--t-ink2:#2f7ea3;--t-sub:#00b4e6;--t-shad:rgba(0,180,230,.25);--t-card:#f7feff;--t-edge:rgba(0,120,170,.22);--t-glow:rgba(0,140,200,.15);--t-a1:#1fc7e0;--t-a2:#5aa8ff;--t-pa:#3fd0ff;--t-pb:#0fa4e8;--t-pd:#0a78b0;--t-pi:#fff;--t-top:#f4feff;--t-ic:linear-gradient(160deg,#fff,#d4f6ff);}
+[data-theme="2"]{--t-bg:linear-gradient(160deg,#fff7fa,#ffe3ec 52%,#ffc9db);--t-ring:rgba(255,120,160,.1);--t-slab:linear-gradient(180deg,rgba(255,255,255,.8),rgba(255,206,222,.6));--t-ink:#6b2640;--t-ink2:#a2566f;--t-sub:#f0608a;--t-shad:rgba(255,110,150,.28);--t-card:#fffafc;--t-edge:rgba(190,70,110,.2);--t-glow:rgba(220,90,130,.14);--t-a1:#ff8fb0;--t-a2:#f7a8c4;--t-pa:#ff9bb9;--t-pb:#f0638f;--t-pd:#c03c68;--t-pi:#fff;--t-top:#fff9fb;--t-ic:linear-gradient(160deg,#fff,#ffe4ed);}
+[data-theme="3"]{--t-bg:radial-gradient(circle at 20% 15%,rgba(255,200,240,.7),transparent 45%),radial-gradient(circle at 85% 25%,rgba(180,220,255,.7),transparent 45%),radial-gradient(circle at 60% 90%,rgba(255,240,170,.5),transparent 45%),linear-gradient(160deg,#f6e9ff,#e7d4ff 55%,#d7c6ff);--t-ring:rgba(190,130,255,.12);--t-slab:linear-gradient(180deg,rgba(255,255,255,.75),rgba(224,200,255,.6));--t-ink:#503a85;--t-ink2:#8a70c0;--t-sub:#ff7ac8;--t-shad:rgba(190,120,255,.3);--t-card:#fffaff;--t-edge:rgba(140,100,210,.22);--t-glow:rgba(160,110,230,.16);--t-a1:#ff8ad0;--t-a2:#7fd6ff;--t-pa:#c79bff;--t-pb:#9a6cf0;--t-pd:#6d44bd;--t-pi:#fff;--t-top:#fff9ff;--t-ic:linear-gradient(160deg,#fff,#efe0ff);}
+[data-theme="4"]{--t-bg:radial-gradient(circle at 80% 10%,rgba(80,130,255,.35),transparent 50%),radial-gradient(circle at 10% 90%,rgba(120,170,255,.18),transparent 50%),linear-gradient(170deg,#0b0f1d,#121a33 55%,#0a0d18);--t-ring:rgba(120,160,255,.1);--t-slab:linear-gradient(180deg,rgba(30,40,80,.7),rgba(10,14,30,.7));--t-ink:#f1f5ff;--t-ink2:#aebbe6;--t-sub:#6fa0ff;--t-shad:rgba(80,130,255,.55);--t-card:linear-gradient(180deg,#171f3a,#10162b);--t-edge:rgba(0,0,0,.55);--t-glow:rgba(0,0,0,.4);--t-a1:#ffffff;--t-a2:#6fa0ff;--t-pa:#5b8cff;--t-pb:#2f55d8;--t-pd:#14286e;--t-pi:#fff;--t-top:#151c36;--t-ic:linear-gradient(160deg,#222c52,#141b34);--t-bd:rgba(160,190,255,.3);--t-bw:1px;}
+[data-theme="5"]{--t-bg:linear-gradient(160deg,#fbffee,#e8f5c8 52%,#cfe8a0);--t-ring:rgba(110,170,50,.12);--t-slab:linear-gradient(180deg,rgba(255,255,240,.75),rgba(198,228,150,.6));--t-ink:#3b5a21;--t-ink2:#6d8a4a;--t-sub:#7cb342;--t-shad:rgba(120,180,50,.28);--t-card:#fcfff3;--t-edge:rgba(80,120,40,.22);--t-glow:rgba(100,150,50,.15);--t-a1:#8fc750;--t-a2:#c9d84a;--t-pa:#9ccc54;--t-pb:#6aa832;--t-pd:#46791c;--t-pi:#fff;--t-top:#fcfff3;--t-ic:linear-gradient(160deg,#fff,#e6f3c6);}
+[data-theme="6"]{--t-bg:radial-gradient(circle,rgba(255,255,255,.8) 2.5px,transparent 3.5px) 0 0/40px 40px,linear-gradient(160deg,#fffef5,#fff4b8 52%,#ffe680);--t-ring:rgba(255,200,0,.14);--t-slab:linear-gradient(180deg,rgba(255,255,255,.85),rgba(255,238,150,.6));--t-ink:#6a5200;--t-ink2:#9a8120;--t-sub:#f2b600;--t-shad:rgba(255,190,0,.35);--t-card:#fffef9;--t-edge:rgba(190,150,0,.25);--t-glow:rgba(200,160,0,.15);--t-a1:#ffd23f;--t-a2:#ffe98a;--t-pa:#ffd84a;--t-pb:#f7b500;--t-pd:#c28800;--t-pi:#5a4300;--t-top:#fffef6;--t-ic:linear-gradient(160deg,#fff,#fff0a8);}
+[data-theme="7"]{--t-bg:radial-gradient(circle at 85% 15%,rgba(255,210,0,.25),transparent 45%),linear-gradient(160deg,#1c1c20,#121214 55%,#0b0b0d);--t-ring:rgba(255,210,0,.1);--t-slab:linear-gradient(180deg,rgba(40,40,46,.8),rgba(18,18,20,.8));--t-ink:#fff7d6;--t-ink2:#d9c46a;--t-sub:#ffd400;--t-shad:rgba(255,212,0,.35);--t-card:linear-gradient(180deg,#26262b,#1a1a1e);--t-edge:rgba(0,0,0,.6);--t-glow:rgba(0,0,0,.45);--t-a1:#ffd400;--t-a2:#ffe680;--t-pa:#ffe14d;--t-pb:#ffc800;--t-pd:#b38a00;--t-pi:#1a1a1a;--t-top:#26262b;--t-ic:linear-gradient(160deg,#34343a,#202024);--t-bd:rgba(255,212,0,.35);--t-bw:1px;}
+[data-theme="8"]{--t-bg:radial-gradient(circle at 15% 20%,rgba(160,225,255,.6),transparent 45%),radial-gradient(circle at 85% 80%,rgba(255,244,170,.7),transparent 45%),linear-gradient(160deg,#fff,#fff9d9 50%,#dff4ff);--t-ring:rgba(120,200,240,.14);--t-slab:linear-gradient(180deg,rgba(255,255,255,.85),rgba(200,235,252,.6));--t-ink:#3a6a8a;--t-ink2:#6fa0bd;--t-sub:#ffb830;--t-shad:rgba(110,200,240,.35);--t-card:#fff;--t-edge:rgba(100,170,210,.22);--t-glow:rgba(110,180,220,.16);--t-a1:#7fd3f5;--t-a2:#ffe27a;--t-pa:#8fdcff;--t-pb:#4fb8ee;--t-pd:#2a88bd;--t-pi:#fff;--t-top:#fff;--t-ic:linear-gradient(160deg,#fff,#e4f6ff);--t-bd:rgba(255,226,122,.9);--t-bw:2px;}
+[data-theme="9"]{--t-bg:radial-gradient(circle,rgba(255,255,255,.9) 3px,transparent 4px) 0 0/44px 44px,linear-gradient(160deg,#fff8f8,#ffe1e6 52%,#ffc2cf);--t-ring:rgba(220,40,70,.1);--t-slab:linear-gradient(180deg,rgba(255,255,255,.82),rgba(255,190,205,.6));--t-ink:#7a1428;--t-ink2:#b24a60;--t-sub:#e0203f;--t-shad:rgba(230,50,80,.3);--t-card:#fffafa;--t-edge:rgba(170,30,55,.22);--t-glow:rgba(200,50,80,.15);--t-a1:#e8344f;--t-a2:#ff8fb0;--t-pa:#f0546e;--t-pb:#d11f40;--t-pd:#8f1229;--t-pi:#fff;--t-top:#fffafa;--t-ic:linear-gradient(160deg,#fff,#ffdfe5);}
+[data-theme="10"]{--t-bg:repeating-linear-gradient(45deg,rgba(150,100,40,.045) 0 14px,transparent 14px 28px),radial-gradient(circle at 80% 10%,rgba(255,225,150,.55),transparent 50%),linear-gradient(165deg,#fff9e8,#f6e6bf 55%,#ebd29c);--t-ring:rgba(150,100,40,.12);--t-slab:linear-gradient(180deg,rgba(255,250,232,.85),rgba(236,208,150,.6));--t-ink:#5a3a1c;--t-ink2:#8a6540;--t-sub:#c9832a;--t-shad:rgba(190,130,50,.3);--t-card:linear-gradient(180deg,#fffaf0,#f8ebcc);--t-edge:rgba(120,80,30,.35);--t-glow:rgba(130,90,40,.18);--t-a1:#4fa59b;--t-a2:#8cae4a;--t-pa:#f2b252;--t-pb:#dc8a2b;--t-pd:#9a5a16;--t-pi:#4a2c0f;--t-top:#fff6df;--t-ic:linear-gradient(160deg,#fff7e0,#f1deb0);--t-bd:#b98a4e;--t-bw:3px;}
+#screen-title[data-theme]{background:var(--t-bg);color:var(--t-ink);--u-ink:var(--t-ink);--u-ink-2:var(--t-ink2);--u-red:var(--t-sub);--u-blue:var(--t-pa);--u-blue-deep:var(--t-pd);--u-lip:0 4px 0 var(--t-edge)}
+#screen-title[data-theme]::before{border-color:var(--t-ring)}
+#screen-title[data-theme]::after{background:var(--t-slab)}
+#screen-title[data-theme] .title-logo{text-shadow:0 3px 0 var(--t-shad)}
+#screen-title[data-theme] .title-emblem{background:linear-gradient(180deg,var(--t-pa) 0 48%,var(--t-ink) 48% 54%,#fff 54% 100%)}
+#screen-title[data-theme] .title-name-btn,#screen-title[data-theme] .title-topbar .npc-diff-btn{background:var(--t-top)}
+#screen-title[data-theme] .title-name-btn .tnb-icon{background:linear-gradient(160deg,var(--t-pa),var(--t-pb))}
+#screen-title[data-theme] .title-topbar .title-settings-btn{background-color:var(--t-top);color:var(--t-ink)}
+#screen-title[data-theme] .title-menu-btn{background:var(--t-card);box-shadow:0 5px 0 var(--t-edge),0 14px 26px var(--t-glow),inset 0 0 0 var(--t-bw,0px) var(--t-bd,transparent)}
+#screen-title[data-theme] .title-menu-btn:active{box-shadow:0 1px 0 var(--t-edge),0 4px 10px var(--t-glow),inset 0 0 0 var(--t-bw,0px) var(--t-bd,transparent)}
+#screen-title[data-theme] #btn-title-serious{--menu-accent:var(--t-a1)!important}
+#screen-title[data-theme] #btn-player-battle{--menu-accent:var(--t-a2)!important}
+#screen-title[data-theme] .title-menu-btn .tmb-icon-wrap{background:var(--t-ic)}
+#screen-title[data-theme] .title-menu-btn.primary{background:linear-gradient(180deg,var(--t-pa),var(--t-pb));color:var(--t-pi);box-shadow:0 5px 0 var(--t-pd),0 16px 30px var(--t-glow)}
+#screen-title[data-theme] .title-menu-btn.primary:active{box-shadow:0 1px 0 var(--t-pd),0 4px 10px var(--t-glow)}
+#screen-title[data-theme] .title-menu-btn.primary .tmb-sub{color:var(--t-pi)}
+#screen-title[data-theme] .title-menu-btn.primary::after{color:var(--t-pd)}
+#screen-title[data-theme] .title-menu-btn.primary .tmb-icon-wrap{background:rgba(255,255,255,.92)}
+#screen-title[data-theme][data-theme="4"] .title-logo{text-shadow:0 0 16px var(--t-shad),0 2px 0 #000;letter-spacing:1px}
+#screen-title[data-theme][data-theme="10"] .title-menu-btn{border-radius:14px;outline:2px dashed rgba(185,138,78,.75);outline-offset:-9px}
+#screen-title[data-theme][data-theme="10"] .title-menu-btn.primary{outline-color:rgba(255,246,214,.85)}
+#screen-title[data-theme][data-theme="10"] .title-logo{font-family:'Hiragino Mincho ProN','Yu Mincho','Noto Serif JP',serif;font-weight:900;letter-spacing:2px}
+.wp-prev{position:relative;width:100%;height:78px;border-radius:14px;overflow:hidden;background:var(--t-bg);box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.wp-prev-lg{height:120px;margin-bottom:12px}
+.wp-prev-lg .wp-prev-card{top:26px;height:30px} .wp-prev-lg .wp-prev-main{top:70px;height:32px}
+.wp-prev-card{position:absolute;left:12%;right:12%;top:16px;height:20px;border-radius:8px;background:var(--t-card);box-shadow:0 3px 0 var(--t-edge),inset 0 0 0 var(--t-bw,0px) var(--t-bd,transparent)}
+.wp-prev-main{position:absolute;left:12%;right:12%;top:46px;height:22px;border-radius:8px;background:linear-gradient(180deg,var(--t-pa),var(--t-pb));box-shadow:0 3px 0 var(--t-pd)}
+.wp-cell{gap:8px} .wp-cell.selected{box-shadow:0 0 0 3px #ffb648,0 6px 16px rgba(120,130,160,.16)}
+.wp-cell.locked .wp-prev{filter:saturate(.5) brightness(.96)}
+.wp-cell.locked .wp-prev::after{content:'🔒';position:absolute;right:6px;top:4px;font-size:16px}
+.wp-state{display:flex;align-items:center;gap:4px;font-size:12.5px;font-weight:900;color:var(--shop-ink-soft)}
+.wp-state img{width:18px;height:18px;object-fit:contain}
+.wp-cell.selected .wp-state{color:#e06b1f}
+.wp-lack{font-size:12px;font-weight:800;color:#e63946;margin:-4px 0 10px}
+
+/* ===== 壁紙テーマを他の画面にも反映：NPCバトル方法 / たいせんほうほう / 手持ちポケモン（勝利後の入れ替え含む） ===== */
+#screen-multiplayer[data-theme], #screen-npc-mode[data-theme], #screen-team[data-theme]{
+  background:var(--t-bg); color:var(--t-ink);
+  --u-ink:var(--t-ink); --u-ink-2:var(--t-ink2); --u-red:var(--t-sub); --u-blue:var(--t-pa); --u-blue-deep:var(--t-pd);
+}
+#screen-multiplayer[data-theme] .multi-menu-title, #screen-npc-mode[data-theme] .npc-mode-title, #screen-team[data-theme] .team-title{
+  color:var(--t-ink); text-shadow:0 3px 0 var(--t-shad);
+}
+#screen-multiplayer[data-theme] .multi-menu-btn, #screen-npc-mode[data-theme] .npc-mode-btn,
+#screen-team[data-theme] .reorder-actions .neu-btn{
+  background:var(--t-card); color:var(--t-ink);
+  box-shadow:0 6px 0 var(--t-edge), 0 16px 30px var(--t-glow);
+}
+#screen-multiplayer[data-theme] .multi-menu-btn.primary, #screen-npc-mode[data-theme] .npc-mode-btn.primary,
+#screen-team[data-theme] .reorder-actions .neu-btn.primary{
+  background:linear-gradient(180deg,var(--t-pa),var(--t-pb)); color:var(--t-pi);
+  box-shadow:0 6px 0 var(--t-pd), 0 18px 32px var(--t-glow);
+}
+#screen-multiplayer[data-theme] .multi-menu-btn:active, #screen-npc-mode[data-theme] .npc-mode-btn:active,
+#screen-team[data-theme] .reorder-actions .neu-btn:active{ transform:translateY(5px); box-shadow:0 1px 0 var(--t-edge); }
+#screen-multiplayer[data-theme] .multi-menu-btn.primary:active, #screen-npc-mode[data-theme] .npc-mode-btn.primary:active,
+#screen-team[data-theme] .reorder-actions .neu-btn.primary:active{ box-shadow:0 1px 0 var(--t-pd); }
+#screen-multiplayer[data-theme] .multi-menu-back, #screen-npc-mode[data-theme] .npc-mode-back{
+  background:var(--t-ink); color:var(--t-top); box-shadow:0 4px 0 var(--t-edge);
+}
+#screen-multiplayer[data-theme][data-theme="10"] .multi-menu-btn, #screen-npc-mode[data-theme][data-theme="10"] .npc-mode-btn{ border-radius:24px; }
+
+/* ===== 壁紙テーマ強化（ブルーサイダー〜ポケリエ）：背景の質感・ガラス感のあるボタン ===== */
+[data-theme="4"],[data-theme="7"]{--t-hl:rgba(255,255,255,.07);--t-gl:rgba(255,255,255,.12)}
+/* 1 ブルーサイダー：炭酸の泡と光の筋 */
+[data-theme="1"]{--t-bg:
+radial-gradient(circle at 12% 84%,rgba(255,255,255,.95) 0 5px,rgba(255,255,255,.3) 6px,transparent 7px),
+radial-gradient(circle at 21% 69%,rgba(255,255,255,.85) 0 3px,rgba(255,255,255,.3) 4px,transparent 5px),
+radial-gradient(circle at 8% 55%,rgba(255,255,255,.9) 0 7px,rgba(255,255,255,.28) 8px,transparent 9px),
+radial-gradient(circle at 80% 18%,rgba(255,255,255,.8) 0 4px,rgba(255,255,255,.26) 5px,transparent 6px),
+radial-gradient(circle at 91% 40%,rgba(255,255,255,.9) 0 6px,rgba(255,255,255,.26) 7px,transparent 8px),
+radial-gradient(circle,rgba(255,255,255,.55) 2px,transparent 3px) 0 0/46px 46px,
+linear-gradient(115deg,rgba(255,255,255,.4) 0 16%,transparent 16% 38%,rgba(255,255,255,.2) 38% 50%,transparent 50%),
+linear-gradient(170deg,#f2fdff,#c4f2ff 45%,#7fd3f5)}
+/* 2 チェリーピンク：やわらかい光のグラデーション */
+[data-theme="2"]{--t-bg:
+radial-gradient(circle at 88% 8%,rgba(255,255,255,.85),transparent 42%),
+radial-gradient(circle at 6% 96%,rgba(255,130,175,.35),transparent 52%),
+radial-gradient(circle at 50% 50%,rgba(255,255,255,.35),transparent 60%),
+linear-gradient(160deg,#fff8fb,#ffe3ec 52%,#ffc4d8)}
+/* 3 ユニコーンパープル：ライラック×白×淡い水色（アズールレーンのユニコーン風） */
+[data-theme="3"]{--t-bg:
+radial-gradient(circle at 18% 14%,rgba(255,214,240,.6),transparent 42%),
+radial-gradient(circle at 88% 22%,rgba(176,222,255,.7),transparent 42%),
+radial-gradient(circle at 62% 94%,rgba(255,240,190,.5),transparent 42%),
+radial-gradient(circle at 45% 40%,rgba(255,255,255,.55),transparent 55%),
+linear-gradient(160deg,#faf6ff,#e8defc 52%,#cfc2f5);
+--t-ring:rgba(165,140,240,.14);--t-sub:#8c78e6;--t-shad:rgba(160,135,240,.3);--t-edge:rgba(120,95,200,.22);--t-glow:rgba(140,115,225,.18);
+--t-a1:#b9a6ff;--t-a2:#8fd0ff;--t-pa:#b8a6f8;--t-pb:#8c78e6;--t-pd:#5d49b5;--t-top:#fbf8ff;--t-ic:linear-gradient(160deg,#fff,#ece4ff)}
+/* 4 ドリーミングバード：夜空の星と月 */
+[data-theme="4"]{--t-bg:
+radial-gradient(1.6px 1.6px at 8% 14%,#fff,transparent),radial-gradient(2px 2px at 21% 36%,#cfe0ff,transparent),
+radial-gradient(1.4px 1.4px at 33% 8%,#fff,transparent),radial-gradient(2px 2px at 47% 22%,#fff,transparent),
+radial-gradient(1.6px 1.6px at 61% 12%,#cfe0ff,transparent),radial-gradient(1.4px 1.4px at 73% 36%,#fff,transparent),
+radial-gradient(2px 2px at 92% 26%,#fff,transparent),radial-gradient(1.5px 1.5px at 14% 62%,#fff,transparent),
+radial-gradient(2px 2px at 38% 80%,#cfe0ff,transparent),radial-gradient(1.4px 1.4px at 58% 66%,#fff,transparent),
+radial-gradient(1.8px 1.8px at 83% 76%,#fff,transparent),radial-gradient(1.5px 1.5px at 95% 90%,#cfe0ff,transparent),
+radial-gradient(circle at 84% 15%,#f4f8ff 0 15px,rgba(170,200,255,.4) 16px,rgba(120,160,255,.16) 40px,transparent 150px),
+radial-gradient(ellipse at 18% 88%,rgba(130,90,255,.3),transparent 55%),
+radial-gradient(ellipse at 70% 55%,rgba(80,130,255,.22),transparent 55%),
+linear-gradient(170deg,#0a0e1c,#151d3d 55%,#0a0d18)}
+/* 5 ナズナグリーン：風にそよぐ流れる線と舞う葉 */
+[data-theme="5"]{--t-bg:
+url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 450' preserveAspectRatio='xMidYMid slice'%3E%3Cg fill='none' stroke='white' stroke-linecap='round'%3E%3Cpath d='M-20 300C120 270 220 340 360 300S600 220 700 260C745 278 775 262 770 240' stroke-width='3' stroke-opacity='.65'/%3E%3Cpath d='M-20 360C140 330 260 400 420 350S660 290 760 330' stroke-width='2' stroke-opacity='.5'/%3E%3Cpath d='M-20 220C90 200 170 250 280 220S480 150 560 180C595 194 620 182 616 164' stroke-width='2.5' stroke-opacity='.55'/%3E%3Cpath d='M-20 120C100 100 190 150 300 120S500 60 600 90' stroke-width='1.8' stroke-opacity='.45'/%3E%3Cpath d='M200 420C320 395 420 440 540 410S720 370 820 395' stroke-width='2' stroke-opacity='.4'/%3E%3C/g%3E%3Cpath fill='white' fill-opacity='.7' d='M0 0C7-9 20-9 28 0C20 9 7 9 0 0Z' transform='translate(560 150) rotate(-24)'/%3E%3Cpath fill='%2392c64f' fill-opacity='.45' d='M0 0C7-9 20-9 28 0C20 9 7 9 0 0Z' transform='translate(300 250) rotate(18) scale(.8)'/%3E%3Cpath fill='white' fill-opacity='.6' d='M0 0C7-9 20-9 28 0C20 9 7 9 0 0Z' transform='translate(690 230) rotate(10) scale(.7)'/%3E%3Cpath fill='%23c9d84a' fill-opacity='.45' d='M0 0C7-9 20-9 28 0C20 9 7 9 0 0Z' transform='translate(120 180) rotate(-30) scale(.9)'/%3E%3C/svg%3E") center/cover no-repeat,
+radial-gradient(circle at 16% 22%,rgba(255,255,215,.8),transparent 13%),radial-gradient(circle at 74% 30%,rgba(255,255,220,.65),transparent 12%),
+linear-gradient(165deg,#fcffef,#e6f5c4 52%,#c6e394)}
+/* 6 アルカナカラー：キュアアルカナ（白き光・紫のヴェール・金の星） */
+[data-theme="6"]{--t-bg:
+url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260'%3E%3Cg fill='%23e8c25a' fill-opacity='.7'%3E%3Cpath d='M0 -10L2.5 -2.5 10 0 2.5 2.5 0 10 -2.5 2.5 -10 0 -2.5 -2.5Z' transform='translate(46 52)'/%3E%3Cpath d='M0 -10L2.5 -2.5 10 0 2.5 2.5 0 10 -2.5 2.5 -10 0 -2.5 -2.5Z' transform='translate(190 120) scale(.7)'/%3E%3Cpath d='M0 -10L2.5 -2.5 10 0 2.5 2.5 0 10 -2.5 2.5 -10 0 -2.5 -2.5Z' transform='translate(110 214) scale(.5)'/%3E%3C/g%3E%3C/svg%3E") 0 0/260px 260px,
+repeating-conic-gradient(from 160deg at 50% -8%,rgba(255,255,255,.34) 0 4deg,transparent 4deg 14deg),
+radial-gradient(ellipse at 50% -10%,rgba(255,255,255,.95),transparent 62%),
+radial-gradient(circle at 92% 30%,rgba(190,170,240,.4),transparent 45%),
+radial-gradient(circle at 10% 96%,rgba(255,226,150,.45),transparent 45%),
+linear-gradient(165deg,#fff,#f1ecfb 50%,#e2d8f5);
+--t-ring:rgba(150,125,220,.12);--t-ink:#3f3566;--t-ink2:#7c6fa8;--t-sub:#c9a13a;--t-shad:rgba(150,130,210,.28);--t-card:#fff;--t-edge:rgba(110,90,170,.2);--t-glow:rgba(130,110,200,.16);
+--t-a1:#e8c25a;--t-a2:#b6a2f0;--t-pa:#c4b2f5;--t-pb:#9b86e6;--t-pd:#6a55b8;--t-pi:#fff;--t-top:#fff;--t-ic:linear-gradient(160deg,#fff,#efe8fb);--t-bd:rgba(226,190,90,.8);--t-bw:2px}
+/* 7 シャドウカラー：キュアアルカナ・シャドウ（黒基調・神秘の紫） */
+[data-theme="7"]{--t-bg:
+url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260'%3E%3Cg fill='%23c9b4ff' fill-opacity='.35'%3E%3Cpath d='M0 -10L2.5 -2.5 10 0 2.5 2.5 0 10 -2.5 2.5 -10 0 -2.5 -2.5Z' transform='translate(46 52)'/%3E%3Cpath d='M0 -10L2.5 -2.5 10 0 2.5 2.5 0 10 -2.5 2.5 -10 0 -2.5 -2.5Z' transform='translate(190 120) scale(.7)'/%3E%3Cpath d='M0 -10L2.5 -2.5 10 0 2.5 2.5 0 10 -2.5 2.5 -10 0 -2.5 -2.5Z' transform='translate(110 214) scale(.5)'/%3E%3C/g%3E%3C/svg%3E") 0 0/260px 260px,
+radial-gradient(circle at 84% 14%,rgba(150,110,255,.34),transparent 45%),
+radial-gradient(circle at 8% 92%,rgba(90,70,200,.25),transparent 48%),
+radial-gradient(ellipse at 50% 120%,rgba(200,170,255,.14),transparent 60%),
+linear-gradient(160deg,#17141f,#0e0c14 55%,#07060a);
+--t-ring:rgba(183,156,255,.1);--t-ink:#f1ecff;--t-ink2:#b9acdf;--t-sub:#b79cff;--t-shad:rgba(160,120,255,.4);--t-card:linear-gradient(180deg,#25202f,#18141f);--t-edge:rgba(0,0,0,.6);--t-glow:rgba(0,0,0,.45);
+--t-a1:#b79cff;--t-a2:#e0d4ff;--t-pa:#a68bff;--t-pb:#7a5be0;--t-pd:#43309a;--t-pi:#fff;--t-top:#221d2b;--t-ic:linear-gradient(160deg,#322b40,#1d1927);--t-bd:rgba(183,156,255,.38);--t-bw:1px}
+/* 8 マイリトルハート：白鳥ひめ（パステルのお姫さま・四ツ星のきらめき） */
+[data-theme="8"]{--t-bg:
+url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='260'%3E%3Cg fill='%23f2c75c' fill-opacity='.6'%3E%3Cpath d='M0 -10L2.5 -2.5 10 0 2.5 2.5 0 10 -2.5 2.5 -10 0 -2.5 -2.5Z' transform='translate(46 52)'/%3E%3Cpath d='M0 -10L2.5 -2.5 10 0 2.5 2.5 0 10 -2.5 2.5 -10 0 -2.5 -2.5Z' transform='translate(190 120) scale(.7)'/%3E%3Cpath d='M0 -10L2.5 -2.5 10 0 2.5 2.5 0 10 -2.5 2.5 -10 0 -2.5 -2.5Z' transform='translate(110 214) scale(.5)'/%3E%3C/g%3E%3C/svg%3E") 0 0/260px 260px,
+radial-gradient(circle at 14% 16%,rgba(255,196,225,.6),transparent 45%),
+radial-gradient(circle at 90% 22%,rgba(190,225,255,.6),transparent 45%),
+radial-gradient(circle at 70% 94%,rgba(255,240,190,.55),transparent 45%),
+radial-gradient(circle at 48% 44%,rgba(255,255,255,.65),transparent 55%),
+linear-gradient(160deg,#fffdfe,#fff0f8 50%,#efe6fb);
+--t-ring:rgba(235,150,205,.13);--t-ink:#6a4a8a;--t-ink2:#a58ac0;--t-sub:#ef86b8;--t-shad:rgba(240,140,190,.3);--t-card:#fffafe;--t-edge:rgba(190,120,180,.22);--t-glow:rgba(210,130,190,.16);
+--t-a1:#ff9cc6;--t-a2:#c6a8ff;--t-pa:#f6add8;--t-pb:#dc80c2;--t-pd:#a2509a;--t-pi:#fff;--t-top:#fffafd;--t-ic:linear-gradient(160deg,#fff,#ffe6f2);--t-bd:rgba(255,226,122,.9);--t-bw:2px}
+/* 9 チェリーメリーベリー：赤みピンクの光と細かいドット */
+[data-theme="9"]{--t-bg:
+radial-gradient(circle,rgba(255,255,255,.9) 3px,transparent 4px) 0 0/44px 44px,
+radial-gradient(circle at 86% 8%,rgba(255,255,255,.9),transparent 40%),
+radial-gradient(circle at 8% 94%,rgba(235,60,95,.28),transparent 52%),
+linear-gradient(160deg,#fff8f8,#ffe1e6 52%,#ffbfcc)}
+/* 11 スワンプリンセス：白鳥ひめ（水色×白・水面のゆらぎと光） */
+[data-theme="11"]{--t-bg:
+url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 450' preserveAspectRatio='xMidYMid slice'%3E%3Cg fill='none' stroke='white' stroke-linecap='round'%3E%3Cellipse cx='640' cy='330' rx='170' ry='34' stroke-width='2.2' stroke-opacity='.65'/%3E%3Cellipse cx='640' cy='330' rx='110' ry='22' stroke-width='2' stroke-opacity='.55'/%3E%3Cellipse cx='640' cy='330' rx='55' ry='11' stroke-width='2' stroke-opacity='.5'/%3E%3Cellipse cx='140' cy='110' rx='110' ry='22' stroke-width='1.8' stroke-opacity='.45'/%3E%3Cellipse cx='140' cy='110' rx='60' ry='12' stroke-width='1.8' stroke-opacity='.4'/%3E%3Cpath d='M-20 400C120 330 260 330 400 360' stroke-width='2.4' stroke-opacity='.55'/%3E%3Cpath d='M-20 430C140 370 280 380 440 410' stroke-width='1.8' stroke-opacity='.45'/%3E%3C/g%3E%3Cg fill='white' fill-opacity='.95'%3E%3Cpath d='M0 -10L2.5 -2.5 10 0 2.5 2.5 0 10 -2.5 2.5 -10 0 -2.5 -2.5Z' transform='translate(420 90) scale(1.1)'/%3E%3Cpath d='M0 -10L2.5 -2.5 10 0 2.5 2.5 0 10 -2.5 2.5 -10 0 -2.5 -2.5Z' transform='translate(740 70) scale(0.8)'/%3E%3Cpath d='M0 -10L2.5 -2.5 10 0 2.5 2.5 0 10 -2.5 2.5 -10 0 -2.5 -2.5Z' transform='translate(300 260) scale(0.6)'/%3E%3C/g%3E%3Cg fill='%2390cdf4' fill-opacity='.7'%3E%3Cpath d='M0 -10L2.5 -2.5 10 0 2.5 2.5 0 10 -2.5 2.5 -10 0 -2.5 -2.5Z' transform='translate(80 300) scale(0.9)'/%3E%3Cpath d='M0 -10L2.5 -2.5 10 0 2.5 2.5 0 10 -2.5 2.5 -10 0 -2.5 -2.5Z' transform='translate(560 200) scale(0.6)'/%3E%3C/g%3E%3C/svg%3E") center/cover no-repeat,
+radial-gradient(circle at 15% 12%,rgba(255,255,255,.95),transparent 40%),
+radial-gradient(circle at 90% 85%,rgba(150,205,245,.5),transparent 48%),
+radial-gradient(circle at 50% 46%,rgba(255,255,255,.5),transparent 55%),
+linear-gradient(165deg,#fff,#eaf6ff 45%,#cde7fb);
+--t-ring:rgba(120,190,240,.14);--t-ink:#2f5d86;--t-ink2:#6f9bc0;--t-sub:#4aa8e0;--t-shad:rgba(90,170,230,.3);--t-card:#fff;--t-edge:rgba(80,150,210,.2);--t-glow:rgba(100,170,225,.16);
+--t-a1:#7cc6f5;--t-a2:#bfe3ff;--t-pa:#8fd2fa;--t-pb:#52aee8;--t-pd:#2a78b8;--t-pi:#fff;--t-top:#f7fcff;--t-ic:linear-gradient(160deg,#fff,#e1f2ff);--t-bd:rgba(160,215,250,.95);--t-bw:2px}
+/* 12 ラビットフラワー：日野下花帆（陽だまりのオレンジ×桜ピンク・舞う花びら） */
+[data-theme="12"]{--t-bg:
+url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 450' preserveAspectRatio='xMidYMid slice'%3E%3Cpath fill='%23ff9ec0' fill-opacity='.65' d='M0 0C9-5 15-17 5-27C-3-21-11-8 0 0Z' transform='translate(120 90) rotate(20) scale(0.8)'/%3E%3Cpath fill='white' fill-opacity='.85' d='M0 0C9-5 15-17 5-27C-3-21-11-8 0 0Z' transform='translate(240 200) rotate(-40) scale(0.7)'/%3E%3Cpath fill='%23ff9ec0' fill-opacity='.55' d='M0 0C9-5 15-17 5-27C-3-21-11-8 0 0Z' transform='translate(380 70) rotate(70) scale(0.8)'/%3E%3Cpath fill='%23ffb347' fill-opacity='.5' d='M0 0C9-5 15-17 5-27C-3-21-11-8 0 0Z' transform='translate(520 260) rotate(10) scale(0.7)'/%3E%3Cpath fill='white' fill-opacity='.9' d='M0 0C9-5 15-17 5-27C-3-21-11-8 0 0Z' transform='translate(650 120) rotate(-20) scale(0.9)'/%3E%3Cpath fill='%23ff9ec0' fill-opacity='.6' d='M0 0C9-5 15-17 5-27C-3-21-11-8 0 0Z' transform='translate(700 340) rotate(50) scale(0.7)'/%3E%3Cpath fill='white' fill-opacity='.75' d='M0 0C9-5 15-17 5-27C-3-21-11-8 0 0Z' transform='translate(90 330) rotate(-60) scale(0.6)'/%3E%3Cpath fill='%23ff9ec0' fill-opacity='.5' d='M0 0C9-5 15-17 5-27C-3-21-11-8 0 0Z' transform='translate(430 380) rotate(30) scale(0.6)'/%3E%3C/svg%3E") center/cover no-repeat,
+radial-gradient(circle at 85% 8%,rgba(255,244,190,.95),transparent 42%),
+radial-gradient(circle at 8% 94%,rgba(255,170,195,.4),transparent 50%),
+radial-gradient(circle at 50% 45%,rgba(255,255,255,.5),transparent 55%),
+linear-gradient(160deg,#fffaf0,#ffeab8 52%,#ffd18a);
+--t-ring:rgba(255,170,60,.14);--t-ink:#6a3d10;--t-ink2:#a2723a;--t-sub:#f08a1c;--t-shad:rgba(255,160,40,.32);--t-card:#fffcf5;--t-edge:rgba(200,120,30,.22);--t-glow:rgba(220,140,40,.16);
+--t-a1:#ffa733;--t-a2:#ff9ec0;--t-pa:#ffc94d;--t-pb:#ffab1f;--t-pd:#c47208;--t-pi:#4d2800;--t-top:#fffaf0;--t-ic:linear-gradient(160deg,#fff,#ffeccc);--t-bd:rgba(255,170,190,.9);--t-bw:2px}
+/* 13 ランダム（一覧のプレビュー専用。画面には適用されない） */
+[data-theme="13"]{--t-bg:conic-gradient(from 20deg,#ffd1e8,#ffe9b8,#d4f5c4,#bfe8ff,#d8ccff,#ffd1e8);--t-card:#fff;--t-edge:rgba(120,110,170,.2);--t-glow:rgba(120,110,170,.14);--t-pa:#ff9bc4;--t-pb:#8f9bff}
+.wp-prev[data-theme="13"]::after{content:'🎲';position:absolute;right:8px;bottom:4px;font-size:18px}
+/* 10 ポケリエ：古い紙の質感とふちの陰影 */
+[data-theme="10"]{--t-bg:
+url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .45 0 0 0 0 .3 0 0 0 0 .12 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.4'/%3E%3C/svg%3E") 0 0/160px 160px,
+radial-gradient(ellipse at 50% 50%,transparent 52%,rgba(120,78,28,.2)),
+repeating-linear-gradient(45deg,rgba(150,100,40,.045) 0 14px,transparent 14px 28px),
+radial-gradient(circle at 80% 10%,rgba(255,228,160,.6),transparent 50%),
+linear-gradient(165deg,#fff9e8,#f6e6bf 55%,#ebd29c)}
+
+/* --- ホーム：台座とリングに奥行き、メニューボタンにガラスのような光沢 --- */
+#screen-title[data-theme]::after{display:none}
+#screen-title[data-theme]::before{background:radial-gradient(circle at 35% 30%,var(--t-ring),transparent 68%)}
+#screen-title[data-theme] .title-menu-btn{box-shadow:0 5px 0 var(--t-edge),0 14px 26px var(--t-glow),inset 0 2px 0 var(--t-gl,rgba(255,255,255,.75))}
+#screen-title[data-theme] .title-menu-btn:not(.primary):active{box-shadow:0 1px 0 var(--t-edge),inset 0 1px 0 var(--t-gl,rgba(255,255,255,.6))}
+#screen-title[data-theme] .title-menu-btn.primary{
+  background:linear-gradient(180deg,rgba(255,255,255,.3),rgba(255,255,255,0) 50%),linear-gradient(180deg,var(--t-pa),var(--t-pb));
+  box-shadow:0 5px 0 var(--t-pd),0 16px 30px var(--t-glow),inset 0 2px 0 rgba(255,255,255,.45),inset 0 -3px 0 rgba(0,0,0,.08)}
+#screen-title[data-theme] .title-menu-btn .tmb-icon-wrap{box-shadow:inset 0 2px 0 rgba(255,255,255,.8),0 4px 10px var(--t-glow)}
+#screen-title[data-theme] .title-logo{filter:drop-shadow(0 6px 14px var(--t-glow))}
+/* --- 対戦方法 / NPCバトル方法 / 手持ち：ボタンの光沢 --- */
+#screen-multiplayer[data-theme] .multi-menu-btn, #screen-npc-mode[data-theme] .npc-mode-btn, #screen-team[data-theme] .reorder-actions .neu-btn{
+  background:linear-gradient(180deg,var(--t-gl,rgba(255,255,255,.7)),rgba(255,255,255,0) 50%),var(--t-card)}
+#screen-multiplayer[data-theme] .multi-menu-btn.primary, #screen-npc-mode[data-theme] .npc-mode-btn.primary, #screen-team[data-theme] .reorder-actions .neu-btn.primary{
+  background:linear-gradient(180deg,rgba(255,255,255,.3),rgba(255,255,255,0) 50%),linear-gradient(180deg,var(--t-pa),var(--t-pb))}
 </style>
 
 <!-- ===== 不具合修正：非表示の画面の中身が、見えないままタップを奪うのを防ぐ =====
@@ -6590,6 +6780,7 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
         </button>
         <button id="btn-title-record" class="title-settings-btn title-record-btn" type="button" aria-label="戦績記録">🏆</button>
         <button id="btn-title-shop" class="title-settings-btn title-shop-btn" type="button" aria-label="ショップ">🛍</button>
+        <button id="btn-title-wallpaper" class="title-settings-btn title-wallpaper-btn" type="button" aria-label="壁紙"><img src="./kabe.png" alt="" onerror="this.replaceWith(document.createTextNode('🖼️'))"></button>
       </div>
       <div class="title-topbar-right">
         <button id="btn-npc-difficulty" class="npc-diff-btn" type="button" data-diff="normal" aria-label="NPCバトルの難易度">
@@ -7465,6 +7656,22 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
   <!-- ショップ：ポケモンをタップした時の購入確認カード -->
   <div class="shop-detail-overlay" id="shop-detail-overlay">
     <div class="shop-detail-card" id="shop-detail-card"></div>
+  </div>
+
+  <!-- 壁紙（ホームテーマ）：ショップ右の壁紙ボタンから開く。解放は各50ディスク -->
+  <div class="shop-overlay" id="wp-overlay">
+    <div class="shop-header">
+      <button id="wp-close-btn" class="pokedex-close-btn" type="button" aria-label="とじる">×</button>
+      <div class="shop-header-title">壁紙</div>
+      <div class="shop-currency-badge">
+        <img class="shop-currency-icon" src="./disc.png" alt="" onerror="this.style.display='none'">
+        <span id="wp-currency-count">-</span>
+      </div>
+    </div>
+    <div class="shop-grid" id="wp-grid"></div>
+  </div>
+  <div class="shop-detail-overlay" id="wp-confirm-overlay">
+    <div class="shop-detail-card" id="wp-confirm-card"></div>
   </div>
 
   <!-- 図鑑：発見済みポケモンをタップした時の詳細画面 -->

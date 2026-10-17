@@ -1014,13 +1014,48 @@ const MenuBgm = (() => {
   let audio = null;
   let playing = false;
 
+  // 壁紙（ホームテーマ）を設定しているときは、menu.mp3 の代わりにテーマ専用の曲を流す。
+  // 0（デフォルト）は従来どおり menu.mp3。
+  const THEME_BGM = {
+    1: './42.mp3',      // ブルーサイダー
+    2: './25.mp3',      // チェリーピンク
+    3: './azrn.mp3',    // ユニコーンパープル
+    4: './drmn.mp3',    // ドリーミングバード
+    5: './31.mp3',      // ナズナグリーン
+    6: './27.mp3',      // アルカナカラー
+    7: './12.mp3',      // シャドウカラー
+    8: './hime.mp3',    // マイリトルハート
+    9: './16.mp3',      // チェリーベリーメリー
+    10: './pokerie.mp3', // ポケリエ
+    11: './hime.mp3',    // スワンプリンセス
+    12: './kaho.mp3'     // ラビットフラワー
+  };
+  function desiredSrc() {
+    let sel = 0;
+    try { sel = Number(wpEff) || 0; } catch (e) { sel = 0; } // wpSel は後方で宣言されるため、未初期化でも落ちないようにする
+    return THEME_BGM[sel] || './menu.mp3';
+  }
+
   function getAudio() {
-    if (audio) return audio;
-    const preloaded = AssetPreloader.audioBuffers.get('./menu.mp3');
-    audio = preloaded ? preloaded : new Audio('./menu.mp3');
+    const src = desiredSrc();
+    if (audio && audio._menuSrc === src) return audio;
+    if (audio) { try { audio.pause(); audio.currentTime = 0; } catch (e) {} }
+    const preloaded = src === './menu.mp3' ? AssetPreloader.audioBuffers.get('./menu.mp3') : null;
+    audio = preloaded ? preloaded : new Audio(src);
+    audio._menuSrc = src;
     audio.loop = true;
     audio.volume = 0.4;
     return audio;
+  }
+
+  // 壁紙を切り替えたときに呼ぶ。再生中なら新しい曲へ切り替える（鳴っていなければ次回の start で反映）
+  function refresh() {
+    if (!audio || audio._menuSrc === desiredSrc()) return;
+    const wasPlaying = playing;
+    try { audio.pause(); audio.currentTime = 0; } catch (e) {}
+    audio = null;
+    playing = false;
+    if (wasPlaying) start();
   }
 
   function start() {
@@ -1060,7 +1095,7 @@ const MenuBgm = (() => {
     if (p && p.catch) p.catch(() => {});
   }
 
-  return { start, stop, resumeIfNeeded };
+  return { start, stop, resumeIfNeeded, refresh };
 })();
 
 /* ---------------- ショップBGM ---------------- */
@@ -1190,7 +1225,7 @@ function showScreen(name) {
   // ダンジョン画面以外へ移ったら、ダンジョン用BGM（dungeon.mp3 / dungeon2.mp3）は必ず止める
   if (window.DungeonBgm && name !== 'dungeon-home' && name !== 'dungeon-map') window.DungeonBgm.stop();
   checkOrientation();
-  if (name === 'title') { refreshTitleNameLabel(); setMegaLockActive(true); npcTeamEndRun(); state.mpChosenTeamIdx = -1; } // タイトルに戻ったらロック有効に戻す／チーム戦のランも終了
+  if (name === 'title') { refreshTitleNameLabel(); setMegaLockActive(true); npcTeamEndRun(); state.mpChosenTeamIdx = -1; try { wpReroll(); } catch (e) {} } // タイトルに戻ったらロック有効に戻す／チーム戦のランも終了
 }
 
 /* ---------------- Sprite helpers ---------------- */
@@ -7608,7 +7643,7 @@ const PVP_DISC_REWARD = 10;
 /* ---- ディスク報酬（NPC戦：メガあり/なし・チームバトル共通） ----
    winStreak（勝利後の連勝数＝何戦目に勝ったか）に応じて加算量を決める。
    1〜5戦目            : +10
-   6〜9戦目            : +20
+   6〜9戦目            : +25
    10戦目・20戦目…(ボス): +50 （10の倍数）
    11〜19戦目、21〜29戦目…: +25 （10の倍数を除く、11戦目以降）
    このルールは11戦目以降、10戦目区切りで無限に繰り返す
@@ -7617,7 +7652,7 @@ function calcNpcDiscReward(battleNo) {
   const n = Math.floor(Number(battleNo) || 0);
   if (n <= 0) return 0;
   if (n <= 5) return 10;
-  if (n <= 9) return 20;
+  if (n <= 9) return 25;
   if (n % 10 === 0) return 50; // 10戦目区切りのボス（10, 20, 30, ...）
   return 25; // 11戦目以降のボス以外（11〜19, 21〜29, 31〜39, ...）
 }
@@ -7740,7 +7775,16 @@ const Shop = (() => {
   }
 
   load();
-  return { getDisc, addDisc, isOwned, buy };
+  // 壁紙などの購入用：足りなければ何もせず false。
+  function spend(amount) {
+    const n = Math.floor(Number(amount) || 0);
+    if (n <= 0 || disc < n) return false;
+    disc -= n;
+    saveDisc();
+    return true;
+  }
+
+  return { getDisc, addDisc, isOwned, buy, spend };
 })();
 
 // ショップカードの縁取り・グローに使う代表タイプ色を1つ返す（第1タイプ優先）。
@@ -10893,3 +10937,110 @@ TR_STAT_ROWS.forEach(([label, key, svg]) => { TR_STAT_ICON[key] = svg; });
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) sbRecoverBoxImages(); });
 window.addEventListener('pageshow', () => sbRecoverBoxImages());
+
+// ===== 壁紙（ホームテーマ）：各50ディスクで解放。選択中のテーマは #screen-title の data-theme に反映（0=デフォルトは属性なし） =====
+const WP_PRICE = 50;
+const WP_NAMES = ['デフォルト','ブルーサイダー','チェリーピンク','ユニコーンパープル','ドリーミングバード','ナズナグリーン','アルカナカラー','シャドウカラー','マイリトルハート','チェリーメリーベリー','ポケリエ','スワンプリンセス','ラビットフラワー','ランダム'];
+const WP_RANDOM = 13; // 無料。ホームに戻るたび、持っているテーマ（デフォルトを除く）からランダムに切り替わる
+// 保存データ互換のため番号は変えず、表示順だけ「ポケリエ(10)」を最後にする
+const WP_ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 10, 13];
+const WP_OWNED_KEY = 'pokeriere_wp_owned_v1';
+const WP_SEL_KEY = 'pokeriere_wp_sel_v1';
+let wpOwned = new Set([0]);
+let wpSel = 0;
+let wpEff = 0; // 実際に画面へ適用中のテーマ（ランダム選択時は抽選結果）
+try {
+  JSON.parse(localStorage.getItem(WP_OWNED_KEY) || '[]').forEach((n) => wpOwned.add(Number(n)));
+  wpSel = Number(localStorage.getItem(WP_SEL_KEY)) || 0;
+} catch (e) {}
+wpOwned.add(WP_RANDOM);
+if (!wpOwned.has(wpSel) || !WP_NAMES[wpSel]) wpSel = 0;
+function wpPick() {
+  if (wpSel !== WP_RANDOM) { wpEff = wpSel; return; }
+  const pool = [...wpOwned].filter((n) => n >= 1 && n !== WP_RANDOM && WP_NAMES[n]);
+  if (!pool.length) { wpEff = 0; return; }
+  const cand = pool.length > 1 ? pool.filter((n) => n !== wpEff) : pool; // 直前と同じテーマは避ける
+  wpEff = cand[Math.floor(Math.random() * cand.length)];
+}
+function wpReroll() { if (wpSel !== WP_RANDOM) return; wpPick(); wpApply(); }
+wpPick();
+
+function wpApply() {
+  if (wpSel !== WP_RANDOM) wpEff = wpSel;
+  // ホーム＋対戦方法／NPCバトル方法／手持ちポケモン（勝利後の入れ替え含む）画面に壁紙を反映
+  ['screen-title', 'screen-multiplayer', 'screen-npc-mode', 'screen-team'].forEach((id) => {
+    const t = $(id);
+    if (!t) return;
+    if (wpEff) t.setAttribute('data-theme', String(wpEff)); else t.removeAttribute('data-theme');
+  });
+  MenuBgm.refresh(); // 壁紙に合わせてメニューBGMを切り替える
+}
+function wpSave() {
+  try {
+    localStorage.setItem(WP_OWNED_KEY, JSON.stringify([...wpOwned]));
+    localStorage.setItem(WP_SEL_KEY, String(wpSel));
+  } catch (e) {}
+}
+function wpPrevHtml(i, large) {
+  return `<div class="wp-prev${large ? ' wp-prev-lg' : ''}" data-theme="${i}"><span class="wp-prev-card"></span><span class="wp-prev-main"></span></div>`;
+}
+function wpRender() {
+  $('wp-currency-count').textContent = String(Shop.getDisc());
+  $('wp-grid').innerHTML = WP_ORDER.map((i) => {
+    const name = WP_NAMES[i];
+    const owned = wpOwned.has(i);
+    const sel = i === wpSel;
+    const state = sel ? 'つかっている'
+      : owned ? 'つかう'
+      : `<img src="./disc.png" alt="" onerror="this.style.display='none'"><span>${WP_PRICE}</span>`;
+    return `<div class="shop-cell wp-cell${sel ? ' selected' : ''}${owned ? '' : ' locked'}" data-wp="${i}">
+      ${wpPrevHtml(i, false)}
+      <div class="shop-cell-name">${name}</div>
+      <div class="wp-state">${state}</div>
+    </div>`;
+  }).join('');
+}
+function wpCloseConfirm() { $('wp-confirm-overlay').classList.remove('show'); }
+function wpOpenConfirm(i) {
+  const enough = Shop.getDisc() >= WP_PRICE;
+  $('wp-confirm-card').innerHTML = `
+    ${wpPrevHtml(i, true)}
+    <div class="shop-detail-name">${WP_NAMES[i]}</div>
+    <div class="shop-detail-price${enough ? '' : ' insufficient'}">
+      <img src="./disc.png" alt="" onerror="this.style.display='none'"><span>${WP_PRICE}</span>
+    </div>
+    ${enough ? '' : '<div class="wp-lack">ディスクが たりません</div>'}
+    <div class="shop-detail-btn-row">
+      <button class="neu-btn shop-detail-btn" id="wp-confirm-cancel" type="button">とじる</button>
+      ${enough ? `<button class="shop-detail-btn primary" id="wp-confirm-buy" data-wp="${i}" type="button">かいほう</button>` : ''}
+    </div>`;
+  $('wp-confirm-overlay').classList.add('show');
+}
+
+$('btn-title-wallpaper').addEventListener('click', () => {
+  wpRender();
+  $('wp-overlay').classList.add('show');
+});
+$('wp-close-btn').addEventListener('click', () => $('wp-overlay').classList.remove('show'));
+$('wp-grid').addEventListener('click', (e) => {
+  const cell = e.target.closest('.wp-cell');
+  if (!cell) return;
+  const i = Number(cell.dataset.wp);
+  if (wpOwned.has(i)) {
+    wpSel = i; if (i === WP_RANDOM) wpPick(); wpSave(); wpApply(); wpRender();
+  } else {
+    wpOpenConfirm(i);
+  }
+});
+$('wp-confirm-overlay').addEventListener('click', (e) => {
+  if (e.target === $('wp-confirm-overlay') || e.target.closest('#wp-confirm-cancel')) { wpCloseConfirm(); return; }
+  const buy = e.target.closest('#wp-confirm-buy');
+  if (!buy) return;
+  const i = Number(buy.dataset.wp);
+  if (Shop.spend(WP_PRICE)) {
+    wpOwned.add(i); wpSel = i; wpSave(); wpApply();
+  }
+  wpCloseConfirm();
+  wpRender();
+});
+wpApply();
