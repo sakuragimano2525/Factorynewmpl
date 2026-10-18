@@ -795,7 +795,7 @@ function restoreOriginalMoves(poke) {
 }
 
 // 威力59以下でも例外的にダメージ技候補として採用するID
-const LOW_POWER_EXCEPTION_MOVE_IDS = [1,271,503,504,111,107,155,221,162,295,324,77,341,405,461,472,498,494,48,189,309,367,388,229,109,179,169,128];
+const LOW_POWER_EXCEPTION_MOVE_IDS = [129,110,379,1,271,503,504,111,107,155,221,162,295,324,77,341,405,461,472,498,494,48,189,309,367,388,229,109,179,169,128];
 
 function chooseMoves(species) {
   const candidateIds = levelUpMoveIds(species);
@@ -981,13 +981,13 @@ function updateYowashiForm(poke, logFn, withEffect) {
   return true;
 }
 
-// ---- アイニーチュ（ID1990）専用：HP低下によるフォルムチェンジ ----
+// ---- （ID1990）専用：HP低下によるフォルムチェンジ ----
 // ヨワシと違い、①片道の変化（一度発動したら戦闘終了までもとに戻らない）、
 // ②HP種族値も変化するため最大HP・残りHPが変動分だけ増える、③状態異常（こんらん含む）が全解除、
 // という仕様のため、ヨワシとは別関数として実装する。
 // フォルムチェンジ後の種族値（この差分だけ変化する。元の種族値はgamedata.js側で定義される）。
 const AINEECHU_SPECIES_ID = 1990;
-const AINEECHU_FORM_BASE_STATS = { hp: 196, atk: 113, def: 110, spa: 111, spd: 110, spe: 20 };
+const AINEECHU_FORM_BASE_STATS = { hp: 246, atk: 113, def: 110, spa: 111, spd: 110, spe: 20 };
 
 // フォルムチェンジ後の実数値（atk/def/spa/spd/spe）を再計算する。
 // HPは「増加分」を個別に加算して処理するため、ここでは対象外。
