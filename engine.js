@@ -1173,9 +1173,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 25,
     "baseStats": {
       "hp": 80,
-      "atk": 115,
+      "atk": 100,
       "def": 85,
-      "spa": 70,
+      "spa": 80,
       "spd": 85,
       "spe": 100
     }
@@ -1788,9 +1788,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 93,
     "baseStats": {
       "hp": 108,
-      "atk": 160,
+      "atk": 170,
       "def": 125,
-      "spa": 160,
+      "spa": 110,
       "spd": 95,
       "spe": 92
     }
@@ -2548,6 +2548,19 @@ const MEGA_EVOLUTION_DATA = {
       "spd": 146,
       "spe": 111
     }
+  },
+  "1079": {
+    "type1": "fighting",
+    "type2": "steel",
+    "ability": 68,
+    "baseStats": {
+      "hp": 70,
+      "atk": 145,
+      "def": 88,
+      "spa": 160,
+      "spd": 70,
+      "spe": 112
+    }
   }
 }
 
@@ -2562,6 +2575,32 @@ const MEGA_EVOLUTION_DATA = {
 //   ③ 既存が X/Y の2フォーム         → X/Y に Z が加わり3フォームになる。画像は m{ID}z.png
 // 対戦中の表記は「Zガブリアス」のように頭にZが付きます（Mフォームは何も付きません）。
 const MEGA_Z_EVOLUTION_DATA = {
+  "41": {
+    "type1": "dragon",
+    "type2": null,
+    "ability": 19,
+    "baseStats": {
+      "hp": 108,
+      "atk": 150,
+      "def": 85,
+      "spa": 171,
+      "spd": 85,
+      "spe": 151
+    }
+  },
+  "329": {
+    "type1": "dragon",
+    "type2": null,
+    "ability": 19,
+    "baseStats": {
+      "hp": 108,
+      "atk": 150,
+      "def": 85,
+      "spa": 171,
+      "spd": 85,
+      "spe": 151
+    }
+  },
   "1005": {
     "name": "イビルアーサ",
     "type1": "ghost",
@@ -2574,6 +2613,19 @@ const MEGA_Z_EVOLUTION_DATA = {
       "spa": 0,
       "spd": 100,
       "spe": 155
+    }
+  },
+  "1079": {
+    "type1": "fighting",
+    "type2": "steel",
+    "ability": 127,
+    "baseStats": {
+      "hp": 70,
+      "atk": 100,
+      "def": 70,
+      "spa": 184,
+      "spd": 70,
+      "spe": 151
     }
   }
 };
