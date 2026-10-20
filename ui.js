@@ -539,7 +539,7 @@ const Pokedex = (() => {
 
   // メガのキー：X/Yフォームを持つ種族は "id-X"/"id-Y"、単一フォームは "id" のまま。
   function megaKey(speciesId, formKey) {
-    return formKey ? `${speciesId}-${formKey}` : `${speciesId}`;
+    return (formKey && formKey !== 'M') ? `${speciesId}-${formKey}` : `${speciesId}`;   // M（通常メガ）は従来の単一フォームと同じキー（既存の図鑑記録を引き継ぐ）
   }
 
   function load() {
@@ -608,7 +608,7 @@ const Pokedex = (() => {
   function hasMega(speciesId, formKey) {
     if (formKey) return seenMega.has(megaKey(speciesId, formKey));
     if (seenMega.has(`${speciesId}`)) return true;
-    return seenMega.has(`${speciesId}-X`) || seenMega.has(`${speciesId}-Y`);
+    return seenMega.has(`${speciesId}-X`) || seenMega.has(`${speciesId}-Y`) || seenMega.has(`${speciesId}-Z`);
   }
   function count() { return seen.size; }
 
@@ -728,7 +728,8 @@ const AssetPreloader = (() => {
       Object.keys(megaData).forEach((id) => {
         const entry = megaData[id];
         if (entry && entry.forms) {
-          ['x', 'y'].forEach((suffix) => {
+          getMegaFormKeys(id).forEach((k) => {
+            const suffix = megaFormSpriteSuffix(k);   // M＝なし／X・Y・Z＝x・y・z
             preloadImageQueued(`./m${id}${suffix}.png`);
             preloadImageQueued(`./m${id}${suffix}s.png`);
           });
@@ -1239,7 +1240,7 @@ function spritePath(poke) {
   const isYowashiSchool = poke.speciesId === 1012 && poke.formState === 'school';
   const isAineechuAwakened = poke.speciesId === 1990 && poke.formState === 'awakened';
   const idPart = (isYowashiSchool || isAineechuAwakened) ? `A${poke.speciesId}` : `${poke.speciesId}`;
-  const megaFormSuffix = poke.isMega && poke.megaForm ? poke.megaForm.toLowerCase() : '';
+  const megaFormSuffix = poke.isMega && poke.megaForm ? megaFormSpriteSuffix(poke.megaForm) : '';
   const megaPart = poke.isMega ? `m${idPart}${megaFormSuffix}` : idPart;
   return `./${megaPart}${poke.shiny ? 's' : ''}.png`;
 }
@@ -1286,7 +1287,7 @@ function tpcNameHtml(poke) {
   const megaIcon = (megaAllowed && canMegaEvolve(poke)) ? `<img src="./mega.png" alt="メガ" class="mega-name-icon" onerror="this.style.display='none'">` : '';
   // X/Yのようにフォームが複数あるポケモンは、選出時点で既に確定しているmegaFormの文字を
   // アイコンの直後・種族名の直前に付ける（例：mega.png + "X" + "リザードン"）。
-  const megaFormLabel = (megaAllowed && canMegaEvolve(poke) && poke.megaForm) ? poke.megaForm : '';
+  const megaFormLabel = (megaAllowed && canMegaEvolve(poke) && poke.megaForm) ? megaFormDisplayLabel(poke.megaForm) : '';
   return megaIcon + megaFormLabel + poke.species.name;
 }
 
@@ -1517,10 +1518,12 @@ function updateHud(poke, prefix, hpOverride, statusOverride) {
   if (poke.isMega) {
     // メガシンカ発動後：mega.pngアイコンのみ（X/Y文字は出さない）
     megaIcon = `<img src="./mega.png" alt="メガ" class="mega-name-icon" onerror="this.style.display='none'">`;
-  } else if (state.megaEvolutionEnabled && canMegaEvolve(poke) && poke.megaForm) {
-    // メガシンカ発動前：アイコンは出さず、X/Yの文字だけ名前に付ける
+  } else if (prefix !== 'opp' && state.megaEvolutionEnabled && canMegaEvolve(poke) && poke.megaForm) {
+    // 【相手側('opp')には付けない】相手のメガ先（X/Y/Z）が事前にバレないように、
+    // 予告表記は自分側('self')のHUDだけ。相手はメガシンカした後に画像で分かる。
+    // メガシンカ発動前：アイコンは出さず、X/Y/Zの文字だけ名前に付ける
     // （「メガなし」のバトルではメガシンカ自体が起きないので、この予告表示も出さない）
-    megaFormLabel = poke.megaForm;
+    megaFormLabel = megaFormDisplayLabel(poke.megaForm);
   }
   $(prefix + '-name').innerHTML = megaIcon + megaFormLabel + poke.species.name;
   $(prefix + '-lv').textContent = levelText(poke, 'Lv');
@@ -7568,8 +7571,7 @@ function pokedexMegaEntries() {
   for (const id of ids) {
     const raw = MEGA_EVOLUTION_DATA[id];
     if (raw && raw.forms) {
-      entries.push({ speciesId: id, formKey: 'X' });
-      entries.push({ speciesId: id, formKey: 'Y' });
+      getMegaFormKeys(id).forEach((k) => entries.push({ speciesId: id, formKey: k }));   // M/X/Y/Zのうち持っているぶん
     } else {
       entries.push({ speciesId: id, formKey: null });
     }
@@ -7585,11 +7587,11 @@ function pokedexCellHtml(speciesId, displayNo, formKey) {
   const isMegaTab = formKey !== undefined;
   const caught = isMegaTab ? (found && Pokedex.hasMega(speciesId, formKey)) : found;
   const showShiny = caught && shinyCaught && Pokedex.isViewingShiny(speciesId);
-  const formSuffix = formKey ? formKey.toLowerCase() : '';
+  const formSuffix = megaFormSpriteSuffix(formKey);
   const imgIdPart = isMegaTab ? `m${speciesId}${formSuffix}` : `${speciesId}`;
   const imgSrc = caught ? `./${imgIdPart}${showShiny ? 's' : ''}.png` : './secret.png';
-  const formLabel = formKey ? formKey : '';
-  const displayName = caught ? (isMegaTab ? `メガ${formLabel}${baseName}` : baseName) : '？？？';
+  const formLabel = megaFormDisplayLabel(formKey);
+  const displayName = caught ? (isMegaTab ? megaDexName(speciesId, formKey, baseName) : baseName) : '？？？';
   // 乱入ボスのメガシンカ：実績画面で解放するまで、図鑑では中身を隠して🔒を重ねる。
   const megaLocked = isMegaTab && !isMegaUnlocked(speciesId);
   if (megaLocked) {
@@ -8020,11 +8022,11 @@ function renderPokedexDetailForm(speciesId) {
 
   // 画像パス：通常は "{id}.png"（色違いは"{id}s.png"）、
   // メガは "m{id}.png"（色違いは"m{id}s.png"）。X/Yフォームは "m{id}x.png"/"m{id}y.png"。
-  const formSuffix = (showMega && pdxDetailFormKey) ? pdxDetailFormKey.toLowerCase() : '';
+  const formSuffix = (showMega && pdxDetailFormKey) ? megaFormSpriteSuffix(pdxDetailFormKey) : '';
   const imgIdPart = showMega ? `m${speciesId}${formSuffix}` : `${speciesId}`;
   $('pdx-detail-img').src = `./${imgIdPart}${showShiny ? 's' : ''}.png`;
-  const formLabel = (showMega && pdxDetailFormKey) ? pdxDetailFormKey : '';
-  $('pdx-detail-name').textContent = showMega ? `メガ${formLabel}${sp.name}` : sp.name;
+  const formLabel = (showMega && pdxDetailFormKey) ? megaFormDisplayLabel(pdxDetailFormKey) : '';
+  $('pdx-detail-name').textContent = showMega ? megaDexName(speciesId, pdxDetailFormKey, sp.name) : sp.name;
   const types = megaData
     ? [megaData.type1, megaData.type2].filter(Boolean)
     : [sp.type1, sp.type2].filter(Boolean);
@@ -8329,7 +8331,12 @@ function sbRestorePoke(d) {
       const k = SB_STAT_KEYS[i]; const cut = Math.min(p.evPoints[k], over); p.evPoints[k] -= cut; over -= cut;
     }
   }
-  if (d.mf === 'X' || d.mf === 'Y') { if (p.megaForm) p.megaForm = d.mf; }
+  // メガ先：保存値がその種族の有効なフォームならそれを採用。無効/未保存（Z追加前の旧データ等）は先頭フォーム（M/X）に揃え、
+  // 読み込むたびに抽選で変わらないようにする。
+  if (p.megaForm) {
+    const mfKeys = getMegaFormKeys(d.id);
+    p.megaForm = mfKeys.includes(d.mf) ? d.mf : (mfKeys[0] || p.megaForm);
+  }
   sbRecalcStats(p);
   return p;
 }
@@ -9236,8 +9243,9 @@ function sbRenderDetail() {
   // X/Y両方のメガシンカを持つポケモンは、選んである方を名前の頭に小さく添える（対戦中の表記と同じ「Xリザードン」形式）
   // メガビュー表示中は必ずX/Yのどちらかを見ているので、複数フォームがあれば常に表示する。
   // Y=赤背景／X=青背景（トレーニング画面のX/Y切替ボタンと同じ色分け）
-  const megaFormPrefix = sbMegaVisible(p) && hasMultiMegaForms(p) && (megaPreview || p.megaForm)
-    ? `<span class="sb-d-megaform ${p.megaForm === 'Y' ? 'y' : 'x'}">${p.megaForm === 'Y' ? 'Y' : 'X'}</span>` : '';
+  const sbFormKey = (sbMegaVisible(p) && hasMultiMegaForms(p)) ? resolveMegaFormKey(MEGA_EVOLUTION_DATA[p.speciesId], p.megaForm) : null;
+  const megaFormPrefix = (sbFormKey && megaFormDisplayLabel(sbFormKey))
+    ? `<span class="sb-d-megaform ${sbFormKey.toLowerCase()}">${megaFormDisplayLabel(sbFormKey)}</span>` : '';
   // 色違いボタン：図鑑に色違いが登録済みの種族にだけ表示。押すと 通常⇔色違い を切り替える
   const canShiny = Pokedex.hasShiny(p.speciesId);
   const shinyBtn = canShiny
@@ -9996,7 +10004,7 @@ let trSel = null;                    // 操作パネルを開いている能力�
 let trNatureDraft = null;            // 作業用の性格ID（「もどる」で破棄するため trTarget.nature とは別に持つ）
 let trAbilityDraft = null;           // 作業用の特性ID（同上）
 let trMovesDraft = [];               // 作業用の技配列（buildMoveObjectで作った技オブジェクト、最大4）
-let trMegaFormDraft = null;          // 作業用のメガ先（'X'|'Y'）。X/Y両方あるポケモンだけ使う（同上）
+let trMegaFormDraft = null;          // 作業用のメガ先（'M'|'X'|'Y'|'Z'）。複数フォームのあるポケモンだけ使う（同上）
 let trMegaViewActive = false;        // 【表示専用】trueなら能力ポイント欄をメガシンカ後の種族値基準で表示する
 
 const trSum = (d) => SB_STAT_KEYS.reduce((s, k) => s + (d[k] || 0), 0);
@@ -10095,8 +10103,14 @@ function trRenderMegaFormRow() {
   const row = $('tr-megaform-row');
   if (!trTarget || !sbMegaVisible(trTarget) || !hasMultiMegaForms(trTarget)) { row.classList.remove('show'); return; }
   row.classList.add('show');
-  $('tr-megaform-x').classList.toggle('active', trMegaFormDraft === 'X');
-  $('tr-megaform-y').classList.toggle('active', trMegaFormDraft === 'Y');
+  // そのポケモンが持っているフォームのボタンだけ出す（M/X/Y/Z）
+  const keys = getMegaFormKeys(trTarget.speciesId);
+  MEGA_FORM_ORDER.forEach((k) => {
+    const btn = $('tr-megaform-' + k.toLowerCase());
+    if (!btn) return;
+    btn.hidden = !keys.includes(k);
+    btn.classList.toggle('active', trMegaFormDraft === k);
+  });
 }
 
 // 能力ポイント6行を作り直す（行の選択状態は trSel に従う）
@@ -10354,8 +10368,8 @@ function trMegaAbilitySectionHtml() {
   const desc = (GAME_DATA && GAME_DATA.abilityDesc && GAME_DATA.abilityDesc[mega.ability])
     || abilityDescById(mega.ability) || '';
   // X/Yがある種族は、どちらのフォームの特性か分かるよう見出しに添える
-  const formTag = hasMultiMegaForms(trTarget) && trMegaFormDraft
-    ? `<span class="tr-asel-megaform ${trMegaFormDraft === 'Y' ? 'y' : 'x'}">${trMegaFormDraft}</span>` : '';
+  const formTag = hasMultiMegaForms(trTarget) && megaFormDisplayLabel(trMegaFormDraft)
+    ? `<span class="tr-asel-megaform ${trMegaFormDraft.toLowerCase()}">${megaFormDisplayLabel(trMegaFormDraft)}</span>` : '';
   return `<div class="tr-asel-megahead"><span>メガシンカ後</span>${formTag}</div>
     <div class="tr-asel-item tr-asel-megaitem" aria-label="メガシンカ後の特性（表示のみ）">
       <span class="an">${abilityJp(mega.ability)}</span>${desc ? `<span class="ad">${desc}</span>` : ''}
@@ -10388,17 +10402,13 @@ function trChooseAbility(abilityId) {
 }
 
 $('tr-ability').addEventListener('click', openAbilitySelect);
-$('tr-megaform-x').addEventListener('click', () => {
-  if (trMegaFormDraft === 'X') return;
-  trMegaFormDraft = 'X';
-  trRenderMegaFormRow();
-  if (trMegaViewActive) { trRenderHeader(trTarget); trRenderStats(); }
-});
-$('tr-megaform-y').addEventListener('click', () => {
-  if (trMegaFormDraft === 'Y') return;
-  trMegaFormDraft = 'Y';
-  trRenderMegaFormRow();
-  if (trMegaViewActive) { trRenderHeader(trTarget); trRenderStats(); }
+MEGA_FORM_ORDER.forEach((k) => {
+  $('tr-megaform-' + k.toLowerCase()).addEventListener('click', () => {
+    if (trMegaFormDraft === k) return;
+    trMegaFormDraft = k;
+    trRenderMegaFormRow();
+    if (trMegaViewActive) { trRenderHeader(trTarget); trRenderStats(); }
+  });
 });
 $('tr-btn-megaview').addEventListener('click', () => {
   if (!trTarget || !sbMegaVisible(trTarget)) return;
@@ -10918,7 +10928,7 @@ function openTraining() {
   trNatureDraft = p.nature;                // 能力補正（性格）・特性も作業用コピーで編集する
   trAbilityDraft = p.ability;
   trMovesDraft = p.moves.slice(0, 4);      // 技も作業用コピー（確定するまで実個体には反映しない）
-  trMegaFormDraft = hasMultiMegaForms(p) ? (p.megaForm === 'Y' ? 'Y' : 'X') : null;
+  trMegaFormDraft = hasMultiMegaForms(p) ? resolveMegaFormKey(MEGA_EVOLUTION_DATA[p.speciesId], p.megaForm) : null;
   trMegaViewActive = false;                // 開くたびに通常表示から始める
   trSel = null;
   trBuildSparkles();

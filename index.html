@@ -4192,6 +4192,8 @@ html,body{
 /* Xは青、Yは赤（トレーニング画面のメガ先X/Y切替ボタンと同じ配色） */
 .sb-d-megaform.x{ background:linear-gradient(135deg,#4f9dff,#2f6ae0); }
 .sb-d-megaform.y{ background:linear-gradient(135deg,#ff5a5a,#e02f2f); }
+.sb-d-megaform.z{ background:linear-gradient(135deg,#a56bff,#6a35d8); }
+.sb-d-megaform.m{ background:linear-gradient(135deg,#ffc95a,#e8962a); }
 /* 名前・タイプの塊は残り幅いっぱいに広がり、色違いボタンを名前行の一番右へ押しやる */
 .sb-d-head > div{ min-width:0; }
 .sb-d-head .sb-d-headtext{ flex:1 1 auto; }
@@ -5249,6 +5251,16 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
   background:linear-gradient(135deg,#ff5a5a,#e02f2f); color:#fff;
   box-shadow:0 2px 6px rgba(224,47,47,.45);
 }
+/* M（通常メガ）は金、Z（Z-A系メガ）は紫 */
+.tr-megaform-btn#tr-megaform-m.active{
+  background:linear-gradient(135deg,#ffc95a,#e8962a); color:#fff;
+  box-shadow:0 2px 6px rgba(232,150,42,.45);
+}
+.tr-megaform-btn#tr-megaform-z.active{
+  background:linear-gradient(135deg,#a56bff,#6a35d8); color:#fff;
+  box-shadow:0 2px 6px rgba(106,53,216,.45);
+}
+.tr-megaform-btn[hidden]{ display:none; }
 .tr-pill-btn{
   border:none; font-family:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent;
   position:relative;
@@ -5557,6 +5569,8 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
 }
 .tr-asel-megaform.x{ background:linear-gradient(135deg,#4f9dff,#2f6ae0); }
 .tr-asel-megaform.y{ background:linear-gradient(135deg,#ff5a5a,#e02f2f); }
+.tr-asel-megaform.z{ background:linear-gradient(135deg,#a56bff,#6a35d8); }
+.tr-asel-megaform.m{ background:linear-gradient(135deg,#ffc95a,#e8962a); }
 .tr-asel-megaitem{
   cursor:default;
   background:linear-gradient(180deg,#fff6d6,#ffe9a8);
@@ -6335,6 +6349,19 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
   .tmb-box-icon{ width:28px; height:28px; }
 }
 
+/* ---- おまけモード入口ボタン（ホームの4つ目。他より一回り小さく控えめに） ---- */
+#screen-title .title-menu-btn.title-menu-btn-bonus{ min-height:clamp(52px,12vh,68px); }
+#screen-title .title-menu-btn-bonus .tmb-icon-wrap{ width:44px; height:44px; border-radius:14px; }
+.tmb-bonus-emoji{ font-size:24px; line-height:1; pointer-events:none; }
+.bonus-toast{
+  position:fixed; left:50%; bottom:max(28px, env(safe-area-inset-bottom));
+  transform:translateX(-50%) translateY(12px); opacity:0;
+  background:rgba(27,34,56,.92); color:#fff; font-weight:800; font-size:14px;
+  padding:12px 22px; border-radius:999px; z-index:99999; pointer-events:none;
+  transition:opacity .2s ease, transform .2s ease;
+}
+.bonus-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+
 /* =====================================================================
    MODE SELECT（対戦方法 / NPC方法）
    ===================================================================== */
@@ -7048,12 +7075,14 @@ linear-gradient(165deg,#fff9e8,#f6e6bf 55%,#ebd29c)}
         </div>
       </div>
 
-      <!-- メガ先（X/Y）：X/Y両方のメガシンカを持つポケモンだけ表示（リザードン・ライチュウ等） -->
+      <!-- メガ先（M/X/Y/Z）：複数フォームのメガシンカを持つポケモンだけ表示（リザードン・ライチュウ・Zメガ持ち等）。ボタンは持っているフォームだけJSで出す -->
       <div class="tr-megaform-row" id="tr-megaform-row">
         <span class="tr-megaform-label">メガ進化</span>
         <div class="tr-megaform-btns">
-          <button type="button" class="tr-megaform-btn" id="tr-megaform-x">X</button>
-          <button type="button" class="tr-megaform-btn" id="tr-megaform-y">Y</button>
+          <button type="button" class="tr-megaform-btn" id="tr-megaform-m" title="通常メガ" hidden>M</button>
+          <button type="button" class="tr-megaform-btn" id="tr-megaform-x" hidden>X</button>
+          <button type="button" class="tr-megaform-btn" id="tr-megaform-y" hidden>Y</button>
+          <button type="button" class="tr-megaform-btn" id="tr-megaform-z" hidden>Z</button>
         </div>
       </div>
 

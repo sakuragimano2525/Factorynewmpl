@@ -2227,12 +2227,12 @@ const MEGA_EVOLUTION_DATA = {
   "1005": {
     "type1": "ghost",
     "type2": "ground",
-    "ability": 121,
+    "ability": 145,
     "baseStats": {
-      "hp": 65,
-      "atk": 150,
+      "hp": 105,
+      "atk": 160,
       "def": 110,
-      "spa": 30,
+      "spa": 40,
       "spd": 110,
       "spe": 85
     }
@@ -2551,6 +2551,77 @@ const MEGA_EVOLUTION_DATA = {
   }
 }
 
+// ================= Zメガシンカ（Z-A系メガ）=================
+// 【ここに Zメガ の数値を入れる】
+// MEGA_EVOLUTION_DATA（XYメガ）と全く同じ書式です。キーは「メガシンカ前の種族ID」。
+//   "種族ID": { "type1": "dragon", "type2": "ground", "ability": 特性ID,
+//               "baseStats": { "hp": 0, "atk": 0, "def": 0, "spa": 0, "spd": 0, "spe": 0 } }
+// 起動時に MEGA_EVOLUTION_DATA へ自動で合流します。合流のルールは次の3通り：
+//   ① その種族に既存のメガが無い      → 単一フォームのメガとして追加（表記・画像名は通常メガと同じ m{ID}.png）
+//   ② 既存が単一メガ（例：ガブリアス）  → 「M(通常メガ)」と「Z」の2フォームになる。トレーニング画面で選べる。画像は m{ID}.png / m{ID}z.png
+//   ③ 既存が X/Y の2フォーム         → X/Y に Z が加わり3フォームになる。画像は m{ID}z.png
+// 対戦中の表記は「Zガブリアス」のように頭にZが付きます（Mフォームは何も付きません）。
+const MEGA_Z_EVOLUTION_DATA = {
+  "1005": {
+    "name": "イビルアーサ",
+    "type1": "ghost",
+    "type2": "fighting",
+    "ability": 137,
+    "baseStats": {
+      "hp": 105,
+      "atk": 180,
+      "def": 70,
+      "spa": 0,
+      "spd": 100,
+      "spe": 155
+    }
+  }
+};
+
+// フォームの並び順（トレーニング画面のボタン順・図鑑の並び順・抽選の候補順）。
+// M＝既存の単一メガ（Zと並ぶ時だけ使われる「通常メガ」）。画像名の接尾辞は M＝なし／X＝x／Y＝y／Z＝z。
+const MEGA_FORM_ORDER = ['M', 'X', 'Y', 'Z'];
+
+(function mergeMegaZData() {
+  Object.keys(MEGA_Z_EVOLUTION_DATA).forEach((id) => {
+    const z = MEGA_Z_EVOLUTION_DATA[id];
+    if (!z || !z.baseStats) return;               // 未入力・不完全なデータは無視
+    const cur = MEGA_EVOLUTION_DATA[id];
+    if (!cur) MEGA_EVOLUTION_DATA[id] = z;                                  // ① 新規
+    else if (cur.forms) cur.forms.Z = z;                                    // ③ X/Y に Z を追加
+    else MEGA_EVOLUTION_DATA[id] = { forms: { M: cur, Z: z } };             // ② 単一メガ + Z
+  });
+})();
+
+// raw（MEGA_EVOLUTION_DATA[id]）の中から、指定フォームが無ければ最初の有効フォームを返す。フォーム無しはnull。
+function resolveMegaFormKey(raw, key) {
+  if (!raw || !raw.forms) return null;
+  if (key && raw.forms[key]) return key;
+  return MEGA_FORM_ORDER.find((k) => raw.forms[k]) || Object.keys(raw.forms)[0] || null;
+}
+// その種族が持つメガフォームのキー一覧（M/X/Y/Zの順）。フォーム無しなら空配列。
+function getMegaFormKeys(speciesId) {
+  const raw = MEGA_EVOLUTION_DATA[speciesId];
+  if (!raw || !raw.forms) return [];
+  return MEGA_FORM_ORDER.filter((k) => raw.forms[k]);
+}
+// 選出時の抽選：持っているフォームから等確率で1つ（フォーム無しはnull）。
+function pickRandomMegaForm(speciesId) {
+  const keys = getMegaFormKeys(speciesId);
+  return keys.length ? keys[rand(0, keys.length - 1)] : null;
+}
+// 名前の頭に付ける表記。M（通常メガ）とフォーム無しは空文字。
+function megaFormDisplayLabel(key) { return (key && key !== 'M') ? key : ''; }
+// 図鑑用のメガ名：「メガ＋種族名＋フォーム」（例：メガリザードンX／メガ〇〇Z）。
+// メガ用データに特別名 "name" があるフォームは、その名前だけを返す（例：【イビルアーサ】）。
+function megaDexName(speciesId, formKey, baseName) {
+  const md = getMegaEvolutionDataForSpeciesId(speciesId, formKey);
+  if (md && md.name) return md.name;
+  return `メガ${baseName}${megaFormDisplayLabel(formKey)}`;
+}
+// 画像名の接尾辞。M（通常メガ）とフォーム無しは空文字、X/Y/Zは小文字。
+function megaFormSpriteSuffix(key) { return (key && key !== 'M') ? String(key).toLowerCase() : ''; }
+
 // 指定したポケモンのメガ進化データを取得する。
 // フォーム違い（forms.X/forms.Y）がある場合、poke.megaForm（既に決まっていればそれ、
 // 未決定なら暫定でX）に対応するフォームデータを返す。単一フォームならそのまま返す。
@@ -2558,8 +2629,7 @@ function getMegaEvolutionData(poke) {
   const raw = MEGA_EVOLUTION_DATA[poke && poke.speciesId];
   if (!raw) return null;
   if (raw.forms) {
-    const formKey = poke.megaForm === 'Y' ? 'Y' : 'X';
-    return raw.forms[formKey];
+    return raw.forms[resolveMegaFormKey(raw, poke.megaForm)];
   }
   return raw;
 }
@@ -2596,7 +2666,7 @@ function hasMultiMegaForms(poke) {
 function getMegaEvolutionDataForSpeciesId(speciesId, formKey) {
   const raw = MEGA_EVOLUTION_DATA[speciesId];
   if (!raw) return null;
-  if (raw.forms) return raw.forms[formKey === 'Y' ? 'Y' : 'X'] || raw.forms.X || raw.forms.Y || null;
+  if (raw.forms) return raw.forms[resolveMegaFormKey(raw, formKey)] || null;
   return raw;
 }
 
@@ -2616,7 +2686,7 @@ function recalcMegaStats(poke, base) {
 function getMegaPreviewStatsForBoxPokemon(p, formKey) {
   const raw = p && MEGA_EVOLUTION_DATA[p.speciesId];
   if (!raw) return null;
-  const data = raw.forms ? (raw.forms[formKey === 'Y' ? 'Y' : 'X']) : raw;
+  const data = raw.forms ? (raw.forms[resolveMegaFormKey(raw, formKey)]) : raw;
   if (!data) return null;
   const pts = p.evPoints || {};
   const stats = {};
@@ -2636,7 +2706,7 @@ function getMegaPreviewStatsForBoxPokemon(p, formKey) {
 function getMegaPreviewInfo(poke) {
   const raw = poke && MEGA_EVOLUTION_DATA[poke.speciesId];
   if (!raw) return null;
-  const data = raw.forms ? (raw.forms[poke.megaForm === 'Y' ? 'Y' : 'X']) : raw;
+  const data = raw.forms ? (raw.forms[resolveMegaFormKey(raw, poke.megaForm)]) : raw;
   if (!data) return null;
   const stats = {
     hp: poke.stats.hp,
@@ -2663,7 +2733,7 @@ function megaEvolve(poke) {
   // X/Yのフォーム抽選は選出時点（createRandomPokemon）で既に確定しているので、ここでは行わない。
   // 万一（バグ等で）未確定のまま渡ってきた場合の保険としてのみ、ここで抽選する。
   if (raw.forms && !poke.megaForm) {
-    poke.megaForm = rand(1, 2) === 1 ? 'X' : 'Y';
+    poke.megaForm = pickRandomMegaForm(poke.speciesId);
   }
   const data = getMegaEvolutionData(poke);
   poke.megaOriginalSpecies = poke.species;
@@ -2672,6 +2742,9 @@ function megaEvolve(poke) {
     type1: data.type1,
     type2: data.type2,
     baseStats: data.baseStats,
+    // メガ後だけ名前が変わる特別枠：メガ用データに "name" があればメガシンカした瞬間にそれへ置き換える。
+    // （speciesは複製なので元の名前は megaOriginalSpecies に残り、メガ解除時に自動で戻る。メガ前は一切変わらない）
+    name: data.name || poke.species.name,
   });
   poke.ability = data.ability;
   recalcMegaStats(poke, data.baseStats);
@@ -2866,7 +2939,7 @@ function createRandomPokemon(speciesId, level = 100, shinyPercent = 5) {
     // 複数フォームを持つメガシンカ（例：リザードンX/Y）は、選出時点（このポケモンが生成された時点）で
     // 50/50抽選してフォームを確定させる。単一フォームの種族、メガシンカ非対応の種族はnullのまま。
     megaForm: MEGA_EVOLUTION_DATA[speciesId] && MEGA_EVOLUTION_DATA[speciesId].forms
-      ? (rand(1, 2) === 1 ? 'X' : 'Y')
+      ? pickRandomMegaForm(speciesId)
       : null,
     wantsMegaEvolve: false,    // 「メガシンカ」ボタンで予約中かどうか（実際の変身は行動順が来た時）
     // ---- ヨワシ専用：フォルム状態 ----
@@ -3178,7 +3251,7 @@ const KIRU_MOVE_IDS = [1,23,45,68,150,152,168,183,187,247,266,281,32,328,387,389
 const KAMU_MOVE_IDS = [24,25,28,124,61,261,222,284,206,348];
 const HADOU_MOVE_IDS = [504,117,218,334,32,54,112,352,376,394,501];
 const KOBUSHI_MOVE_IDS = [461,62,84,102,106,107,117,122,164,223,226,250,324,327];
-const ENERGY_CHARGE_MOVE_IDS = [66,77,79,83,97,115,127,157,177,184,218,225,294,315,334];
+const ENERGY_CHARGE_MOVE_IDS = [66,77,79,83,97,103,115,127,128,157,169,177,184,207,218,225,294,315,334,510];
 
 const MULTI_HIT_MOVES = {
   461: { maxHits: 5, minHits: 2, fixed: false, powerStep: 0, basePower: 25 },
@@ -5919,7 +5992,8 @@ async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onIm
       logFn('', { megaRing: true, side: poke.side });
       const megaSucceeded = megaEvolve(poke);
       if (megaSucceeded) {
-        logFn(`${poke.species.name}は　メガシンカした！`, {
+        // メガシンカした瞬間のメッセージは変身前の名前で出す（直後から特別名に変わる）
+        logFn(`${(poke.megaOriginalSpecies || poke.species).name}は　メガシンカした！`, {
           megaEvolve: true,
           side: poke.side,
           hpSnapshot: poke.currentHp,
