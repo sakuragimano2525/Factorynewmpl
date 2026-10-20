@@ -1117,6 +1117,12 @@ html,body{
   transition: opacity .35s ease;
 }
 .weather-fx-layer.show{ opacity:1; }
+/* 天候演出：ポケモンの「前」に重ねる層（雨粒・雪・砂・色味補正など）。canvasは天候エンジンが生成する */
+.weather-fx-front{
+  position:absolute; inset:0;
+  pointer-events:none;
+  overflow:hidden;
+}
 
 /* ================= 専用大技エフェクト（インフェルノ/メイルストローム/イルミンスール） ================= */
 .special-fx-layer{
@@ -7410,6 +7416,9 @@ linear-gradient(165deg,#fff9e8,#f6e6bf 55%,#ebd29c)}
           <div id="self-status"></div>
         </div>
       </div>
+
+      <!-- 天候演出（手前側）：ポケモン・HUDより前、メッセージより後ろ -->
+      <div class="weather-fx-front" id="weather-fx-front"></div>
 
       <div class="msg-toast" id="msg-panel"><span class="msg-line" id="msg-line"></span></div>
 
