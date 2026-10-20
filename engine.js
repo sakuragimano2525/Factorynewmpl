@@ -1201,7 +1201,7 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 70,
       "atk": 170,
       "def": 90,
-      "spa": 35,
+      "spa": 45,
       "spd": 80,
       "spe": 125
     }
@@ -2370,14 +2370,14 @@ const MEGA_EVOLUTION_DATA = {
   "1024": {
     "type1": "fighting",
     "type2": "steel",
-    "ability": 68,
+    "ability": 4,
     "baseStats": {
       "hp": 70,
-      "atk": 70,
+      "atk": 50,
       "def": 100,
-      "spa": 125,
-      "spd": 90,
-      "spe": 120
+      "spa": 145,
+      "spd": 170,
+      "spe": 40
     }
   },
   "1025": {
@@ -2576,15 +2576,15 @@ const MEGA_EVOLUTION_DATA = {
 // 対戦中の表記は「Zガブリアス」のように頭にZが付きます（Mフォームは何も付きません）。
 const MEGA_Z_EVOLUTION_DATA = {
   "41": {
-    "type1": "dragon",
-    "type2": null,
-    "ability": 19,
+    "type1": "dark",
+    "type2": "ghost",
+    "ability": 86,
     "baseStats": {
-      "hp": 108,
-      "atk": 150,
-      "def": 85,
-      "spa": 171,
-      "spd": 85,
+      "hp": 70,
+      "atk": 164,
+      "def": 80,
+      "spa": 35,
+      "spd": 80,
       "spe": 151
     }
   },
