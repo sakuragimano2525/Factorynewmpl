@@ -3229,7 +3229,7 @@ const ABILITY = {
   ORIGAMI_TSUKI: 155, // おりがみつき（オリジナル）：自分が場に出るたび、相手の攻撃と特攻の実数値を入れ替える
   SHINKIROU: 156,     // しんきろう（オリジナル）：技4つ目のタイプが技1つ目と同じタイプになり、威力1.2倍
   NOTENKI: 157,       // ノーてんき：場にいる間、天候の効果を無効化する（天候自体は変わる）
-  JINGLE_BELL: 158,   // ジングルベール（オリジナル）：手持ちのジングルベール持ち1匹目で1.4倍、2匹目以降は1匹ごとに+0.4。こおりタイプ技の攻撃/特攻に乗る
+  JINGLE_BELL: 158,   // ジングルベール（オリジナル）：手持ちの「こおりタイプorジングルベール持ち」が1匹で1.4倍、以降1匹ごとに+0.4（3匹で2.2倍）。手持ち全員の攻撃・特攻に乗る（瀕死でも有効）
 };
 
 const KIKENYOCHI_ABILITIES = [ABILITY.KIKIKAIHI, ABILITY.KIKENYOCHI_2];
@@ -3711,16 +3711,19 @@ function isOppSpaHigherThanSelf(attacker, defender) {
   return oppSpa > selfSpa;
 }
 
-// ジングルベール：攻撃側の手持ち全体のジングルベール持ちの数から、こおり技の攻撃・特攻倍率を求める。
-// 1匹=1.4倍、2匹目以降は1匹ごとに+0.4（3匹で2.2倍）。ログは出さない。
-// かがくへんかガス中は特性が無効なので倍率なし。チーム参照が無い場合は攻撃側本人のみで判定する。
-function getJingleBellMult(attacker) {
+// ジングルベール：手持ちにジングルベール持ちがいる（瀕死でも可）場合、手持ち全員の攻撃・特攻が上がる。
+// 手持ちの「こおりタイプ or ジングルベール持ち」の数（1匹で何度も数えない）に応じて、
+// 1匹=1.4倍、2匹=1.8倍、3匹=2.2倍（1匹ごとに+0.4）。ログは出さない。
+// かがくへんかガス中は特性が無効なので倍率なし。チーム参照が無い場合は本人のみで判定する。
+function getJingleBellMult(poke) {
   if (battleField.chemicalGasActive) return 1.0;
-  const team = attacker.side === 'player' ? battleField.playerTeam : battleField.cpuTeam;
-  let count = Array.isArray(team)
-    ? team.filter((p) => p && p.ability === ABILITY.JINGLE_BELL).length
-    : 0;
-  if (count === 0 && attacker.ability === ABILITY.JINGLE_BELL) count = 1;
+  const rawTeam = poke.side === 'player' ? battleField.playerTeam : battleField.cpuTeam;
+  const team = Array.isArray(rawTeam) && rawTeam.length > 0 ? rawTeam : [poke];
+  const members = team.filter(Boolean);
+  if (!members.some((p) => p.ability === ABILITY.JINGLE_BELL)) return 1.0;
+  const count = members.filter((p) =>
+    p.ability === ABILITY.JINGLE_BELL || getEffectiveTypes(p).includes('ice')
+  ).length;
   if (count <= 0) return 1.0;
   return 1.4 + 0.4 * (count - 1);
 }
@@ -3875,9 +3878,12 @@ function calcDamage(attacker, defender, move, logFn) {
       if (logFn) logFn(`${attacker.species.name}の${abilityJp(attacker.ability)}が発動！${isAtkStat ? '攻撃' : '特攻'}が1.5倍になった！`);
     }
   }
-  // ジングルベール：手持ちのジングルベール持ちの数に応じて、こおりタイプ技の攻撃・特攻が上がる（ログなし）
-  if (move.type === 'ice' && move.damageFormula !== 'oppAtkVsOppDef' && move.damageFormula !== 'oppSpaVsOppSpd') {
-    effAtk *= getJingleBellMult(attacker);
+  // ジングルベール：手持ち全員の攻撃・特攻ステータスが上がる（ログなし）。
+  // 参照するステータスの持ち主の手持ちで判定する（イカサマ等は相手のステータス、ボディプレス系は防御なので対象外）。
+  if (move.damageFormula !== 'selfDefVsOppDef') {
+    const jingleOwner = (move.damageFormula === 'oppAtkVsOppDef' || move.damageFormula === 'oppSpaVsOppSpd')
+      ? defender : attacker;
+    effAtk *= getJingleBellMult(jingleOwner);
   }
   if (defender.ability === ABILITY.FUSHIGINA_UROKO && hasMajorStatus(defender) && isDefDef) {
     if (!battleField.chemicalGasActive || defender.ability === ABILITY.KAGAKUHENKAGASU) effDef *= 1.5;
