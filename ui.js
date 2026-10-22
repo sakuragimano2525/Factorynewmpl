@@ -1029,7 +1029,12 @@ const MenuBgm = (() => {
     9: './16.mp3',      // チェリーベリーメリー
     10: './pokerie.mp3', // ポケリエ
     11: './hime.mp3',    // スワンプリンセス
-    12: './kaho.mp3'     // ラビットフラワー
+    12: './kaho.mp3',    // ラビットフラワー
+    14: './hihumi.mp3',  // ライトブラウン
+    15: './airi.mp3',    // チョコミント
+    16: './paper.mp3',   // スーパーシール
+    17: './maho.mp3',    // チェリーガーデン
+    18: './maho.mp3'     // ブルーシェリー
   };
   function desiredSrc() {
     let sel = 0;
@@ -3469,6 +3474,36 @@ const WeatherCanvasFX = (function () {
     [s.back, s.front, s.gradeEl].forEach((el) => { if (el && el.parentNode) el.parentNode.removeChild(el); });
   }
 
+  /* ---- iPhone / iPad 対応：mix-blend-mode を使わない ----
+     iOS(WebKit)では、色味補正レイヤーの mix-blend-mode:multiply が背景と正しく合成されず、
+     淡い白・水色の膜がそのまま被さって「霧」に見えてしまう。
+     iOSでは blend を一切使わず、通常合成（rgba）で同等の色味に換算したレイヤーに置き換える。
+     Android / PC など、blend が正常に効く環境の見た目は今まで通り。 */
+  const NO_BLEND = (function () {
+    try {
+      const ua = navigator.userAgent || '';
+      if (/iP(hone|ad|od)/.test(ua)) return true;
+      // iPadOS はデスクトップ表示だと Macintosh を名乗るため、タッチ有無で判別する
+      if (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1) return true;
+    } catch (e) {}
+    return false;
+  })();
+
+  // multiply（色C・不透明度a）を、通常合成の rgba 重ねで近似する。
+  // multiplyの係数 m = 1 - a + a*C/255 。いちばん暗くなるチャンネルぶんを黒の薄膜で、
+  // 残りのチャンネル差を色味として足す。明るい背景（約210）を基準に換算。
+  function multiplyToNormal(gradient, a) {
+    const BASE = 210;
+    return gradient.replace(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/g, (_, r, g, b) => {
+      const m = [r, g, b].map((v) => 1 - a + a * (v / 255));
+      const mn = Math.min(m[0], m[1], m[2]);
+      const alpha = 1 - mn;
+      if (alpha < 0.004) return 'rgba(0,0,0,0)';
+      const k = m.map((mc) => clamp(Math.round(BASE * (mc - mn) / alpha), 0, 255));
+      return `rgba(${k[0]},${k[1]},${k[2]},${alpha.toFixed(3)})`;
+    });
+  }
+
   function layerCanvas(parent, W, H, dpr, blend) {
     const c = document.createElement('canvas');
     c.width = Math.round(W * dpr); c.height = Math.round(H * dpr);
@@ -3498,7 +3533,7 @@ const WeatherCanvasFX = (function () {
     B.restore(); F.restore();
     s.back.style.opacity = f.toFixed(3);
     s.front.style.opacity = f.toFixed(3);
-    s.gradeEl.style.opacity = (s.scene.gradeAlpha * f).toFixed(3);
+    s.gradeEl.style.opacity = ((s.gradeBaked ? 1 : s.scene.gradeAlpha) * f).toFixed(3);
     if (t >= s.T + 0.05) stop();
   }
 
@@ -3528,22 +3563,28 @@ const WeatherCanvasFX = (function () {
         if (W * H * dpr * dpr > maxPx) dpr = Math.sqrt(maxPx / (W * H));
         const reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-        const bk = layerCanvas(backLayer, W, H, dpr, scene.blend.back);
+        const useBlend = !NO_BLEND;
+        const bk = layerCanvas(backLayer, W, H, dpr, useBlend ? scene.blend.back : '');
         const gradeEl = document.createElement('div');
         gradeEl.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;opacity:0;';
         frontLayer.appendChild(gradeEl);
-        const fr = layerCanvas(frontLayer, W, H, dpr, scene.blend.front);
+        const fr = layerCanvas(frontLayer, W, H, dpr, useBlend ? scene.blend.front : '');
         if (!bk || !fr) { if (bk) bk.c.remove(); gradeEl.remove(); if (fr) fr.c.remove(); return false; }
 
         S = {
           key, scene, W, H, dpr, U: clamp(Math.sqrt(W * H) / 520, 0.75, 1.7), q: 1, reduce,
           T: (totalMs || 2000) / 1000, t: 0, t0: -1, last: 0, raf: 0, manual: !!(opts && opts.manual),
-          back: bk.c, B: bk.x, front: fr.c, F: fr.x, gradeEl, d: null,
+          back: bk.c, B: bk.x, front: fr.c, F: fr.x, gradeEl, d: null, gradeBaked: !useBlend,
           frames: 0, acc: 0, n: 0, qDone: false,
         };
         scene.init(S);
-        gradeEl.style.background = scene.grade(S);
-        if (scene.blend.grade) gradeEl.style.mixBlendMode = scene.blend.grade;
+        if (useBlend) {
+          gradeEl.style.background = scene.grade(S);
+          if (scene.blend.grade) gradeEl.style.mixBlendMode = scene.blend.grade;
+        } else {
+          // iOS：multiply を通常合成に換算（不透明度は色に織り込み済み）
+          gradeEl.style.background = multiplyToNormal(scene.grade(S), scene.gradeAlpha);
+        }
         if (!S.manual) S.raf = requestAnimationFrame(tick);
         return true;
       } catch (e) {
@@ -12371,10 +12412,11 @@ window.addEventListener('pageshow', () => sbRecoverBoxImages());
 
 // ===== 壁紙（ホームテーマ）：各50ディスクで解放。選択中のテーマは #screen-title の data-theme に反映（0=デフォルトは属性なし） =====
 const WP_PRICE = 50;
-const WP_NAMES = ['デフォルト','ブルーサイダー','チェリーピンク','ユニコーンパープル','ドリーミングバード','ナズナグリーン','アルカナカラー','シャドウカラー','マイリトルハート','チェリーメリーベリー','ポケリエ','スワンプリンセス','ラビットフラワー','ランダム'];
+const WP_NAMES = ['デフォルト','ブルーサイダー','チェリーピンク','ユニコーンパープル','ドリーミングバード','ナズナグリーン','アルカナカラー','シャドウカラー','マイリトルハート','チェリーメリーベリー','ポケリエ','スワンプリンセス','ラビットフラワー','ランダム','ライトブラウン','チョコミント','スーパーシール','チェリーガーデン','ブルーシェリー'];
 const WP_RANDOM = 13; // 無料。ホームに戻るたび、持っているテーマ（デフォルトを除く）からランダムに切り替わる
-// 保存データ互換のため番号は変えず、表示順だけ「ポケリエ(10)」を最後にする
-const WP_ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 10, 13];
+// 保存データ互換のため既存の番号は変えず、表示順だけ並べ替える（ランダムは必ず最後）
+// 14=ライトブラウン 15=チョコミント 16=スーパーシール 17=チェリーガーデン 18=ブルーシェリー
+const WP_ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 14, 15, 10, 16, 17, 18, 13];
 const WP_OWNED_KEY = 'pokeriere_wp_owned_v1';
 const WP_SEL_KEY = 'pokeriere_wp_sel_v1';
 let wpOwned = new Set([0]);
