@@ -53,9 +53,13 @@ html,body{
   width:100%; height:100%;
   display:flex; align-items:center; justify-content:center;
   opacity:0; pointer-events:none;
-  transition: opacity .35s ease;
+  /* 非表示の画面は、フェードアウト(.35s)が終わってから visibility:hidden にする。
+     透明なだけの全画面レイヤーをiPhoneが描画・保持し続けてメモリを食い、ページが落ちて
+     再読み込みされるのを防ぐ（見た目・解像度は変わらない） */
+  visibility:hidden;
+  transition: opacity .35s ease, visibility 0s linear .35s;
 }
-.screen.active{ opacity:1; pointer-events:auto; }
+.screen.active{ opacity:1; visibility:visible; pointer-events:auto; transition: opacity .35s ease, visibility 0s linear 0s; }
 
 #rotate-hint{
   position:fixed; inset:0; z-index:9999;

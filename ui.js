@@ -1235,6 +1235,12 @@ function showScreen(name) {
   document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
   $('screen-' + name).classList.add('active');
   state.screen = name;
+  // ボックス画面を離れる間は、ボックスの画像を手放してメモリを空ける（トレーニング画面などへ移る時にiPhoneが
+  // メモリ不足でページごと再読み込みするのを防ぐ）。戻ってきたら読み込み直す。
+  try {
+    if (name !== 'serious') sbBoxReleaseImages(false);
+    else sbBoxLoadImages();
+  } catch (e) { /* 初期化前などは無視 */ }
   // ダンジョン画面以外へ移ったら、ダンジョン用BGM（dungeon.mp3 / dungeon2.mp3）は必ず止める
   if (window.DungeonBgm && name !== 'dungeon-home' && name !== 'dungeon-map') window.DungeonBgm.stop();
   checkOrientation();
@@ -9942,13 +9948,41 @@ function sbBoxLoadImages() {
   // 保険：見える範囲の判定が働かなかった場合でも、少し後に残りを小分けで必ず読み込む
   clearTimeout(sbBoxLoadImages._t);
   sbBoxLoadImages._t = setTimeout(() => {
-    const rest = Array.from(grid.querySelectorAll('img[data-src]'));
+    // 全300枚ではなく「見えている付近」だけを拾う（全部読み込むとiPhoneでメモリ不足になり、ページが再読み込みされる）
+    const gr = grid.getBoundingClientRect();
+    if (gr.height === 0) return;   // 非表示中は何もしない
+    const rest = Array.from(grid.querySelectorAll('img[data-src]')).filter((im) => {
+      const r = im.getBoundingClientRect();
+      return r.bottom > gr.top - 400 && r.top < gr.bottom + 400;
+    });
     const pump = () => {
       rest.splice(0, 16).forEach(sbBoxLoadOne);
       if (rest.length) setTimeout(pump, 120);
     };
     pump();
   }, 1500);
+}
+
+// ボックスの画像を手放してメモリを空ける（画像ファイルそのものは変えないので解像度は同じ）。
+// onlyFar=true：スクロールで遠く離れた分だけ手放す／false：すべて手放す（ボックス画面を離れる時）。
+// 手放した画像は data-src に戻し、見える範囲に来たら sbBoxLoadImages() が読み込み直す。
+function sbBoxReleaseImages(onlyFar) {
+  const grid = document.getElementById('sb-box-grid');
+  if (!grid) return;
+  const gr = grid.getBoundingClientRect();
+  if (onlyFar && gr.height === 0) return;
+  grid.querySelectorAll('img.sb-cell-img[src]').forEach((img) => {
+    if (!(img.complete && img.naturalWidth > 0)) return;   // 読み込み中・失敗中の画像（再試行処理）には触らない
+    if (onlyFar) {
+      const r = img.getBoundingClientRect();
+      if (r.bottom > gr.top - 900 && r.top < gr.bottom + 900) return;
+    }
+    const src = (img.getAttribute('src') || '').split('?')[0];
+    if (!src) return;
+    img.dataset.src = src;
+    img.removeAttribute('src');
+    delete img.dataset.obs;
+  });
 }
 
 // ボックス内で「読み込み切れていない／壊れた」画像だけを再取得する（真っ白・歯抜け対策）。
@@ -10387,6 +10421,11 @@ function sbRefreshLockState() {
 })();
 
 // タップはグリッドに1つだけ付ける（イベント委譲）
+// ボックスをスクロールして止まったら、画面から遠く離れた画像を手放し、近づいた分を読み込む。
+$('sb-box-grid').addEventListener('scroll', () => {
+  clearTimeout(sbBoxReleaseImages._t);
+  sbBoxReleaseImages._t = setTimeout(() => { sbBoxReleaseImages(true); sbBoxLoadImages(); }, 300);
+}, { passive: true });
 $('sb-box-grid').addEventListener('click', (e) => {
   const cell = e.target.closest('[data-box-idx]');
   if (!cell) return;
