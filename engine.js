@@ -473,6 +473,7 @@ const POKEDEX_CUSTOM_ORDER = [
   575, // No.429 ムウマージ
   148, // No.430 ドンカラス
   510, // No.437 ドータクン
+  1079,
   240, // No.442 ミカルゲ
   329, // No.445 ガブリアス
   303, // No.450 カバルドン
@@ -691,6 +692,8 @@ const POKEDEX_CUSTOM_ORDER = [
 1076,
 1077,
 1078,
+1080,
+1081,
   1990, // ウーズメルス
   2000, // アリアスカル
   1057,
@@ -1048,6 +1051,28 @@ function updateAineechuForm(poke, logFn) {
       confuseSnapshot: poke.confuseTurns || 0,
     });
   }
+  return true;
+}
+
+// ウーズメルス(ID1990)：フォルムチェンジ（めざめすがた）を元の姿に戻す。
+// 同じ個体オブジェクトが次のバトルにも持ち越される（ファクトリー風の編成・選出画面）ため、
+// バトル開始時・選出画面に戻る時にここで必ず元に戻す。
+// 最大HP・実数値（A/B/C/D/S）・フォルム状態を、フォルムチェンジ前の状態へ復元する。
+function resetAineechuForm(poke) {
+  if (!poke || poke.speciesId !== AINEECHU_SPECIES_ID) return false;
+  if (!poke.aineechuFormed && poke.formState !== 'awakened') return false;
+
+  if (poke.aineechuFormed) {
+    // updateAineechuForm で加算した分だけ最大HPを戻す（計算式は同じ）。
+    const baseHpDiff = AINEECHU_FORM_BASE_STATS.hp - poke.species.baseStats.hp;
+    const hpGain = Math.floor(baseHpDiff * 2 * poke.level / 100);
+    poke.maxHp = Math.max(1, poke.maxHp - hpGain);
+    if (poke.currentHp > poke.maxHp) poke.currentHp = poke.maxHp;
+  }
+  poke.aineechuFormed = false;
+  poke.formState = null;
+  // 元の種族値で実数値を再計算する。
+  recalcMegaStats(poke, poke.species.baseStats);
   return true;
 }
 
@@ -2918,6 +2943,45 @@ function getRandomBattleShinyPercent() {
   return (typeof window !== 'undefined' && window.debugShinyPercent) || 5;
 }
 
+// しんきろう（ID156：技4つ目が技1つ目と同じタイプになる）持ち（メガシンカ後にしんきろうになる場合も含む）の
+// 技の並びを整える。4つ目が変化技だと効果が活きないため、
+//  ・変化技は最大1つまで（2つ目以降は、まだ持っていない攻撃技に置き換える）
+//  ・変化技は3つ目に置き、1・2・4つ目は攻撃技にする
+// 攻撃技同士の相対順は変えない。攻撃技が足りない場合は空き枠を作らず詰める。
+function arrangeShinkirouMoves(poke) {
+  if (!poke || !Array.isArray(poke.moves) || poke.moves.length === 0) return;
+  let hasMirage = poke.ability === ABILITY.SHINKIROU;
+  if (!hasMirage) {
+    const mega = getMegaEvolutionData(poke);
+    hasMirage = !!mega && mega.ability === ABILITY.SHINKIROU;
+  }
+  if (!hasMirage) return;
+
+  const isStatus = (m) => m && m.category === 'status';
+  const statusMoves = poke.moves.filter(isStatus);
+  let damageMoves = poke.moves.filter((m) => m && !isStatus(m));
+  if (statusMoves.length === 0) return; // 変化技が無ければそのまま
+
+  // 変化技は最初の1つだけ残す。外した分は、未所持の攻撃技で埋める。
+  const keepStatus = statusMoves[0];
+  const need = Math.min(4, poke.moves.length) - 1 - damageMoves.length;
+  if (need > 0) {
+    const have = new Set(poke.moves.map((m) => m.id));
+    const pool = levelUpMoveIds(poke.species).filter((id) => {
+      const mv = GAME_DATA.moves[id];
+      return mv && mv.category !== 'status' && !have.has(id) &&
+        ((mv.power ?? 0) > 50 || LOW_POWER_EXCEPTION_MOVE_IDS.includes(id));
+    });
+    for (let n = 0; n < need && pool.length > 0; n++) {
+      const id = pool.splice(rand(0, pool.length - 1), 1)[0];
+      damageMoves.push(buildMoveObject(id));
+    }
+  }
+
+  // 並び：攻撃, 攻撃, 変化(3つ目), 攻撃(4つ目)。攻撃技が1つだけなら 攻撃, 変化。
+  poke.moves = [...damageMoves.slice(0, 2), keepStatus, ...damageMoves.slice(2)];
+}
+
 function createRandomPokemon(speciesId, level = 100, shinyPercent = 5) {
   const species = GAME_DATA.species[speciesId];
   const nature = rand(1, 24);
@@ -2948,7 +3012,7 @@ function createRandomPokemon(speciesId, level = 100, shinyPercent = 5) {
 
   const shiny = rand(1, 100) <= shinyPercent; // 通常5%の確率で色違い（ランダムバトルはデバッグIDで変動）
 
-  return {
+  const poke = {
     speciesId, species, level, nature, ability, shiny,
     evs, iv, stats, maxHp: stats.hp, currentHp: stats.hp,
     moves,
@@ -3003,6 +3067,8 @@ function createRandomPokemon(speciesId, level = 100, shinyPercent = 5) {
     // 一度trueになったら戦闘終了までfalseに戻らない（片道のフォルムチェンジ）。
     aineechuFormed: false,
   };
+  arrangeShinkirouMoves(poke); // しんきろう持ちは変化技を最大1つ・3つ目に置く
+  return poke;
 }
 
 function drawRandomTeam(count = 3, level = 100) {
@@ -6565,6 +6631,12 @@ function chooseTrainerAttack(attacker, defender, usableMoves, opponentAction) {
   // アイニーチュ(ID1990)専用：こらえる(506)を最優先で使わせる。
   // プレイヤーが攻撃技を選んでいる時は最優先、変化技を選んでいる時は使わせない(-999)。
   if (attacker.speciesId === AINEECHU_SPECIES_ID) {
+    // フォルムチェンジ後はこらえるを使う意味がないので、他に選べる技があれば候補から外す。
+    // （こらえるしか使える技がない場合のみ、仕方なく残す）
+    if (attacker.aineechuFormed) {
+      const withoutEndure = usableMoves.filter((m) => m.id !== 506);
+      if (withoutEndure.length > 0) usableMoves = withoutEndure;
+    }
     const endureMove = usableMoves.find((m) => m.id === 506);
     if (endureMove) {
       const playerChoseStatusMove = !!(opponentAction && opponentAction.type === 'move' &&

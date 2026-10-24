@@ -4884,15 +4884,16 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
 }
 /* 虹の背景：ゆっくり流れる大きなグラデーション */
 #screen-training .tr-bg{
-  position:absolute; inset:-20%; z-index:0; pointer-events:none;
+  position:absolute; inset:0; z-index:0; pointer-events:none;
+  /* iPhone Safariのメモリ不足対策：巨大なblur＋常時回転をやめ、静的なグラデーションにした */
   background:
-    conic-gradient(from 210deg at 30% 40%,
-      #ff9aa8, #ffc27a, #fff09a, #a8f0b0, #8fe6ff, #9aa8ff, #d6a0ff, #ff9aa8);
-  filter: blur(46px) saturate(1.08);
-  opacity:.92;
-  animation: trBgSpin 38s linear infinite;
+    radial-gradient(ellipse at 18% 22%, #ffb3c0 0%, rgba(255,179,192,0) 58%),
+    radial-gradient(ellipse at 85% 18%, #a8e8ff 0%, rgba(168,232,255,0) 58%),
+    radial-gradient(ellipse at 78% 82%, #d6b0ff 0%, rgba(214,176,255,0) 58%),
+    radial-gradient(ellipse at 22% 85%, #fff3a8 0%, rgba(255,243,168,0) 58%),
+    #e9e4ff;
 }
-@keyframes trBgSpin{ to{ transform: rotate(360deg); } }
+
 /* 白いベールで全体を明るく・虹をやわらかく */
 #screen-training .tr-veil{
   position:absolute; inset:0; z-index:0; pointer-events:none;
@@ -4987,7 +4988,6 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
   border-radius:6px; overflow:hidden;
   background:var(--tr-panel-bg);
   box-shadow:0 4px 12px rgba(70,55,160,0.22);
-  backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
 }
 .tr-panel.grow{ flex:1 1 auto; }
 .tr-panel-head{

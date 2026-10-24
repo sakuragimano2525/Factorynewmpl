@@ -764,7 +764,14 @@ const AssetPreloader = (() => {
     for (let i = 1; i <= 50; i++) preloadImage(`./map${i}.png`);
   }
 
+  // iPhone/iPad(Safari)は1ページで使えるメモリの上限が厳しい。全種族・全マップ画像を
+  // 保持し続けるとメモリが膨らみ、トレーニング画面などで「問題が繰り返し起きました」になるため、
+  // iOSでは重い事前ロードを行わず、必要になった時に読み込む。
+  const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
   function preloadAll() {
+    if (IS_IOS) { preloadTypeIcons(); preloadAudioAssets(); return; }
     preloadTypeIcons();
     preloadAudioAssets();
     preloadMapBackgrounds();
@@ -6054,6 +6061,8 @@ function runReplaceStep(incoming, doneResolve) {
 
 /* ---------------- Battle setup ---------------- */
 function resetPokeForBattle(poke) {
+  // ウーズメルスのフォルムチェンジ（最大HP増加含む）を元に戻してからHPを全回復する。
+  resetAineechuForm(poke);
   poke.currentHp = poke.maxHp;
   poke.status = 0;
   poke.seenInBattle = false; // 対人チーム戦：このバトルで一度でも場に出したかどうか（毎戦リセット）
@@ -6991,23 +7000,13 @@ function startMultiplayerPick() {
 }
 
 // 対人戦「ランダム」専用：特性が「しんきろう」（メガシンカ後にしんきろうになる場合も含む）のポケモンは、
-// 変化技を技リストの先頭（1つ目）に寄せ、攻撃技が4つ目に来るようにする。
+// 変化技を最大1つ・3つ目に置き、攻撃技が4つ目に来るようにする。
 // （しんきろうは「4つ目の技が1つ目の技と同じタイプになる」特性のため、4つ目が変化技だと
 //   効果が活きない。通常は変化技が後ろに寄せられるので、ここで並びを逆にする）
 // 攻撃技同士・変化技同士の相対順は変えない。空き枠(0)は最後に詰める。
 function arrangeShinkirouMovesForRandom(poke) {
-  if (!poke || !Array.isArray(poke.moves) || typeof ABILITY === 'undefined') return;
-  let hasMirage = poke.ability === ABILITY.SHINKIROU;
-  if (!hasMirage && typeof getMegaEvolutionData === 'function') {
-    const mega = getMegaEvolutionData(poke);
-    hasMirage = !!mega && mega.ability === ABILITY.SHINKIROU;
-  }
-  if (!hasMirage) return;
-  const isStatus = (m) => m && m.category === 'status';
-  const statusMoves = poke.moves.filter(isStatus);
-  if (statusMoves.length === 0) return; // 変化技が無ければそのまま
-  const others = poke.moves.filter((m) => m && !isStatus(m));
-  poke.moves = [...statusMoves, ...others];
+  // 変化技は最大1つ・3つ目に置く（engine.js の arrangeShinkirouMoves に一本化）
+  if (typeof arrangeShinkirouMoves === 'function') arrangeShinkirouMoves(poke);
 }
 
 /* =========================================================
@@ -9169,6 +9168,8 @@ const SHOP_ITEMS = {
 1076:50,
 1077:50,
 1078:50,
+1080:100,
+1081:100,
 1057:50, // オリガミ（シークレットコードでも解放可能。購入するとコード解放と同じ扱いになる）
 };
 
@@ -10990,6 +10991,8 @@ function npcPickRender() {
 // sbHasInvalidLoadout（本来覚えない技を持っている＝❌判定）に引っかかり、次の選出へ進めなくなる。
 function demegaNpcPickSource() {
   npcTeamState.source.forEach((p) => {
+    // ウーズメルスのフォルムチェンジをバトル終了後に元へ戻す（選出画面に戻った時点でリセット）。
+    resetAineechuForm(p);
     if (p.isMega && p.megaOriginalSpecies) {
       p.species = p.megaOriginalSpecies;
       p.ability = p.megaOriginalAbility;
@@ -11421,7 +11424,7 @@ function trBuildSparkles() {
   const box = $('tr-sparkles');
   if (!box || box.childElementCount) return;
   let html = '';
-  for (let n = 0; n < 26; n++) {
+  for (let n = 0; n < 10; n++) {
     const x = Math.round(Math.random() * 100);
     const y = Math.round(Math.random() * 100);
     const d = (Math.random() * 3.6).toFixed(2);
