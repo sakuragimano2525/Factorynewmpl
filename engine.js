@@ -84,7 +84,7 @@ const BOSS_ONLY_SPECIES_ID = BOSS_ONLY_SPECIES_IDS[0]; // 後方互換用（メ�
 // 乱入で倒された場合は他の乱入ボスと全く同じ扱い＝intrusion_実績解除・メガ解放候補・以後乱入に出ない。
 const INTRUSION_BOSS_IDS = [
   171, 32,36, 91, 322, 347, 360, 1009, 1023, 1024, 1025, 1026, 476, 1030,
-  1032, 1034, 1037, 1038, 1039,1054,1057,
+  1032, 1034, 1037, 1038, 1039,1054,1057,1082,1083,240,
 ];
 function intrusionAchievementId(speciesId) { return 'intrusion_' + speciesId; }
 
@@ -585,6 +585,7 @@ const POKEDEX_CUSTOM_ORDER = [
   1046,
   458, // No.832 バイウールー
   179, // No.834 カジリガメ
+1082,
   115, // No.849 ストリンダー
   116, // No.849 ストリンダー
   169, // No.863 ニャイキング
@@ -694,6 +695,10 @@ const POKEDEX_CUSTOM_ORDER = [
 1078,
 1080,
 1081,
+1083,
+1084,
+1085,
+1086,
   1990, // ウーズメルス
   2000, // アリアスカル
   1057,
@@ -1623,6 +1628,19 @@ const MEGA_EVOLUTION_DATA = {
       "spa": 10,
       "spd": 80,
       "spe": 50
+    }
+  },
+  "240": {
+    "type1": "ghost",
+    "type2": "dark",
+    "ability": 121,
+    "baseStats": {
+      "hp": 150,
+      "atk": 90,
+      "def": 150,
+      "spa": 90,
+      "spd": 150,
+      "spe": 0
     }
   },
   "242": {
@@ -2585,6 +2603,32 @@ const MEGA_EVOLUTION_DATA = {
       "spa": 160,
       "spd": 70,
       "spe": 112
+    }
+  },
+  "1082": {
+    "type1": "flying",
+    "type2": "steel",
+    "ability": 141,
+    "baseStats": {
+      "hp": 98,
+      "atk": 145,
+      "def": 130,
+      "spa": 20,
+      "spd": 90,
+      "spe": 130
+    }
+  },
+  "1083": {
+    "type1": "fire",
+    "type2": "steel",
+    "ability": 68,
+    "baseStats": {
+      "hp": 108,
+      "atk": 45,
+      "def": 50,
+      "spa": 177,
+      "spd": 105,
+      "spe": 165
     }
   }
 }
