@@ -1177,9 +1177,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 69,
     "baseStats": {
       "hp": 80,
-      "atk": 70,
+      "atk": 30,
       "def": 80,
-      "spa": 159,
+      "spa": 199,
       "spd": 80,
       "spe": 121
     }
@@ -2026,11 +2026,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 145,
     "baseStats": {
       "hp": 75,
-      "atk": 145,
+      "atk": 180,
       "def": 110,
       "spa": 50,
       "spd": 100,
-      "spe": 95
+      "spe": 100
     }
   },
   "451": {
@@ -2468,9 +2468,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 82,
     "baseStats": {
       "hp": 85,
-      "atk": 155,
+      "atk": 160,
       "def": 120,
-      "spa": 69,
+      "spa": 64,
       "spd": 93,
       "spe": 88
     }
@@ -2481,7 +2481,7 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 75,
     "baseStats": {
       "hp": 130,
-      "atk": 150,
+      "atk": 160,
       "def": 75,
       "spa": 70,
       "spd": 110,
@@ -2558,7 +2558,7 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "psychic",
     "ability": 65,
     "baseStats": {
-      "hp": 100,
+      "hp": 110,
       "atk": 112,
       "def": 115,
       "spa": 118,
