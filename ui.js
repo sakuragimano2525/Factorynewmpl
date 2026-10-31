@@ -1232,14 +1232,33 @@ document.addEventListener('click', () => {
 
 /* ---------------- Screen switch ---------------- */
 function showScreen(name) {
-  document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
-  $('screen-' + name).classList.add('active');
+  // 【軽量化】全画面ぶんではなく「いま表示中の画面」だけ外す（不要なDOM書き換えを避ける）
+  const prevScreens = Array.from(document.querySelectorAll('.screen.active'));
+  const nextScreen = $('screen-' + name);
+  prevScreens.forEach((s) => s.classList.remove('active'));
+  nextScreen.classList.add('active');
+  // 【軽量化】切り替えのフェード中だけ、前後2枚の画面をGPUレイヤーに載せる（will-change:opacity）。
+  // フェードの毎フレームで画面全体を描き直さず、最初の1回描くだけで済むのでiPhoneでもスムーズ。
+  // 終わったらすぐ外す（常時載せるとメモリを食うため）。見た目は変わらない。
+  if (!(prevScreens.length === 1 && prevScreens[0] === nextScreen)) {
+    prevScreens.forEach((s) => s.classList.add('fading'));
+    nextScreen.classList.add('fading');
+    clearTimeout(showScreen._fadeT);
+    showScreen._fadeT = setTimeout(() => {
+      document.querySelectorAll('.screen.fading').forEach((s) => s.classList.remove('fading'));
+    }, 450);
+  }
   state.screen = name;
   // ボックス画面を離れる間は、ボックスの画像を手放してメモリを空ける（トレーニング画面などへ移る時にiPhoneが
   // メモリ不足でページごと再読み込みするのを防ぐ）。戻ってきたら読み込み直す。
+  // 【軽量化】画像の解放は、画面が切り替わるフェード(.35s)が終わってからにする（タップ直後の処理を軽くする）
   try {
-    if (name !== 'serious') sbBoxReleaseImages(false);
-    else sbBoxLoadImages();
+    clearTimeout(showScreen._relT);
+    if (name !== 'serious') {
+      showScreen._relT = setTimeout(() => {
+        if (state.screen !== 'serious') { try { sbBoxReleaseImages(false); } catch (e) {} }
+      }, 450);
+    } else sbBoxLoadImages();
   } catch (e) { /* 初期化前などは無視 */ }
   // ダンジョン画面以外へ移ったら、ダンジョン用BGM（dungeon.mp3 / dungeon2.mp3）は必ず止める
   if (window.DungeonBgm && name !== 'dungeon-home' && name !== 'dungeon-map') window.DungeonBgm.stop();
@@ -9731,7 +9750,23 @@ function sbSerializePoke(p) {
   };
 }
 
+// 【軽量化】300匹ぶんのJSON化＋保存は重いので、操作のたびではなく少し待ってまとめて1回だけ行う。
+// 画面を閉じる／裏に回る時は必ずその場で保存する（データは失われない）。
+let sbSaveTimer = null;
 function sbSave() {
+  if (!sbState.built) return;   // まだ何も作っていない状態で空データを上書きしない
+  clearTimeout(sbSaveTimer);
+  sbSaveTimer = setTimeout(sbSaveNow, 500);
+}
+function sbFlushSave() {
+  if (sbSaveTimer === null) return;
+  sbSaveNow();
+}
+window.addEventListener('pagehide', sbFlushSave);
+document.addEventListener('visibilitychange', () => { if (document.hidden) sbFlushSave(); });
+function sbSaveNow() {
+  clearTimeout(sbSaveTimer);
+  sbSaveTimer = null;
   if (!sbState.built) return;   // まだ何も作っていない状態で空データを上書きしない
   try {
     const data = {
@@ -9927,7 +9962,11 @@ function sbBoxLoadOne(img) {
     else if (node.querySelectorAll) node.querySelectorAll('img[data-src]').forEach(load);
   }
   new MutationObserver((muts) => {
-    muts.forEach((m) => m.addedNodes.forEach(scan));
+    muts.forEach((m) => {
+      // 【軽量化】ボックス本体(300マス)の並べ替え・再生成は sbBoxLoadImages が担当するので、ここでは走査しない
+      if (m.target && m.target.id === 'sb-box-grid') return;
+      m.addedNodes.forEach(scan);
+    });
   }).observe(document.documentElement, { childList: true, subtree: true });
   document.querySelectorAll('img[data-src]').forEach(load);
 })();
@@ -10126,6 +10165,7 @@ function sbEnsureSpeciesInBox(speciesId) {
 // 本格バトル編成（ボックス・パーティー1〜20・保存データ）を丸ごと初期化する。
 // 過去の壊れたデータ（保存・セットができなくなる等）が残っている時の救済用（設定のID欄「reset」から呼ばれる）。
 function sbResetAll() {
+  clearTimeout(sbSaveTimer); sbSaveTimer = null;   // 予約済みの保存があれば取り消す（古い編成で上書きしない）
   try { localStorage.removeItem(SB_STORAGE_KEY); } catch (e) { /* プライベートモード等は無視 */ }
   sbState.box = [];
   sbState.selected = null;
@@ -10308,8 +10348,10 @@ function sbRenderBox() {
   sbRenderTypeFilterBtn();
   // 見えている付近の画像を読み込み、少し後に読み込み漏れも拾い直す
   sbBoxLoadImages();
-  setTimeout(sbRecoverBoxImages, 600);
-  setTimeout(sbRecoverBoxImages, 2500);
+  // 【軽量化】タップのたびに溜まらないよう、前回の予約は取り消して最新の1組だけ残す
+  clearTimeout(sbRenderBox._t1); clearTimeout(sbRenderBox._t2);
+  sbRenderBox._t1 = setTimeout(sbRecoverBoxImages, 600);
+  sbRenderBox._t2 = setTimeout(sbRecoverBoxImages, 2500);
 }
 // タイプ絞り込みボタンの見た目を現在の状態に合わせる（設定中はタイプのアイコン＋名前で強調、未設定は「タイプ絞込」）
 function sbRenderTypeFilterBtn() {
@@ -12481,18 +12523,25 @@ function wpPick() {
   const cand = pool.length > 1 ? pool.filter((n) => n !== wpEff) : pool; // 直前と同じテーマは避ける
   wpEff = cand[Math.floor(Math.random() * cand.length)];
 }
-function wpReroll() { if (wpSel !== WP_RANDOM) return; wpPick(); wpApply(); }
+function wpReroll() { if (wpSel !== WP_RANDOM) return; wpPick(); wpApply(true); }
 wpPick();
 
-function wpApply() {
+function wpApply(deferBgm) {
   if (wpSel !== WP_RANDOM) wpEff = wpSel;
   // ホーム＋対戦方法／NPCバトル方法／手持ちポケモン（勝利後の入れ替え含む）画面に壁紙を反映
   ['screen-title', 'screen-multiplayer', 'screen-npc-mode', 'screen-team'].forEach((id) => {
     const t = $(id);
     if (!t) return;
-    if (wpEff) t.setAttribute('data-theme', String(wpEff)); else t.removeAttribute('data-theme');
+    // 【軽量化】同じテーマなら何もしない（無駄なスタイル再計算を避ける）
+    if (wpEff) { if (t.getAttribute('data-theme') !== String(wpEff)) t.setAttribute('data-theme', String(wpEff)); }
+    else if (t.hasAttribute('data-theme')) t.removeAttribute('data-theme');
   });
-  MenuBgm.refresh(); // 壁紙に合わせてメニューBGMを切り替える
+  // 壁紙に合わせてメニューBGMを切り替える。
+  // 【軽量化】ホームへ戻る時（deferBgm）は、新しい曲ファイルの読み込み・デコードが画面遷移と重なってカクつくので、
+  // 遷移が終わってから切り替える（壁紙の見た目・曲の組み合わせは同じ）。
+  clearTimeout(wpApply._bgmT);
+  if (deferBgm) wpApply._bgmT = setTimeout(() => MenuBgm.refresh(), 700);
+  else MenuBgm.refresh();
 }
 function wpSave() {
   try {

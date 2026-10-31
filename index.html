@@ -5,8 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>ポケリエ バトルファクトリー</title>
 <link rel="manifest" href="manifest.json">
+<!-- 【軽量化】フォントは CSS の @import ではなく <link> で読む（CSS全体の読み込みを待たせず、並行して取得できる） -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800;900&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800;900&family=Zen+Maru+Gothic:wght@500;700;900&display=swap');
 
 :root{
   --bg-0:#e6e9ef;
@@ -6751,6 +6754,10 @@ linear-gradient(165deg,#f2fbff,#c9ecfa 50%,#94d3f0);
      タップを受け取り続けていた（対人戦のあと待機部屋の「準備完了」「チームを選ぶ」等が反応しなくなる原因）。 -->
 <style id="fix-hidden-screen-taps">
 .screen:not(.active), .screen:not(.active) *{ pointer-events:none !important; }
+.screen.fading{ will-change:opacity; }
+/* 【軽量化】表示していない画面のアニメーションは止めておく（見えない画面の再描画・スタイル計算を無くす）。
+   表示された時は続きから再開するので、見た目は変わらない */
+.screen:not(.active), .screen:not(.active) *, .screen:not(.active)::before, .screen:not(.active)::after{ animation-play-state:paused !important; }
 </style>
 </head>
 <body>

@@ -706,9 +706,15 @@ const POKEDEX_CUSTOM_ORDER = [
 
 // 与えられた種族IDの配列を、POKEDEX_CUSTOM_ORDER の順に並べ替えて返す（元の配列は変更しない）。
 // リストに無いIDは末尾にID順で並べる。
+let _dexPosCache = null, _dexPosLen = -1;
 function sortByPokedexOrder(ids) {
-  const pos = new Map();
-  POKEDEX_CUSTOM_ORDER.forEach((id, i) => { if (!pos.has(id)) pos.set(id, i); });
+  // 【軽量化】並び順のテーブルは毎回作り直さず使い回す（リストの長さが変わった時だけ作り直す）
+  if (!_dexPosCache || _dexPosLen !== POKEDEX_CUSTOM_ORDER.length) {
+    _dexPosCache = new Map();
+    POKEDEX_CUSTOM_ORDER.forEach((id, i) => { if (!_dexPosCache.has(id)) _dexPosCache.set(id, i); });
+    _dexPosLen = POKEDEX_CUSTOM_ORDER.length;
+  }
+  const pos = _dexPosCache;
   return ids.slice().sort((a, b) => {
     const pa = pos.has(a) ? pos.get(a) : 1000000 + a;
     const pb = pos.has(b) ? pos.get(b) : 1000000 + b;
@@ -4971,14 +4977,23 @@ function isKimariteTriggered(myAction, oppAction) {
 // ---- 優先度計算 ----
 // 天候などで優先度が+1される技（ふゆのひざし・穿星波）も、サイコフィールドの先制無効や
 // ソニックガードの対象になるよう、「補正後の優先度」を基準に判定する。
+// ソニックガード：相手（defender）がこの特性なら、attacker の「優先度+1以上」の技を無効にする。
+// いたずらごころ・はやてのつばさ等で+1になった技も対象。サイコフィールド中は先制自体が消えるので対象外。
+// 相手に向かない自分強化だけの変化技は対象外。
+function sonicGuardBlocks(attacker, defender, move) {
+  if (!attacker || !defender || !move || attacker === defender) return false;
+  if (defender.ability !== ABILITY.SONIC_GUARD) return false;
+  if (isKimariteMove(move)) return false;   // きまりては優先度に関係なく通るので、ソニックガードでも無効にならない
+  if (move.category === 'status' && !(move.oppRank || move.oppStatus)) return false;
+  return effectivePriority(attacker, move) >= 1;
+}
 function effectivePriority(attacker, move, defenderFainted) {
   let p = movePriorityWithWeather(move, attacker);
 
   if (battleField.terrain === 'psychic' && p > 0) return 0;
 
-  if (attacker.ability === ABILITY.SONIC_GUARD && p >= 1) {
-    return -999;
-  }
+  // （ソニックガードは「持ち主の先制を消す」特性ではなく、相手の先制技を無効にする特性。
+  //   無効化の判定は sonicGuardBlocks() で行う。ここでは持ち主自身の優先度には影響しない）
 
   if (move.id === 501 && battleField.terrain === 'electric') {
     p = Math.max(1, p + 1);
@@ -5066,6 +5081,12 @@ function executeMoveCore(attacker, defender, move, logFn, turnCtx) {
   if (defender.protecting && attacker !== defender
       && !HAZARD_MOVE_IDS.includes(move.id) && move.id !== 475 && move.id !== 476) {
     logFn(`${defender.species.name}はまもるので技をうけつけない！`);
+    return;
+  }
+
+  // ---- ソニックガード：相手の優先度+1以上の技を無効にする ----
+  if (sonicGuardBlocks(attacker, defender, move)) {
+    logFn(`${defender.species.name}のソニックガードで　${move.name}は　無効だ！`);
     return;
   }
 
@@ -6798,7 +6819,7 @@ function chooseTrainerAttack(attacker, defender, usableMoves, opponentAction) {
     // サイコフィールド中：優先度+1以上の技は必ず失敗する
     if (!blocked && movePriorityWithWeather(move, attacker, defender) >= 1 && battleField.terrain === 'psychic') blocked = true;
     // ソニックガード：相手がこの特性を持つ場合、優先度+1以上の技は無効
-    if (!blocked && movePriorityWithWeather(move, attacker, defender) >= 1 && defender.ability === ABILITY.SONIC_GUARD) blocked = true;
+    if (!blocked && sonicGuardBlocks(attacker, defender, move)) blocked = true;
 
     if (blocked) {
       scored.push([move, -99, -1]);
