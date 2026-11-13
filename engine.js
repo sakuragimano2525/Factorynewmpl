@@ -1454,6 +1454,45 @@ const MEGA_EVOLUTION_DATA = {
       "spe": 125
     }
   },
+  "104": {
+    "type1": "water",
+    "type2": "fairy",
+    "ability": 107,
+    "baseStats": {
+      "hp": 150,
+      "atk": 10,
+      "def": 175,
+      "spa": 120,
+      "spd": 175,
+      "spe": 25
+    }
+  },
+  "105": {
+    "type1": "electric",
+    "type2": "ground",
+    "ability": 68,
+    "baseStats": {
+      "hp": 70,
+      "atk": 0,
+      "def": 105,
+      "spa": 205,
+      "spd": 115,
+      "spe": 160
+    }
+  },
+  "106": {
+    "type1": "fire",
+    "type2": "dark",
+    "ability": 133,
+    "baseStats": {
+      "hp": 95,
+      "atk": 255,
+      "def": 80,
+      "spa": 30,
+      "spd": 110,
+      "spe": 85
+    }
+  },
   "123": {
     "type1": "steel",
     "type2": "ground",
