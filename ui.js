@@ -3874,7 +3874,10 @@ function playTypeEffect(side, moveType, big) {
 // 専用のフルスクリーン演出。スプライト枠に縛られず戦闘画面全体（battle-field）を使う。
 // パワージェム(312)・ジェムレーザー(315)・グラベルブレス(317)・ステルスロック(318)は全画面ではなく「自分→相手」へ飛翔する演出のため、被弾側(defSide)を渡して
 // 攻撃側スプライト→防御側スプライトの座標をTypeFX側で実測する。
-const SPECIAL_MOVE_FX_IDS = [513,511,512,198,43,333,334,335,338,139,292,300,113,103,218,227,7,24,25,28,284,348,203,222,61,124,32,33,37,173,112,75,76,72,138,123,63,66,153,156,157,353,355,354,253,254,273,277,374,93,480, 483, 397,132,78,215,216,13,18,233,332,394,484, 53, 73, 79, 140,199,193,133,117,172,235, 236, 237, 312, 315, 317, 318];
+const SPECIAL_MOVE_FX_IDS = [513,511,512,198,43,333,334,335,338,139,292,300,113,103,218,227,7,24,25,28,284,348,203,222,61,124,32,33,37,173,112,75,76,72,138,123,63,66,153,156,157,353,355,354,253,254,273,277,374,93,480, 483, 397,132,78,215,216,13,18,233,332,394,484, 53, 73, 79, 140,199,193,133,117,172,235, 236, 237, 312, 315, 317, 318]
+  // typefx.js 側で登録済みの専用シーン（やけのはら499・たたりめ175・どくどくのキバ261・獣王の牙206 など）と、
+  // 技ごとの個別エフェクト（MoveFXレシピ）の技IDを加える。typefx.js は ui.js より先に読み込まれる。
+  .concat((window.TypeFX && window.TypeFX.SPECIAL_MOVE_IDS) || [], (window.TypeFX && window.TypeFX.GENERIC_MOVE_IDS) || []);
 function playSpecialMoveEffect(moveId, defSide) {
   const wrap = $('special-fx-layer');
   if (!wrap || !window.TypeFX || !window.TypeFX.playSpecial) return Promise.resolve();
@@ -8211,8 +8214,10 @@ async function handleGuestEvent(ev) {
     const isBigMove = !!(ev.mp !== null && ev.mp !== undefined && ev.mp > BIG_MOVE_POWER_THRESHOLD);
     const isSpecialMove = SPECIAL_MOVE_FX_IDS.indexOf(ev.mi !== undefined ? ev.mi : null) !== -1;
 
-    // 設置技(ステルスロック=318)：技使用ログ(ev.mu)の時点で演出を再生する（ダメージログではない）。
-    const isGuestHazardMove = ev.mi === 318 && !!ev.mu && !ev.h;
+    // 設置技(ステルスロック=318)など：技使用ログ(ev.mu)の時点で演出を再生する（ダメージログではない）。
+    // 変化技(category==='status')は、ダメージログではなく技使用ログ(ev.mu)の時点で再生する（ホスト側のisStatusSpecialMoveと同じ扱い）。
+    const _guestMoveDef = (ev.mi !== null && ev.mi !== undefined && GAME_DATA && GAME_DATA.moves) ? GAME_DATA.moves[ev.mi] : null;
+    const isGuestHazardMove = isSpecialMove && !!ev.mu && !ev.h && !!_guestMoveDef && _guestMoveDef.category === 'status';
     const guestHazardDefSide = ev.mu === 'player' ? 'self' : 'opp';
 
     msgQueue.push({

@@ -24380,6 +24380,1242 @@ SPECIAL_IMPACT_FX[338] = SPECIAL_IMPACT_FX[333];
     return { from: { x: from.x, y: from.y }, to: { x: to.x, y: to.y }, scale };
   }
 
+  // ============================================================
+  // MoveFX — 技ごとの個別エフェクト（レシピ方式の共通エンジン）
+  // 既存の専用演出（SPECIAL_SCENES）を持たない技に、技名・タイプ・性質に合わせた
+  // 個別の演出を与える。各技は「レイヤー（斬撃・弾・ビーム・柱・雨・オーラ…）」の
+  // 組み合わせ（レシピ）で定義され、MFX.REC[技ID] に登録される。
+  // ・飛翔／斬撃／衝撃など、攻撃側→相手の座標を実測して描画する
+  // ・接触技は攻撃側スプライトが一瞬踏み込む（DOMの translate を使い、既存の transform とは競合しない）
+  // ・変化技は on:'self'（自分に纏う）／'foe'（相手に）／'field'（場全体）で表示位置を切り替える
+  // ============================================================
+  const MFX = (function () {
+    const TAU = Math.PI * 2;
+    const DEG = Math.PI / 180;
+    const pr = (ms, t, d) => (d <= 0 ? (ms >= t ? 1 : 0) : clamp01((ms - t) / d));
+    const eo = easeOutCubic;
+    const eb = (t) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+
+    // ---- パレット［芯（明）, 中間, 外（暗）］----
+    const PAL = {
+      fire: ['#fff6c8', '#ffa030', '#e83c14'], water: ['#e8fbff', '#5cc8ff', '#1f6fd8'],
+      grass: ['#f0ffd0', '#7ddc50', '#2f9a3a'], elec: ['#ffffe0', '#ffe840', '#e0a000'],
+      ice: ['#ffffff', '#bfeaff', '#6fb8f0'], fight: ['#fff0d8', '#ff7a3a', '#b8301a'],
+      poison: ['#f6d8ff', '#c050e0', '#7a1fa0'], ground: ['#f4e2b0', '#d0a050', '#8a5a20'],
+      fly: ['#ffffff', '#c8e0ff', '#88a8e8'], psy: ['#ffe8ff', '#ff70d0', '#a030a0'],
+      bug: ['#f4ffc0', '#a8d830', '#58901c'], rock: ['#f0e8d0', '#b8a070', '#6e5a3a'],
+      ghost: ['#e8d0ff', '#9060d0', '#4a2a80'], dragon: ['#f0e0ff', '#8a60ff', '#4a28c8'],
+      dark: ['#d8c8f0', '#6a4a98', '#241838'], steel: ['#ffffff', '#c8d4e0', '#8090a0'],
+      fairy: ['#fff0fa', '#ffa8d8', '#e870b8'], normal: ['#ffffff', '#e8e0d0', '#b0a898'],
+      sound: ['#ffffff', '#ffb347', '#ff4fa8'], shine: ['#ffffff', '#fff2a0', '#ffd060'],
+      blood: ['#ffd0d0', '#e02848', '#7a0c24'], toxic: ['#e8ffc8', '#9acd32', '#4a6a10'],
+      sand: ['#fff4d0', '#e0c080', '#a07840'], moon: ['#ffffff', '#ffd8f0', '#b090e0'],
+      gold: ['#ffffff', '#ffe070', '#d09010'], red: ['#ffe0e0', '#ff5050', '#a01818'],
+      blue: ['#e0f0ff', '#5090ff', '#1838a0'], white: ['#ffffff', '#f4f4ff', '#c8c8e0'],
+      black: ['#a0a0b0', '#3a3a48', '#101018'], aqua: ['#e0fffa', '#40e0d0', '#108a90'],
+      rainbow: ['#ffffff', '#ff9fd0', '#7fbfff'], cyan: ['#ffffff', '#8fe0ff', '#3a7cff'],
+      rouge: ['#ffe0e8', '#ff4070', '#a01030'], mud: ['#e8d0a8', '#9a6a3a', '#5a3818'],
+      deep: ['#c0e8ff', '#2a6ab8', '#0a2650'], jet: ['#ffffff', '#7fb8ff', '#2050ff'],
+      lime: ['#ffffff', '#c8ff70', '#58b020'], pinkgrass: ['#fff0f8', '#ff9acb', '#3aa050'],
+      storm: ['#e8eef4', '#8a9ab4', '#3a4660'], flame2: ['#ffffff', '#ff6a3a', '#901010'],
+      wisp: ['#f0f4ff', '#6aa0ff', '#2030c0'],
+    };
+    function cc(c) { return typeof c === 'string' ? (PAL[c] || [c, c, c]) : (c || PAL.normal); }
+
+    // ---- 座標アンカー ----
+    function A(c, at, ox, oy) {
+      let b;
+      switch (at) {
+        case 'from': b = c.from; break;
+        case 'mid': b = { x: (c.from.x + c.to.x) / 2, y: (c.from.y + c.to.y) / 2 }; break;
+        case 'sky': b = { x: c.to.x, y: -20 }; break;
+        case 'field': b = { x: c.w / 2, y: c.h / 2 }; break;
+        case 'ground': b = { x: c.to.x, y: c.to.y + c.size * 0.38 }; break;
+        default: b = c.to;
+      }
+      return { x: b.x + (ox || 0) * c.size, y: b.y + (oy || 0) * c.size };
+    }
+
+    function glowDot(ctx, x, y, r, c, a) {
+      if (r <= 0.5 || a <= 0.001) return;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, rgba(c[0], clamp01(a)));
+      g.addColorStop(0.38, rgba(c[1], clamp01(a * 0.85)));
+      g.addColorStop(1, rgba(c[2], 0));
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    }
+
+    // ---- 粒の形 ----
+    function glyph(ctx, k, x, y, r, rot, fill, a) {
+      ctx.save();
+      ctx.translate(x, y); ctx.rotate(rot || 0);
+      if (a != null) ctx.globalAlpha *= clamp01(a);
+      ctx.fillStyle = fill; ctx.strokeStyle = fill;
+      ctx.beginPath();
+      switch (k) {
+        case 'leaf':
+          ctx.moveTo(0, -r); ctx.quadraticCurveTo(r * 0.9, -r * 0.1, 0, r); ctx.quadraticCurveTo(-r * 0.9, -r * 0.1, 0, -r); ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = Math.max(1, r * 0.1);
+          ctx.beginPath(); ctx.moveTo(0, -r * 0.8); ctx.lineTo(0, r * 0.8); ctx.stroke(); break;
+        case 'petal': ctx.ellipse(0, 0, r * 0.55, r, 0, 0, TAU); ctx.fill(); break;
+        case 'drop':
+          ctx.moveTo(0, -r * 1.3); ctx.quadraticCurveTo(r * 0.95, r * 0.25, 0, r); ctx.quadraticCurveTo(-r * 0.95, r * 0.25, 0, -r * 1.3); ctx.fill(); break;
+        case 'bolt':
+          ctx.moveTo(r * 0.2, -r * 1.2); ctx.lineTo(-r * 0.6, r * 0.1); ctx.lineTo(-r * 0.05, r * 0.1);
+          ctx.lineTo(-r * 0.3, r * 1.2); ctx.lineTo(r * 0.65, -r * 0.2); ctx.lineTo(r * 0.1, -r * 0.2); ctx.closePath(); ctx.fill(); break;
+        case 'flame':
+          ctx.moveTo(0, -r * 1.3); ctx.bezierCurveTo(r * 0.5, -r * 0.5, r * 0.9, 0, r * 0.5, r * 0.8);
+          ctx.quadraticCurveTo(0, r * 1.2, -r * 0.5, r * 0.8); ctx.bezierCurveTo(-r * 0.9, 0, -r * 0.3, -r * 0.5, 0, -r * 1.3); ctx.fill(); break;
+        case 'snow':
+          ctx.lineWidth = Math.max(1, r * 0.18); ctx.lineCap = 'round';
+          for (let i = 0; i < 3; i++) { const a2 = i * Math.PI / 3; ctx.moveTo(Math.cos(a2) * r, Math.sin(a2) * r); ctx.lineTo(-Math.cos(a2) * r, -Math.sin(a2) * r); }
+          ctx.stroke(); break;
+        case 'shard':
+          ctx.moveTo(0, -r * 1.5); ctx.lineTo(r * 0.4, 0); ctx.lineTo(0, r * 0.9); ctx.lineTo(-r * 0.4, 0); ctx.closePath(); ctx.fill(); break;
+        case 'rock': {
+          const s = Math.sin((rot || 0) * 12.9898) * 43758.5453;
+          for (let i = 0; i < 7; i++) {
+            const rr = r * (0.7 + 0.3 * (((Math.sin(s + i * 7.1) * 1e4) % 1 + 1) % 1));
+            const a2 = i / 7 * TAU; i ? ctx.lineTo(Math.cos(a2) * rr, Math.sin(a2) * rr) : ctx.moveTo(Math.cos(a2) * rr, Math.sin(a2) * rr);
+          }
+          ctx.closePath(); ctx.fill(); break; }
+        case 'star': {
+          for (let i = 0; i < 8; i++) { const rr = i % 2 ? r * 0.28 : r; const a2 = i / 8 * TAU - Math.PI / 2; i ? ctx.lineTo(Math.cos(a2) * rr, Math.sin(a2) * rr) : ctx.moveTo(Math.cos(a2) * rr, Math.sin(a2) * rr); }
+          ctx.closePath(); ctx.fill(); break; }
+        case 'star5': {
+          for (let i = 0; i < 10; i++) { const rr = i % 2 ? r * 0.42 : r; const a2 = i / 10 * TAU - Math.PI / 2; i ? ctx.lineTo(Math.cos(a2) * rr, Math.sin(a2) * rr) : ctx.moveTo(Math.cos(a2) * rr, Math.sin(a2) * rr); }
+          ctx.closePath(); ctx.fill(); break; }
+        case 'heart':
+          ctx.moveTo(0, r * 0.9); ctx.bezierCurveTo(-r * 1.5, -r * 0.1, -r * 0.7, -r * 1.2, 0, -r * 0.4);
+          ctx.bezierCurveTo(r * 0.7, -r * 1.2, r * 1.5, -r * 0.1, 0, r * 0.9); ctx.fill(); break;
+        case 'note':
+          ctx.font = 'bold ' + Math.round(r * 2.2) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(['♪', '♫', '♬', '♩'][((x * 7 + y * 3) | 0) & 3 & 3] || '♪', 0, 0); break;
+        case 'zz':
+          ctx.font = 'bold ' + Math.round(r * 2) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('Z', 0, 0); break;
+        case 'bubble':
+          ctx.lineWidth = Math.max(1, r * 0.14); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+          ctx.globalAlpha *= 0.28; ctx.fill(); ctx.globalAlpha *= 3;
+          ctx.fillStyle = 'rgba(255,255,255,0.8)'; ctx.beginPath(); ctx.arc(-r * 0.35, -r * 0.35, r * 0.2, 0, TAU); ctx.fill(); break;
+        case 'feather':
+          ctx.moveTo(0, -r * 1.3); ctx.quadraticCurveTo(r * 0.8, -r * 0.2, 0, r * 1.2); ctx.quadraticCurveTo(-r * 0.5, -r * 0.1, 0, -r * 1.3); ctx.fill(); break;
+        case 'gem':
+          ctx.moveTo(0, -r); ctx.lineTo(r * 0.85, -r * 0.25); ctx.lineTo(r * 0.5, r * 0.85); ctx.lineTo(-r * 0.5, r * 0.85); ctx.lineTo(-r * 0.85, -r * 0.25); ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = Math.max(1, r * 0.08);
+          ctx.beginPath(); ctx.moveTo(-r * 0.85, -r * 0.25); ctx.lineTo(r * 0.85, -r * 0.25); ctx.moveTo(0, -r); ctx.lineTo(-r * 0.3, -r * 0.25); ctx.lineTo(0, r * 0.85); ctx.lineTo(r * 0.3, -r * 0.25); ctx.lineTo(0, -r); ctx.stroke(); break;
+        case 'sword':
+          ctx.moveTo(0, -r * 1.5); ctx.lineTo(r * 0.22, r * 0.5); ctx.lineTo(-r * 0.22, r * 0.5); ctx.closePath(); ctx.fill();
+          ctx.fillRect(-r * 0.55, r * 0.5, r * 1.1, r * 0.2); ctx.fillRect(-r * 0.1, r * 0.7, r * 0.2, r * 0.6); break;
+        case 'cross':
+          ctx.fillRect(-r * 0.22, -r, r * 0.44, r * 2); ctx.fillRect(-r, -r * 0.22, r * 2, r * 0.44); break;
+        case 'x':
+          ctx.lineWidth = Math.max(1.5, r * 0.3); ctx.lineCap = 'round';
+          ctx.moveTo(-r, -r); ctx.lineTo(r, r); ctx.moveTo(r, -r); ctx.lineTo(-r, r); ctx.stroke(); break;
+        case 'spark':
+          ctx.lineWidth = Math.max(1, r * 0.16); ctx.lineCap = 'round';
+          for (let i = 0; i < 4; i++) { const a2 = i * Math.PI / 4; ctx.moveTo(Math.cos(a2) * r, Math.sin(a2) * r); ctx.lineTo(-Math.cos(a2) * r, -Math.sin(a2) * r); }
+          ctx.stroke(); break;
+        case 'needle':
+          ctx.lineWidth = Math.max(1.2, r * 0.18); ctx.lineCap = 'round'; ctx.moveTo(0, -r * 1.6); ctx.lineTo(0, r * 1.2); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(0, -r * 1.9); ctx.lineTo(r * 0.28, -r * 1.2); ctx.lineTo(-r * 0.28, -r * 1.2); ctx.closePath(); ctx.fill(); break;
+        case 'arrow':
+          ctx.lineWidth = Math.max(2, r * 0.35); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+          ctx.moveTo(-r, -r * 0.3); ctx.lineTo(0, r * 0.6); ctx.lineTo(r, -r * 0.3); ctx.stroke(); break;
+        case 'arrowup':
+          ctx.lineWidth = Math.max(2, r * 0.35); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+          ctx.moveTo(-r, r * 0.3); ctx.lineTo(0, -r * 0.6); ctx.lineTo(r, r * 0.3); ctx.stroke(); break;
+        case 'card':
+          ctx.rect(-r * 0.6, -r * 0.85, r * 1.2, r * 1.7); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = Math.max(1, r * 0.08); ctx.stroke(); break;
+        case 'moon':
+          ctx.arc(0, 0, r, 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'destination-out';
+          ctx.beginPath(); ctx.arc(r * 0.42, -r * 0.1, r * 0.85, 0, TAU); ctx.fill(); break;
+        case 'skull':
+          ctx.arc(0, -r * 0.1, r * 0.8, 0, TAU); ctx.fill(); ctx.fillRect(-r * 0.4, r * 0.4, r * 0.8, r * 0.55);
+          ctx.globalCompositeOperation = 'destination-out'; ctx.beginPath(); ctx.arc(-r * 0.3, -r * 0.15, r * 0.2, 0, TAU); ctx.arc(r * 0.3, -r * 0.15, r * 0.2, 0, TAU); ctx.fill(); break;
+        case 'ring':
+          ctx.lineWidth = Math.max(1.5, r * 0.22); ctx.arc(0, 0, r, 0, TAU); ctx.stroke(); break;
+        case 'seed':
+          ctx.ellipse(0, 0, r * 0.45, r, 0, 0, TAU); ctx.fill(); break;
+        case 'ember':
+          ctx.arc(0, 0, r, 0, TAU); ctx.fill(); break;
+        default: ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function newLayer(s, e, f) { return { s: s || 0, e: e, f: f }; }
+
+    // ============================================================
+    // レイヤー部品
+    // ============================================================
+    const L = {};
+
+    // ---- 斬撃：爪痕・刃・X字など ----
+    L.slash = function (o) {
+      const col = cc(o.c), n = o.n || 1, d = o.d || 280, gap = o.gap == null ? 80 : o.gap, t0 = o.t || 0;
+      const ang0 = (o.ang == null ? -40 : o.ang) * DEG;
+      const items = [];
+      for (let i = 0; i < n; i++) {
+        const a = ang0 + (o.x ? (i % 2 ? Math.PI * 0.45 : 0) : 0) + (o.fan ? (i - (n - 1) / 2) * o.fan * DEG : 0) + rand(-0.05, 0.05);
+        items.push({ st: t0 + (o.claw ? 0 : i * gap), a, off: o.claw ? (i - (n - 1) / 2) : rand(-0.35, 0.35) });
+      }
+      const e = t0 + (o.claw ? 0 : (n - 1) * gap) + d;
+      return newLayer(t0, e, (ctx, ms, c) => {
+        const at = A(c, o.at, o.ox, o.oy), L0 = (o.len || 1.2) * c.size, W = (o.w || 1) * c.S;
+        for (const it of items) {
+          if (ms < it.st) continue;
+          const head = eo(pr(ms, it.st, d * 0.4));
+          const fade = 1 - pr(ms, it.st + d * 0.4, d * 0.6);
+          if (fade <= 0) continue;
+          const tail = Math.max(0, head - 0.75);
+          const dx = Math.cos(it.a), dy = Math.sin(it.a), nx = -dy, ny = dx;
+          const cx = at.x + nx * it.off * (o.spacing || 0.17) * c.size, cy = at.y + ny * it.off * (o.spacing || 0.17) * c.size;
+          const bend = (o.curve == null ? 0.22 : o.curve) * L0;
+          const P0 = { x: cx - dx * L0 / 2, y: cy - dy * L0 / 2 }, P2 = { x: cx + dx * L0 / 2, y: cy + dy * L0 / 2 };
+          const P1 = { x: cx + nx * bend, y: cy + ny * bend };
+          const NS = 14, left = [], right = [], coreL = [], coreR = [];
+          for (let k = 0; k <= NS; k++) {
+            const s = tail + (head - tail) * k / NS, u = 1 - s;
+            const bx = u * u * P0.x + 2 * u * s * P1.x + s * s * P2.x, by = u * u * P0.y + 2 * u * s * P1.y + s * s * P2.y;
+            const tx = 2 * u * (P1.x - P0.x) + 2 * s * (P2.x - P1.x), ty = 2 * u * (P1.y - P0.y) + 2 * s * (P2.y - P1.y);
+            const tl = Math.hypot(tx, ty) || 1, px = -ty / tl, py = tx / tl;
+            const wp = Math.pow(Math.sin(Math.PI * k / NS), 0.85) * W * 8;
+            left.push([bx + px * wp, by + py * wp]); right.push([bx - px * wp, by - py * wp]);
+            coreL.push([bx + px * wp * 0.38, by + py * wp * 0.38]); coreR.push([bx - px * wp * 0.38, by - py * wp * 0.38]);
+          }
+          const poly = (A1, B1) => { ctx.beginPath(); A1.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))); for (let i = B1.length - 1; i >= 0; i--) ctx.lineTo(B1[i][0], B1[i][1]); ctx.closePath(); };
+          ctx.save(); ctx.globalAlpha = fade; ctx.globalCompositeOperation = 'lighter';
+          ctx.shadowColor = col[1]; ctx.shadowBlur = 14;
+          ctx.fillStyle = col[1]; poly(left, right); ctx.fill();
+          ctx.shadowBlur = 0; ctx.fillStyle = col[0]; poly(coreL, coreR); ctx.fill();
+          ctx.restore();
+        }
+      });
+    };
+
+    // ---- 衝撃：着弾の閃光・星・輪・火花・十字・爆炎 ----
+    L.burst = function (o) {
+      const col = cc(o.c), d = o.d || 320, t0 = o.t || 0, shapes = [].concat(o.shape || 'star');
+      const spikes = o.n || 10, jit = [], dirs = [];
+      for (let i = 0; i < 24; i++) jit.push(rand(0.55, 1)); for (let i = 0; i < 18; i++) dirs.push(rand(0, TAU));
+      return newLayer(t0, t0 + d, (ctx, ms, c) => {
+        const p = pr(ms, t0, d); if (p >= 1) return;
+        const at = A(c, o.at, o.ox, o.oy), R = (o.r || 1) * c.size * 0.55, ep = eo(p), a = 1 - p;
+        ctx.globalCompositeOperation = o.blend || 'lighter';
+        for (const sh of shapes) {
+          if (sh === 'flash') { glowDot(ctx, at.x, at.y, R * (0.5 + ep), col, a); }
+          else if (sh === 'star') {
+            const rr = R * (0.35 + 0.9 * ep); ctx.beginPath();
+            for (let i = 0; i < spikes * 2; i++) { const r2 = i % 2 ? rr * 0.38 : rr * jit[(i >> 1) % 24]; const a2 = i / (spikes * 2) * TAU + (o.rot || 0); i ? ctx.lineTo(at.x + Math.cos(a2) * r2, at.y + Math.sin(a2) * r2) : ctx.moveTo(at.x + Math.cos(a2) * r2, at.y + Math.sin(a2) * r2); }
+            ctx.closePath(); const g = ctx.createRadialGradient(at.x, at.y, 0, at.x, at.y, rr);
+            g.addColorStop(0, rgba(col[0], a)); g.addColorStop(0.55, rgba(col[1], a * 0.9)); g.addColorStop(1, rgba(col[2], 0)); ctx.fillStyle = g; ctx.fill();
+          } else if (sh === 'ring') {
+            ctx.lineWidth = Math.max(1.5, (1 - p) * 9 * c.S); ctx.strokeStyle = rgba(col[1], a); ctx.beginPath(); ctx.arc(at.x, at.y, R * (0.2 + 1.5 * ep), 0, TAU); ctx.stroke();
+            ctx.lineWidth = Math.max(1, (1 - p) * 4 * c.S); ctx.strokeStyle = rgba(col[0], a); ctx.beginPath(); ctx.arc(at.x, at.y, R * (0.12 + 1.1 * ep), 0, TAU); ctx.stroke();
+          } else if (sh === 'sparks') {
+            ctx.lineCap = 'round';
+            for (let i = 0; i < 14; i++) { const ang = dirs[i % 18] ; const r1 = R * (0.2 + 1.3 * ep), r0 = r1 * (0.55 + 0.4 * (1 - p)); ctx.lineWidth = Math.max(1, 3 * c.S * a); ctx.strokeStyle = rgba(i % 2 ? col[0] : col[1], a); ctx.beginPath(); ctx.moveTo(at.x + Math.cos(ang) * r0, at.y + Math.sin(ang) * r0); ctx.lineTo(at.x + Math.cos(ang) * r1, at.y + Math.sin(ang) * r1); ctx.stroke(); }
+          } else if (sh === 'cross') {
+            const L2 = R * (0.6 + 1.6 * ep), th = Math.max(1.5, 9 * c.S * a);
+            ctx.fillStyle = rgba(col[0], a); ctx.beginPath(); ctx.ellipse(at.x, at.y, L2, th, o.rot || 0, 0, TAU); ctx.fill();
+            ctx.beginPath(); ctx.ellipse(at.x, at.y, th, L2, o.rot || 0, 0, TAU); ctx.fill(); glowDot(ctx, at.x, at.y, R * 0.8, col, a * 0.8);
+          } else if (sh === 'blast') {
+            for (let i = 0; i < 7; i++) { const ang = dirs[i], rr = R * 0.7 * ep; glowDot(ctx, at.x + Math.cos(ang) * rr * 0.6, at.y + Math.sin(ang) * rr * 0.6, R * (0.5 + 0.6 * ep), col, a * 0.85); }
+            glowDot(ctx, at.x, at.y, R * (0.8 + ep), col, a);
+          } else if (sh === 'smoke') {
+            ctx.globalCompositeOperation = 'source-over';
+            for (let i = 0; i < 8; i++) { const ang = dirs[i], rr = R * 0.9 * ep; glowDot(ctx, at.x + Math.cos(ang) * rr, at.y + Math.sin(ang) * rr - ep * R * 0.3, R * (0.35 + 0.35 * ep), [col[1], col[2], col[2]], a * 0.5); }
+          } else if (sh === 'debris') {
+            ctx.globalCompositeOperation = 'source-over';
+            for (let i = 0; i < 10; i++) { const ang = dirs[i], rr = R * (0.3 + 1.6 * ep); glyph(ctx, o.glyph || 'rock', at.x + Math.cos(ang) * rr, at.y + Math.sin(ang) * rr + p * p * R * 0.8, (4 + jit[i] * 5) * c.S, ang + p * 5, col[1], a); }
+          }
+        }
+      });
+    };
+
+    // ---- 連射・弾：複数の弾が攻撃側→相手へ飛ぶ ----
+    L.shots = function (o) {
+      const col = cc(o.c), n = o.n || 5, gap = o.gap == null ? 60 : o.gap, fly = o.fly || 260, t0 = o.t || 0, gl = o.glyph || 'dot';
+      const items = [];
+      for (let i = 0; i < n; i++) items.push({ st: t0 + i * gap, jx: rand(-1, 1), jy: rand(-1, 1), sx: rand(-1, 1), sy: rand(-1, 1), rot: rand(0, TAU), sp: rand(-0.4, 0.4) });
+      return newLayer(t0, t0 + (n - 1) * gap + fly + 180, (ctx, ms, c) => {
+        const src = o.rev ? { x: c.to.x, y: c.to.y } : A(c, o.src || 'from'), dstC = o.rev ? c.from : c.to, sp = (o.spread == null ? 0.55 : o.spread) * c.size, r = (o.r || 8) * c.S;
+        for (const it of items) {
+          if (ms < it.st) continue;
+          const p = pr(ms, it.st, fly), dst = { x: dstC.x + it.jx * sp * 0.5, y: dstC.y + it.jy * sp * 0.5 };
+          const sx = src.x + it.sx * c.size * 0.15 + (o.rev ? 0 : c.ux * 26 * c.S), sy = src.y + it.sy * c.size * 0.15 + (o.rev ? 0 : c.uy * 26 * c.S);
+          if (p < 1) {
+            const e2 = o.ease === 'in' ? p * p : p, arc = (o.arc || 0) * c.S * Math.sin(Math.PI * e2) * (it.sp > 0 ? 1 : -1);
+            const x = sx + (dst.x - sx) * e2 + c.nx * arc, y = sy + (dst.y - sy) * e2 + c.ny * arc - (o.lob ? Math.sin(Math.PI * e2) * o.lob * c.S : 0);
+            ctx.globalCompositeOperation = 'lighter';
+            if (o.trail !== false) { const e1 = Math.max(0, e2 - 0.22); const x1 = sx + (dst.x - sx) * e1 + c.nx * arc, y1 = sy + (dst.y - sy) * e1 + c.ny * arc;
+              const g = ctx.createLinearGradient(x1, y1, x, y); g.addColorStop(0, rgba(col[2], 0)); g.addColorStop(1, rgba(col[1], 0.8)); ctx.strokeStyle = g; ctx.lineWidth = r * 1.1; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x, y); ctx.stroke(); }
+            glowDot(ctx, x, y, r * 1.9, col, 0.75);
+            ctx.globalCompositeOperation = 'source-over';
+            const rotv = o.spin ? it.rot + p * o.spin : (o.align ? Math.atan2(dst.y - sy, dst.x - sx) + Math.PI / 2 : it.rot);
+            glyph(ctx, gl, x, y, r, rotv, col[0], 1);
+          } else if (o.hit !== false) {
+            const q = pr(ms, it.st + fly, 170); if (q >= 1) continue;
+            ctx.globalCompositeOperation = 'lighter'; glowDot(ctx, dst.x, dst.y, r * (1.8 + 2.4 * eo(q)), col, 1 - q);
+            ctx.lineWidth = 2 * c.S * (1 - q); ctx.strokeStyle = rgba(col[0], 1 - q); ctx.beginPath(); ctx.arc(dst.x, dst.y, r * (1 + 2.8 * q), 0, TAU); ctx.stroke();
+          }
+        }
+      });
+    };
+
+    // ---- 球：溜めて膨らみ、相手へ飛ぶ ----
+    L.orb = function (o) {
+      const col = cc(o.c), t0 = o.t || 0, ch = o.charge == null ? 380 : o.charge, fly = o.fly || 300, r0 = o.r || 22, gl = o.glyph;
+      const motes = []; for (let i = 0; i < 12; i++) motes.push({ a: rand(0, TAU), r: rand(0.7, 1.3), s: rand(0.8, 1.3) });
+      return newLayer(t0, t0 + ch + fly, (ctx, ms, c) => {
+        const mz = { x: c.from.x + c.ux * 34 * c.S, y: c.from.y + c.uy * 34 * c.S - 10 * c.S };
+        const pc = pr(ms, t0, ch), pf = pr(ms, t0 + ch, fly), r = r0 * c.S;
+        ctx.globalCompositeOperation = 'lighter';
+        if (pc < 1 || pf === 0) {
+          for (const m of motes) { const q = clamp01(pc * m.s), rr = (1 - q) * 70 * c.S * m.r, a2 = m.a + q * 3; glowDot(ctx, mz.x + Math.cos(a2) * rr, mz.y + Math.sin(a2) * rr, 4 * c.S, col, q * 0.9); }
+        }
+        let x = mz.x, y = mz.y, sz = r * (0.15 + 0.85 * eo(pc)) * (1 + 0.06 * Math.sin(ms * 0.04));
+        if (pf > 0) { const e2 = pf * pf * (o.ease === 'lin' ? 1 : (3 - 2 * pf)) ; x = mz.x + (c.to.x - mz.x) * e2; y = mz.y + (c.to.y - mz.y) * e2 - Math.sin(Math.PI * e2) * (o.lob || 0) * c.S; if (pf >= 1) return;
+          const x1 = mz.x + (c.to.x - mz.x) * Math.max(0, e2 - 0.25), y1 = mz.y + (c.to.y - mz.y) * Math.max(0, e2 - 0.25);
+          const g = ctx.createLinearGradient(x1, y1, x, y); g.addColorStop(0, rgba(col[2], 0)); g.addColorStop(1, rgba(col[1], 0.7)); ctx.strokeStyle = g; ctx.lineWidth = sz * 1.5; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x, y); ctx.stroke(); }
+        glowDot(ctx, x, y, sz * 2, col, 0.7);
+        if (gl) { ctx.globalCompositeOperation = 'source-over'; glyph(ctx, gl, x, y, sz, ms * 0.006 * (o.spin || 0), col[0], 1); }
+        else { ctx.fillStyle = rgba(col[0], 0.95); ctx.beginPath(); ctx.arc(x, y, sz * 0.62, 0, TAU); ctx.fill(); }
+      });
+    };
+
+    // ---- ビーム ----
+    L.beam = function (o) {
+      const col = cc(o.c), t0 = o.t || 0, ext = o.ext || 140, hold = o.hold || 420, fade = o.fade || 200, W0 = o.w || 34;
+      const seed = rand(0, 100);
+      return newLayer(t0, t0 + ext + hold + fade, (ctx, ms, c) => {
+        const reach = eo(pr(ms, t0, ext)), str = 1 - pr(ms, t0 + ext + hold, fade);
+        if (str <= 0) return;
+        const mz = { x: c.from.x + c.ux * 30 * c.S, y: c.from.y + c.uy * 30 * c.S };
+        const ex = mz.x + (c.to.x + c.ux * c.size * 0.4 - mz.x) * reach, ey = mz.y + (c.to.y + c.uy * c.size * 0.4 - mz.y) * reach;
+        const W = W0 * c.S * str * (0.9 + 0.1 * Math.sin(ms * 0.05 + seed));
+        ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+        const NS = 18;
+        const path = (amp) => { ctx.beginPath(); for (let k = 0; k <= NS; k++) { const s = k / NS, bx = mz.x + (ex - mz.x) * s, by = mz.y + (ey - mz.y) * s; const wv = (o.wave ? Math.sin(s * 14 - ms * 0.03 + seed) * amp * 0.5 : 0) + noise1(s * 9 + ms * 0.02, seed) * amp * 0.15; k ? ctx.lineTo(bx + c.nx * wv, by + c.ny * wv) : ctx.moveTo(bx + c.nx * wv, by + c.ny * wv); } ctx.stroke(); };
+        ctx.strokeStyle = rgba(col[2], 0.4); ctx.lineWidth = W * 1.7; path(W);
+        ctx.strokeStyle = rgba(col[1], 0.85); ctx.lineWidth = W; path(W * 0.6);
+        ctx.strokeStyle = rgba(col[0], 1); ctx.lineWidth = W * 0.42; path(W * 0.3);
+        glowDot(ctx, mz.x, mz.y, W * 1.6, col, str); glowDot(ctx, ex, ey, W * 1.5 * reach, col, str * 0.9);
+        if (o.glyph) { ctx.globalCompositeOperation = 'source-over'; for (let i = 0; i < (o.gn || 8); i++) { const s = ((ms * 0.0022 * (0.6 + (i % 3) * 0.3) + i * 0.17) % 1) * reach, wv = Math.sin(i * 5 + ms * 0.01) * W * 0.5; glyph(ctx, o.glyph, mz.x + (ex - mz.x) * s + c.nx * wv, mz.y + (ey - mz.y) * s + c.ny * wv, W * 0.28, ms * 0.01 + i, col[0], str); } }
+      });
+    };
+
+    // ---- 波・輪：音波／衝撃波 ----
+    L.ring = function (o) {
+      const col = cc(o.c), n = o.n || 3, gap = o.gap == null ? 110 : o.gap, d = o.d || 460, t0 = o.t || 0;
+      const items = []; for (let i = 0; i < n; i++) items.push({ st: t0 + i * gap });
+      return newLayer(t0, t0 + (n - 1) * gap + d, (ctx, ms, c) => {
+        ctx.globalCompositeOperation = 'lighter';
+        for (const it of items) {
+          const p = pr(ms, it.st, d); if (ms < it.st || p >= 1) continue;
+          const a = (1 - p) * (o.a || 0.9), lw = Math.max(1.5, (o.w || 6) * c.S * (1 - p * 0.6));
+          if (o.dir) { // 攻撃側→相手へ進む弧
+            const src = A(c, o.src || 'from'), dist = Math.hypot(c.to.x - src.x, c.to.y - src.y) * (o.reach || 1.0), r = (30 + dist * eo(p)) , half = (o.arcw || 34) * DEG;
+            ctx.strokeStyle = rgba(col[1], a); ctx.lineWidth = lw; ctx.beginPath(); ctx.arc(src.x, src.y, r, c.ang - half, c.ang + half); ctx.stroke();
+            ctx.strokeStyle = rgba(col[0], a); ctx.lineWidth = lw * 0.4; ctx.beginPath(); ctx.arc(src.x, src.y, r, c.ang - half, c.ang + half); ctx.stroke();
+            if (o.notes) glyph(ctx, 'note', src.x + Math.cos(c.ang + (it.st % 3 - 1) * 0.3) * r, src.y + Math.sin(c.ang + (it.st % 3 - 1) * 0.3) * r, 9 * c.S, 0, col[0], a);
+          } else {
+            const at = A(c, o.at, o.ox, o.oy), r = (o.r || 1.3) * c.size * 0.5 * eo(p) + 4;
+            ctx.strokeStyle = rgba(col[1], a); ctx.lineWidth = lw; ctx.beginPath(); ctx.arc(at.x, at.y, r, 0, TAU); ctx.stroke();
+            ctx.strokeStyle = rgba(col[0], a); ctx.lineWidth = lw * 0.4; ctx.beginPath(); ctx.arc(at.x, at.y, r, 0, TAU); ctx.stroke();
+          }
+        }
+      });
+    };
+
+    // ---- 雨：上から物が降り注ぐ ----
+    L.rain = function (o) {
+      const col = cc(o.c), n = o.n || 18, d = o.d || 700, t0 = o.t || 0, gl = o.glyph || 'drop', ft = o.fall || 300;
+      const items = []; for (let i = 0; i < n; i++) items.push({ st: t0 + rand(0, d * 0.75), jx: rand(-1, 1), jy: rand(-0.25, 0.35), rot: rand(0, TAU), sc: rand(0.7, 1.3), sp: rand(-2, 2) });
+      return newLayer(t0, t0 + d * 0.75 + ft + 220, (ctx, ms, c) => {
+        const r = (o.r || 7) * c.S;
+        for (const it of items) {
+          if (ms < it.st) continue;
+          const p = pr(ms, it.st, ft), tx = c.to.x + it.jx * (o.spread == null ? 0.7 : o.spread) * c.size * 0.5, ty = c.to.y + it.jy * c.size * 0.5;
+          const sx = tx + (o.tilt || 0) * c.h * 0.5, sy = -20;
+          if (p < 1) {
+            const e2 = p * p * 0.6 + p * 0.4, x = sx + (tx - sx) * e2, y = sy + (ty - sy) * e2;
+            if (o.trail) { ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = rgba(col[1], 0.4); ctx.lineWidth = r * 0.7; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x - (tx - sx) * 0.12, y - (ty - sy) * 0.12); ctx.lineTo(x, y); ctx.stroke(); }
+            ctx.globalCompositeOperation = 'source-over'; const rr0 = o.rot != null ? o.rot : (o.align ? Math.atan2(ty - sy, tx - sx) - Math.PI / 2 : it.rot + p * it.sp);
+            glyph(ctx, gl, x, y, r * it.sc, rr0, col[1], 1);
+            glyph(ctx, gl, x, y, r * it.sc * 0.55, rr0, col[0], 0.9);
+          } else if (o.splash !== false) {
+            const q = pr(ms, it.st + ft, 200); if (q >= 1) continue;
+            ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = rgba(col[0], (1 - q) * 0.9); ctx.lineWidth = 2 * c.S; ctx.beginPath(); ctx.ellipse(tx, ty, r * (0.6 + 2.2 * q), r * (0.3 + 1.0 * q), 0, 0, TAU); ctx.stroke(); glowDot(ctx, tx, ty, r * (1 + q), col, (1 - q) * 0.7);
+          }
+        }
+      });
+    };
+
+    // ---- 立ちのぼる粒（オーラ・泡・湯気・ハート・光）----
+    L.rise = function (o) {
+      const col = cc(o.c), n = o.n || 16, d = o.d || 600, t0 = o.t || 0, gl = o.glyph || 'dot', life = o.life || 500;
+      const items = []; for (let i = 0; i < n; i++) items.push({ st: t0 + rand(0, d - 120 > 0 ? d - 120 : 0), jx: rand(-1, 1), ph: rand(0, TAU), sc: rand(0.7, 1.3), rot: rand(0, TAU) });
+      return newLayer(t0, t0 + d + life, (ctx, ms, c) => {
+        const at = A(c, o.at, o.ox, o.oy), r = (o.r || 6) * c.S, up = (o.up == null ? 1.1 : o.up) * c.size, sp = (o.spread == null ? 0.8 : o.spread) * c.size * 0.5, down = o.down ? -1 : 1;
+        for (const it of items) {
+          if (ms < it.st) continue;
+          const p = pr(ms, it.st, life); if (p >= 1) continue;
+          const x = at.x + it.jx * sp + Math.sin(it.ph + p * 6) * (o.sway == null ? 8 : o.sway) * c.S, y = (o.down ? at.y - up * 0.5 : at.y + c.size * 0.3) - down * up * eo(p);
+          const a = Math.sin(Math.PI * Math.pow(p, 0.8)), sz = r * it.sc * (o.grow ? 0.5 + p : 1 - p * 0.3);
+          ctx.globalCompositeOperation = o.add === false ? 'source-over' : 'lighter';
+          if (o.glow !== false) glowDot(ctx, x, y, sz * 2.2, col, a * 0.5);
+          glyph(ctx, gl, x, y, sz, o.spin ? it.rot + p * o.spin : (o.upright ? 0 : it.rot * 0.2), col[o.tone == null ? 0 : o.tone], a);
+        }
+      });
+    };
+
+    // ---- 渦：周囲を回る粒（竜巻・砂嵐・花吹雪）----
+    L.swirl = function (o) {
+      const col = cc(o.c), n = o.n || 22, d = o.d || 800, t0 = o.t || 0, gl = o.glyph || 'dot';
+      const items = []; for (let i = 0; i < n; i++) items.push({ a: rand(0, TAU), h: rand(0, 1), sp: rand(0.8, 1.3), sc: rand(0.7, 1.3) });
+      return newLayer(t0, t0 + d, (ctx, ms, c) => {
+        const p = pr(ms, t0, d), at = A(c, o.at, o.ox, o.oy), R0 = (o.radius || 0.7) * c.size * 0.5, r = (o.r || 6) * c.S, a0 = Math.sin(Math.PI * clamp01(p * 1.05));
+        for (const it of items) {
+          const ang = it.a + p * TAU * (o.turns || 2.2) * it.sp, hh = (it.h + (o.rise ? p * o.rise : 0)) % 1;
+          const rad = R0 * (o.cone ? 0.35 + hh * 0.9 : 1) * (1 - (o.shrink || 0) * p), x = at.x + Math.cos(ang) * rad, y = at.y + Math.sin(ang) * rad * 0.42 + c.size * 0.35 - hh * (o.height || 1.0) * c.size;
+          ctx.globalCompositeOperation = o.add ? 'lighter' : 'source-over';
+          glyph(ctx, gl, x, y, r * it.sc, ang * (o.spin || 1), col[(it.sc > 1) ? 0 : 1], a0 * (Math.sin(ang) > 0 ? 1 : 0.65));
+        }
+      });
+    };
+
+    // ---- 柱：地面から／空から ----
+    L.pillar = function (o) {
+      const col = cc(o.c), t0 = o.t || 0, d = o.d || 600, W0 = (o.w || 0.8);
+      const bits = []; for (let i = 0; i < 12; i++) bits.push({ x: rand(-1, 1), s: rand(0.5, 1.2), p0: rand(0, 1) });
+      return newLayer(t0, t0 + d, (ctx, ms, c) => {
+        const p = pr(ms, t0, d), at = A(c, o.at, o.ox, o.oy), W = W0 * c.size * 0.5, gy = at.y + c.size * 0.38;
+        const grow = eb(clamp01(p / 0.3)), a = p < 0.7 ? 1 : 1 - (p - 0.7) / 0.3, H = (o.h || 1.1) * c.size * 1.5;
+        const topY = o.dir === 'down' ? -20 : gy - H * grow, botY = o.dir === 'down' ? gy : gy;
+        const yTop = o.dir === 'down' ? gy - H * (1 - grow) * 2 : topY;
+        ctx.globalCompositeOperation = 'lighter';
+        const g = ctx.createLinearGradient(at.x - W, 0, at.x + W, 0); g.addColorStop(0, rgba(col[2], 0)); g.addColorStop(0.3, rgba(col[1], a * 0.85)); g.addColorStop(0.5, rgba(col[0], a)); g.addColorStop(0.7, rgba(col[1], a * 0.85)); g.addColorStop(1, rgba(col[2], 0));
+        ctx.fillStyle = g; const tx = o.dir === 'down' ? Math.max(-20, yTop) : yTop; ctx.fillRect(at.x - W, tx, W * 2, botY - tx);
+        glowDot(ctx, at.x, gy, W * 2.2 * grow, col, a * 0.8);
+        if (o.glyph) { ctx.globalCompositeOperation = 'source-over'; for (const b of bits) { const q = (b.p0 + p * b.s * 1.6) % 1, y = gy - q * H * grow; if (y < tx) continue; glyph(ctx, o.glyph, at.x + b.x * W * 0.9, y, 6 * c.S, q * 8, col[0], a); } }
+      });
+    };
+
+    // ---- 霧・煙・ガス ----
+    L.cloud = function (o) {
+      const col = cc(o.c), n = o.n || 9, d = o.d || 900, t0 = o.t || 0;
+      const items = []; for (let i = 0; i < n; i++) items.push({ x: rand(-1, 1), y: rand(-0.6, 0.6), r: rand(0.6, 1.2), ph: rand(0, TAU), dl: rand(0, 0.3) });
+      return newLayer(t0, t0 + d, (ctx, ms, c) => {
+        const p = pr(ms, t0, d), at = A(c, o.at, o.ox, o.oy), R = (o.r || 0.55) * c.size, a = Math.sin(Math.PI * p) * (o.a == null ? 0.55 : o.a);
+        ctx.globalCompositeOperation = o.add ? 'lighter' : 'source-over';
+        for (const it of items) { const q = clamp01((p - it.dl) / (1 - it.dl)), x = at.x + it.x * c.size * 0.55 + Math.sin(it.ph + p * 4) * 10 * c.S + (o.drift || 0) * c.size * q, y = at.y + it.y * c.size * 0.45 - (o.lift || 0.2) * c.size * q;
+          glowDot(ctx, x, y, R * it.r * (0.7 + 0.5 * q), [col[1], col[1], col[2]], a * Math.sin(Math.PI * q)); }
+      });
+    };
+
+    // ---- 雷光 ----
+    L.bolt = function (o) {
+      const col = cc(o.c), n = o.n || 2, d = o.d || 260, t0 = o.t || 0, gap = o.gap == null ? 90 : o.gap;
+      const items = []; for (let i = 0; i < n; i++) items.push({ st: t0 + i * gap, jx: rand(-0.6, 0.6), seed: rand(0, 99) });
+      return newLayer(t0, t0 + (n - 1) * gap + d, (ctx, ms, c) => {
+        for (const it of items) {
+          const p = pr(ms, it.st, d); if (ms < it.st || p >= 1) continue;
+          const a = (Math.sin(ms * 0.9 + it.seed) > -0.5 ? 1 : 0.4) * (1 - p);
+          const tx = c.to.x + it.jx * c.size * 0.5, ty = c.to.y, sx = o.src === 'from' ? c.from.x : tx + rand(-30, 30), sy = o.src === 'from' ? c.from.y : -20;
+          const NS = 9; const pts = []; for (let k = 0; k <= NS; k++) { const s = k / NS, ox = (k === 0 || k === NS) ? 0 : rand(-1, 1) * 24 * c.S; pts.push([sx + (tx - sx) * s + ox, sy + (ty - sy) * s]); }
+          ctx.globalCompositeOperation = 'lighter'; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+          [[col[2], 12, 0.35], [col[1], 6, 0.8], [col[0], 2.5, 1]].forEach((s) => { ctx.strokeStyle = rgba(s[0], a * s[2]); ctx.lineWidth = s[1] * c.S * (o.w || 1); ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke(); });
+          glowDot(ctx, tx, ty, 36 * c.S, col, a);
+        }
+      });
+    };
+
+    // ---- 尾・翼・腕・脚の振り抜き（三日月状の軌跡）----
+    L.arc = function (o) {
+      const col = cc(o.c), t0 = o.t || 0, d = o.d || 280, a0 = (o.a0 == null ? -110 : o.a0) * DEG, a1 = (o.a1 == null ? 70 : o.a1) * DEG;
+      return newLayer(t0, t0 + d + 160, (ctx, ms, c) => {
+        const p = pr(ms, t0, d), fade = 1 - pr(ms, t0 + d, 160); if (ms < t0 || fade <= 0) return;
+        const at = A(c, o.at, o.ox, o.oy), R = (o.r || 0.75) * c.size, W = (o.w || 1) * c.S * 12, head = a0 + (a1 - a0) * eo(p), tail = a0 + (a1 - a0) * Math.max(0, eo(p) - 0.7), rot = (o.rot || 0) * DEG;
+        const NS = 16, outer = [], inner = [];
+        for (let k = 0; k <= NS; k++) { const a = tail + (head - tail) * k / NS + rot, wp = Math.pow(Math.sin(Math.PI * k / NS), 0.8) * W; outer.push([at.x + Math.cos(a) * (R + wp), at.y + Math.sin(a) * (R + wp) * (o.sq || 1)]); inner.push([at.x + Math.cos(a) * (R - wp), at.y + Math.sin(a) * (R - wp) * (o.sq || 1)]); }
+        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = fade; ctx.shadowColor = col[1]; ctx.shadowBlur = 12;
+        ctx.fillStyle = col[1]; ctx.beginPath(); outer.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); for (let i = inner.length - 1; i >= 0; i--) ctx.lineTo(inner[i][0], inner[i][1]); ctx.closePath(); ctx.fill();
+        ctx.shadowBlur = 0; ctx.strokeStyle = col[0]; ctx.lineWidth = Math.max(1.5, W * 0.18); ctx.beginPath(); for (let k = 0; k <= NS; k++) { const a = tail + (head - tail) * k / NS + rot; k ? ctx.lineTo(at.x + Math.cos(a) * R, at.y + Math.sin(a) * R * (o.sq || 1)) : ctx.moveTo(at.x + Math.cos(a) * R, at.y + Math.sin(a) * R * (o.sq || 1)); } ctx.stroke();
+      });
+    };
+
+    // ---- 地面から突き出す棘・氷柱・岩・茨 ----
+    L.spikes = function (o) {
+      const col = cc(o.c), n = o.n || 5, d = o.d || 640, t0 = o.t || 0;
+      const items = []; for (let i = 0; i < n; i++) items.push({ x: (n === 1 ? 0 : (i / (n - 1) - 0.5) * 2) * (o.spread || 0.9) + rand(-0.08, 0.08), dl: rand(0, 0.25), h: rand(0.7, 1.15), w: rand(0.7, 1.2), lean: rand(-0.35, 0.35) });
+      return newLayer(t0, t0 + d, (ctx, ms, c) => {
+        const p = pr(ms, t0, d), at = A(c, o.at, o.ox, o.oy), gy = at.y + c.size * 0.38;
+        for (const it of items) {
+          const q = clamp01((p - it.dl) / 0.3), fade = p > 0.72 ? 1 - (p - 0.72) / 0.28 : 1; if (q <= 0 || fade <= 0) continue;
+          const H = (o.h || 0.9) * c.size * it.h * Math.min(1, eb(q)), Wd = (o.sw || 0.14) * c.size * it.w, x = at.x + it.x * c.size * 0.5;
+          ctx.save(); ctx.globalAlpha = fade; ctx.translate(x, gy); ctx.transform(1, 0, it.lean * 0.4, 1, 0, 0);
+          const g = ctx.createLinearGradient(-Wd, 0, Wd, 0); g.addColorStop(0, col[2]); g.addColorStop(0.45, col[1]); g.addColorStop(0.6, col[0]); g.addColorStop(1, col[2]);
+          ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(-Wd, 0);
+          if (o.kind === 'thorn') { ctx.quadraticCurveTo(-Wd * 0.4, -H * 0.5, it.lean * Wd * 3, -H); ctx.quadraticCurveTo(Wd * 0.2, -H * 0.5, Wd, 0); }
+          else if (o.kind === 'rock') { ctx.lineTo(-Wd * 0.8, -H * 0.55); ctx.lineTo(-Wd * 0.2, -H); ctx.lineTo(Wd * 0.6, -H * 0.7); ctx.lineTo(Wd, 0); }
+          else { ctx.lineTo(-Wd * 0.2, -H * 0.92); ctx.lineTo(0, -H); ctx.lineTo(Wd * 0.2, -H * 0.92); ctx.lineTo(Wd, 0); }
+          ctx.closePath(); ctx.fill(); ctx.strokeStyle = rgba(col[0], 0.6); ctx.lineWidth = 1.2; ctx.stroke(); ctx.restore();
+        }
+        if (p < 0.4) { ctx.globalCompositeOperation = 'lighter'; glowDot(ctx, at.x, gy, c.size * 0.7, col, (0.4 - p) * 1.2); }
+      });
+    };
+
+    // ---- オーラ：足元から立ち上る光と脈動する後光 ----
+    L.aura = function (o) {
+      const col = cc(o.c), t0 = o.t || 0, d = o.d || 700;
+      return newLayer(t0, t0 + d, (ctx, ms, c) => {
+        const p = pr(ms, t0, d), at = A(c, o.at, o.ox, o.oy), a = Math.sin(Math.PI * p), R = (o.r || 0.85) * c.size * (0.9 + 0.12 * Math.sin(ms * 0.02));
+        ctx.globalCompositeOperation = 'lighter'; glowDot(ctx, at.x, at.y, R, col, a * 0.7);
+        for (let i = 0; i < 6; i++) { const x = at.x + (i - 2.5) * c.size * 0.14, q = (p * 1.8 + i * 0.17) % 1; ctx.strokeStyle = rgba(col[0], a * (1 - q) * 0.8); ctx.lineWidth = 3 * c.S; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x, at.y + c.size * 0.35 - q * c.size * 0.5); ctx.lineTo(x, at.y + c.size * 0.35 - q * c.size * 0.5 - c.size * 0.28); ctx.stroke(); }
+      });
+    };
+
+    // ---- 防壁：ドーム／六角パネル／壁／環 ----
+    L.shield = function (o) {
+      const col = cc(o.c), t0 = o.t || 0, d = o.d || 700, shape = o.shape || 'dome';
+      return newLayer(t0, t0 + d, (ctx, ms, c) => {
+        const p = pr(ms, t0, d), at = A(c, o.at, o.ox, o.oy), R = (o.r || 0.8) * c.size, a = p < 0.2 ? p / 0.2 : (p > 0.75 ? (1 - p) / 0.25 : 1), pop = eb(clamp01(p / 0.25));
+        ctx.globalCompositeOperation = 'lighter';
+        if (shape === 'wall') {
+          const w = R * 0.5 * pop, h = R * 1.5 * pop, x = at.x + (o.side || 0.45) * c.size * c.ux, y = at.y + (o.side || 0.45) * c.size * c.uy;
+          const g = ctx.createLinearGradient(x, y - h, x, y + h); g.addColorStop(0, rgba(col[2], 0.1 * a)); g.addColorStop(0.5, rgba(col[1], 0.55 * a)); g.addColorStop(1, rgba(col[2], 0.1 * a));
+          ctx.fillStyle = g; ctx.strokeStyle = rgba(col[0], a); ctx.lineWidth = 2.5 * c.S; ctx.beginPath(); ctx.moveTo(x - w * 0.6, y - h * 0.6); ctx.lineTo(x + w * 0.6, y - h * 0.5); ctx.lineTo(x + w * 0.6, y + h * 0.55); ctx.lineTo(x - w * 0.6, y + h * 0.6); ctx.closePath(); ctx.fill(); ctx.stroke();
+          const sh = ((ms - t0) * 0.002) % 1; ctx.strokeStyle = rgba(col[0], a * 0.5); ctx.lineWidth = 4 * c.S; ctx.beginPath(); ctx.moveTo(x - w * 0.6, y - h * 0.6 + sh * h * 1.2); ctx.lineTo(x + w * 0.6, y - h * 0.5 + sh * h * 1.2); ctx.stroke();
+        } else if (shape === 'ring') {
+          for (let i = 0; i < 2; i++) { ctx.strokeStyle = rgba(col[i ? 0 : 1], a * 0.9); ctx.lineWidth = (i ? 2 : 6) * c.S; ctx.beginPath(); ctx.ellipse(at.x, at.y + c.size * 0.1, R * pop * (1 - i * 0.12), R * 0.45 * pop, 0, 0, TAU); ctx.stroke(); }
+        } else {
+          const g = ctx.createRadialGradient(at.x, at.y, R * 0.3, at.x, at.y, R * pop); g.addColorStop(0, rgba(col[2], 0)); g.addColorStop(0.8, rgba(col[1], 0.35 * a)); g.addColorStop(1, rgba(col[0], 0.9 * a));
+          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(at.x, at.y, R * pop, 0, TAU); ctx.fill();
+          if (shape === 'hex') { ctx.strokeStyle = rgba(col[0], a * 0.7); ctx.lineWidth = 1.5 * c.S; const hr = R * 0.22; for (let iy = -3; iy <= 3; iy++) for (let ix = -3; ix <= 3; ix++) { const hx = at.x + ix * hr * 1.73 + (iy & 1) * hr * 0.87, hy = at.y + iy * hr * 1.5; if (Math.hypot(hx - at.x, hy - at.y) > R * pop * 0.95) continue; ctx.beginPath(); for (let k = 0; k < 6; k++) { const aa = k / 6 * TAU + Math.PI / 6; k ? ctx.lineTo(hx + Math.cos(aa) * hr, hy + Math.sin(aa) * hr) : ctx.moveTo(hx + Math.cos(aa) * hr, hy + Math.sin(aa) * hr); } ctx.closePath(); ctx.stroke(); } }
+        }
+      });
+    };
+
+    // ---- 場全体：フィールド技・天候的な演出 ----
+    L.field = function (o) {
+      const col = cc(o.c), n = o.n || 34, d = o.d || 1100, t0 = o.t || 0, gl = o.glyph || 'dot';
+      const items = []; for (let i = 0; i < n; i++) items.push({ x: rand(0, 1), y: rand(0, 1), s: rand(0.6, 1.4), ph: rand(0, TAU), rot: rand(0, TAU) });
+      return newLayer(t0, t0 + d, (ctx, ms, c) => {
+        const p = pr(ms, t0, d), a = Math.sin(Math.PI * Math.min(1, p * 1.05));
+        ctx.globalCompositeOperation = 'source-over';
+        const g = ctx.createLinearGradient(0, o.mode === 'fall' ? 0 : c.h, 0, o.mode === 'fall' ? c.h : 0); g.addColorStop(0, rgba(col[1], (o.tint == null ? 0.22 : o.tint) * a)); g.addColorStop(1, rgba(col[2], 0));
+        ctx.fillStyle = g; ctx.fillRect(0, 0, c.w, c.h);
+        if (o.grid) { ctx.strokeStyle = rgba(col[0], 0.55 * a); ctx.lineWidth = 1.5 * c.S; const hz = c.h * 0.35, cx0 = c.w / 2; for (let i = -8; i <= 8; i++) { ctx.beginPath(); ctx.moveTo(cx0 + i * 10, hz); ctx.lineTo(cx0 + i * c.w * 0.14, c.h); ctx.stroke(); } for (let j = 0; j < 7; j++) { const yy = hz + Math.pow((j + (p * 3) % 1) / 7, 1.8) * (c.h - hz); ctx.beginPath(); ctx.moveTo(0, yy); ctx.lineTo(c.w, yy); ctx.stroke(); } }
+        ctx.globalCompositeOperation = o.add === false ? 'source-over' : 'lighter';
+        for (const it of items) {
+          let x = it.x * c.w, y = it.y * c.h; const q = (p * it.s + it.ph / TAU) % 1;
+          if (o.mode === 'rise') y = c.h * (1.05 - q * 1.1); else if (o.mode === 'fall') y = c.h * (q * 1.1 - 0.05); else if (o.mode === 'wave') { x = ((it.x + p * 0.6 * it.s) % 1) * c.w; y = it.y * c.h + Math.sin(x * 0.03 + it.ph) * 14 * c.S; } else { x = (it.x + Math.sin(it.ph + p * 5) * 0.03) * c.w; y = (it.y + Math.cos(it.ph + p * 4) * 0.03) * c.h; }
+          const tw = o.mode ? 1 : 0.5 + 0.5 * Math.sin(it.ph + p * 14);
+          glowDot(ctx, x, y, (o.r || 7) * c.S * 2, col, a * 0.35 * tw); glyph(ctx, gl, x, y, (o.r || 7) * c.S * it.s, it.rot + p * 3, col[0], a * tw);
+        }
+      });
+    };
+
+    // ---- 目：にらみ・怪しい光 ----
+    L.eye = function (o) {
+      const col = cc(o.c), t0 = o.t || 0, d = o.d || 600;
+      return newLayer(t0, t0 + d, (ctx, ms, c) => {
+        const p = pr(ms, t0, d), at = A(c, o.at, o.ox, o.oy), open = Math.sin(Math.PI * Math.min(1, p * 1.1)), W = (o.r || 0.9) * c.size * 0.55;
+        if (open <= 0.01) return; ctx.globalCompositeOperation = 'lighter';
+        const H = W * 0.5 * open; glowDot(ctx, at.x, at.y, W * 1.6, col, open * 0.55);
+        ctx.fillStyle = rgba(col[0], 0.95 * open); ctx.beginPath(); ctx.moveTo(at.x - W, at.y); ctx.quadraticCurveTo(at.x, at.y - H * 2, at.x + W, at.y); ctx.quadraticCurveTo(at.x, at.y + H * 2, at.x - W, at.y); ctx.fill();
+        ctx.fillStyle = rgba(col[2], 0.95); ctx.beginPath(); ctx.ellipse(at.x, at.y, W * 0.16 * (1 - 0.4 * p), H * 1.4, 0, 0, TAU); ctx.fill();
+      });
+    };
+
+    // ---- 地割れ ----
+    L.crack = function (o) {
+      const col = cc(o.c), t0 = o.t || 0, d = o.d || 700, n = o.n || 7;
+      const rays = []; for (let i = 0; i < n; i++) { const pts = []; let a = (i / n) * TAU + rand(-0.3, 0.3), x = 0, y = 0; for (let k = 0; k < 7; k++) { a += rand(-0.45, 0.45); const l = rand(0.12, 0.2); x += Math.cos(a) * l; y += Math.sin(a) * l * 0.55; pts.push([x, y]); } rays.push(pts); }
+      return newLayer(t0, t0 + d, (ctx, ms, c) => {
+        const p = pr(ms, t0, d), at = A(c, o.at || 'ground', o.ox, o.oy), g = clamp01(p / 0.4), fade = p > 0.65 ? 1 - (p - 0.65) / 0.35 : 1; if (g <= 0) return;
+        ctx.globalCompositeOperation = 'lighter';
+        for (const pts of rays) { const m = Math.max(1, Math.floor(pts.length * g)); [[col[2], 7], [col[1], 3.5], [col[0], 1.4]].forEach((s) => { ctx.strokeStyle = rgba(s[0], fade * 0.9); ctx.lineWidth = s[1] * c.S; ctx.lineJoin = 'round'; ctx.beginPath(); ctx.moveTo(at.x, at.y); for (let k = 0; k < m; k++) ctx.lineTo(at.x + pts[k][0] * c.size * 1.4, at.y + pts[k][1] * c.size * 1.4); ctx.stroke(); }); }
+        glowDot(ctx, at.x, at.y, c.size * 0.5 * g, col, fade * 0.6);
+      });
+    };
+
+    // ---- 突進の筋：攻撃側→相手へ走る速度線 ----
+    L.streaks = function (o) {
+      const col = cc(o.c), t0 = o.t || 0, d = o.d || 260, n = o.n || 12;
+      const items = []; for (let i = 0; i < n; i++) items.push({ off: rand(-1, 1), dl: rand(0, 0.4), len: rand(0.3, 0.7) });
+      return newLayer(t0, t0 + d, (ctx, ms, c) => {
+        const p = pr(ms, t0, d); if (p >= 1) return; ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+        for (const it of items) { const q = clamp01((p - it.dl) / (1 - it.dl)); if (q <= 0) continue; const e2 = eo(q), a = Math.sin(Math.PI * q), x0 = c.from.x + c.nx * it.off * c.size * 0.35, y0 = c.from.y + c.ny * it.off * c.size * 0.35, dx = c.to.x - c.from.x, dy = c.to.y - c.from.y;
+          const hx = x0 + dx * e2, hy = y0 + dy * e2, tx = x0 + dx * Math.max(0, e2 - it.len), ty = y0 + dy * Math.max(0, e2 - it.len);
+          const g = ctx.createLinearGradient(tx, ty, hx, hy); g.addColorStop(0, rgba(col[2], 0)); g.addColorStop(1, rgba(col[0], a)); ctx.strokeStyle = g; ctx.lineWidth = (2 + 2 * Math.abs(it.off)) * c.S; ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(hx, hy); ctx.stroke(); }
+      });
+    };
+
+    // ---- 拳・足・角・くちばしなど「突き」：攻撃側の方から相手へ突き出る形 ----
+    L.thrust = function (o) {
+      const col = cc(o.c), t0 = o.t || 0, d = o.d || 240, kind = o.kind || 'fist';
+      return newLayer(t0, t0 + d + 120, (ctx, ms, c) => {
+        const p = pr(ms, t0, d), fade = 1 - pr(ms, t0 + d, 120); if (ms < t0 || fade <= 0) return;
+        const e2 = eo(p), x = c.to.x - c.ux * c.size * 0.55 * (1 - e2), y = c.to.y - c.uy * c.size * 0.55 * (1 - e2), r = (o.r || 1) * c.size * 0.2;
+        ctx.save(); ctx.translate(x, y); ctx.rotate(c.ang); ctx.globalAlpha = fade;
+        ctx.globalCompositeOperation = 'lighter'; glowDot(ctx, 0, 0, r * 2.6, col, 0.55); ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = col[1]; ctx.strokeStyle = col[0]; ctx.lineWidth = Math.max(1.5, r * 0.12);
+        ctx.beginPath();
+        if (kind === 'fist') { ctx.roundRect ? ctx.roundRect(-r * 0.9, -r * 0.8, r * 1.8, r * 1.6, r * 0.45) : ctx.rect(-r * 0.9, -r * 0.8, r * 1.8, r * 1.6); ctx.fill(); ctx.stroke(); ctx.beginPath(); for (let i = -1; i <= 1; i++) { ctx.moveTo(r * 0.3, i * r * 0.5 - r * 0.25); ctx.lineTo(r * 0.3, i * r * 0.5 + r * 0.25); } ctx.stroke(); }
+        else if (kind === 'horn') { ctx.moveTo(-r * 0.2, -r * 0.7); ctx.lineTo(r * 1.9, 0); ctx.lineTo(-r * 0.2, r * 0.7); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+        else if (kind === 'drill') { ctx.moveTo(-r * 0.3, -r * 0.8); ctx.lineTo(r * 2, 0); ctx.lineTo(-r * 0.3, r * 0.8); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.strokeStyle = col[0]; for (let i = 0; i < 4; i++) { const q = ((ms * 0.008 + i * 0.25) % 1); ctx.beginPath(); ctx.moveTo(-r * 0.3 + q * r * 1.8, -r * 0.8 * (1 - q)); ctx.lineTo(-r * 0.3 + q * r * 1.8 + r * 0.3, r * 0.8 * (1 - q)); ctx.stroke(); } }
+        else if (kind === 'foot') { ctx.moveTo(-r * 1.4, -r * 0.35); ctx.lineTo(r * 0.5, -r * 0.5); ctx.quadraticCurveTo(r * 1.5, -r * 0.5, r * 1.4, r * 0.3); ctx.lineTo(-r * 1.4, r * 0.45); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+        else if (kind === 'head') { ctx.arc(0, 0, r * 1.05, 0, TAU); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.arc(-r * 0.2, -r * 0.3, r * 0.3, 0, TAU); ctx.fillStyle = rgba(col[0], 0.7); ctx.fill(); }
+        else if (kind === 'beak') { ctx.moveTo(-r * 0.4, -r * 0.5); ctx.quadraticCurveTo(r * 1.0, -r * 0.4, r * 1.7, 0); ctx.quadraticCurveTo(r * 1.0, r * 0.4, -r * 0.4, r * 0.5); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+        else if (kind === 'palm') { ctx.ellipse(0, 0, r * 0.7, r * 1.1, 0, 0, TAU); ctx.fill(); ctx.stroke(); }
+        else if (kind === 'hammer') { ctx.rect(-r * 1.6, -r * 0.1, r * 1.6, r * 0.2); ctx.fill(); ctx.beginPath(); ctx.rect(0, -r * 0.8, r * 1.1, r * 1.6); ctx.fill(); ctx.stroke(); }
+        else { ctx.arc(0, 0, r, 0, TAU); ctx.fill(); ctx.stroke(); }
+        ctx.restore();
+      });
+    };
+
+    // ---- 吐息・噴霧：口元から扇状に広がる粒の奔流 ----
+    L.spray = function (o) {
+      const col = cc(o.c), n = o.n || 30, d = o.d || 640, t0 = o.t || 0, gl = o.glyph || 'dot', fly = o.fly || 300;
+      const items = []; for (let i = 0; i < n; i++) items.push({ st: t0 + rand(0, d * 0.6), sp: rand(-1, 1), sc: rand(0.6, 1.3), rot: rand(0, TAU) });
+      return newLayer(t0, t0 + d * 0.6 + fly, (ctx, ms, c) => {
+        const mz = { x: c.from.x + c.ux * 30 * c.S, y: c.from.y + c.uy * 30 * c.S }, r = (o.r || 7) * c.S, fan = (o.fan == null ? 0.28 : o.fan);
+        for (const it of items) {
+          const p = pr(ms, it.st, fly); if (ms < it.st || p >= 1) continue;
+          const dist = Math.hypot(c.to.x - mz.x, c.to.y - mz.y) * (0.9 + 0.2 * it.sc), side = it.sp * fan * c.size * p * (o.widen == null ? 1 : o.widen), e2 = o.ease === 'in' ? p * p : p;
+          const x = mz.x + c.ux * dist * e2 + c.nx * side + c.nx * Math.sin(p * 9 + it.rot) * (o.wob || 0) * c.S, y = mz.y + c.uy * dist * e2 + c.ny * side + c.ny * Math.sin(p * 9 + it.rot) * (o.wob || 0) * c.S - (o.lift || 0) * c.S * Math.sin(Math.PI * p);
+          const a = Math.sin(Math.PI * Math.min(1, p * 1.05) ) , sz = r * it.sc * (o.grow ? 0.5 + p * 1.2 : 1);
+          ctx.globalCompositeOperation = o.add === false ? 'source-over' : 'lighter'; if (o.glow !== false) glowDot(ctx, x, y, sz * 2, col, a * 0.5); glyph(ctx, gl, x, y, sz, o.spin ? it.rot + p * o.spin : (o.align ? c.ang : it.rot), col[o.tone == null ? 0 : o.tone], a);
+        }
+      });
+    };
+
+    // ---- 自分の足元から相手へ走る波（地面技・水技）----
+    L.wave = function (o) {
+      const col = cc(o.c), t0 = o.t || 0, d = o.d || 560;
+      return newLayer(t0, t0 + d + 100, (ctx, ms, c) => {
+        const p = pr(ms, t0, d), fade = 1 - pr(ms, t0 + d, 100); if (ms < t0 || fade <= 0) return;
+        const e2 = eo(p), x = c.from.x + (c.to.x - c.from.x) * e2, y = c.from.y + (c.to.y - c.from.y) * e2 + c.size * 0.32, w = (o.w || 0.8) * c.size, h = (o.h || 0.5) * c.size * (0.6 + 0.4 * Math.sin(Math.PI * p));
+        ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = rgba(col[1], 0.6 * fade); ctx.beginPath(); ctx.moveTo(x - w / 2, y); ctx.quadraticCurveTo(x - w * 0.1, y - h * 1.2, x + w * 0.15, y - h); ctx.quadraticCurveTo(x + w * 0.35, y - h * 0.6, x + w / 2, y); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = rgba(col[0], fade); ctx.lineWidth = 3 * c.S; ctx.stroke();
+      });
+    };
+
+    // ---- 画面を一色で一瞬満たす（まばゆい光・闇）----
+    L.veil = function (o) {
+      const col = cc(o.c), t0 = o.t || 0, d = o.d || 500;
+      return newLayer(t0, t0 + d, (ctx, ms, c) => {
+        const p = pr(ms, t0, d), a = Math.sin(Math.PI * p) * (o.a == null ? 0.5 : o.a); if (a <= 0) return;
+        ctx.globalCompositeOperation = o.dark ? 'source-over' : 'lighter'; const g = ctx.createRadialGradient(c.to.x, c.to.y, 10, c.to.x, c.to.y, Math.max(c.w, c.h) * 0.8);
+        g.addColorStop(0, rgba(col[0], a)); g.addColorStop(0.6, rgba(col[1], a * 0.7)); g.addColorStop(1, rgba(col[2], a * (o.dark ? 0.9 : 0.2))); ctx.fillStyle = g; ctx.fillRect(0, 0, c.w, c.h);
+      });
+    };
+
+    // ---- 各レイヤーに「命中の瞬間(h)」と「代表パレット(pal)」を付与（画面フラッシュ／シェイクの時刻・色の自動決定に使う）----
+    const HITF = {
+      slash: (o) => (o.t || 0) + (o.d || 280) * 0.35, burst: (o) => o.t || 0,
+      shots: (o) => (o.t || 0) + (o.fly || 260), orb: (o) => (o.t || 0) + (o.charge == null ? 380 : o.charge) + (o.fly || 300),
+      beam: (o) => (o.t || 0) + (o.ext || 140), thrust: (o) => (o.t || 0) + (o.d || 240) * 0.9,
+      arc: (o) => (o.t || 0) + (o.d || 280) * 0.5, bolt: (o) => (o.t || 0) + 60,
+      rain: (o) => (o.t || 0) + (o.fall || 300) + 100, pillar: (o) => (o.t || 0) + (o.d || 600) * 0.25,
+      spikes: (o) => (o.t || 0) + (o.d || 640) * 0.2, crack: (o) => (o.t || 0) + (o.d || 700) * 0.3,
+      wave: (o) => (o.t || 0) + (o.d || 560), spray: (o) => (o.t || 0) + (o.fly || 300),
+    };
+    Object.keys(L).forEach((k) => {
+      const f = L[k];
+      L[k] = (o) => { o = o || {}; const ly = f(o); ly.pal = cc(o.c); if (HITF[k]) ly.h = HITF[k](o); return ly; };
+    });
+
+    return { PAL, L, cc, A, glowDot, glyph, rand, pr };
+  })();
+
+  // ------------------------------------------------------------
+  // レシピ登録と再生
+  //   D(技ID or [技ID…], () => [レイヤー…], オプション)
+  //   オプション: on:'foe'|'self'|'field'  … 演出の中心（相手／自分／場全体）
+  //               hit:ms                    … 命中時刻（省略時はレイヤーから自動算出）
+  //               lunge:[開始ms, 踏み込みms, 距離割合] … 攻撃側スプライトの踏み込み
+  //               flash:[色, 濃さ, ms] / null … 命中時の画面フラッシュ（省略時は威力から自動）
+  //               shake:[振幅px, ms] / null    … 命中時の画面シェイク（省略時は威力から自動）
+  //               tail:ms                   … 最後のレイヤーが終わった後の余韻
+  // ------------------------------------------------------------
+  MFX.REC = {};
+  MFX.D = function (ids, build, opts) {
+    [].concat(ids).forEach((id) => { MFX.REC[id] = { build, opts: opts || {} }; });
+  };
+
+  function mfxMeasure(layerEl, defSide) {
+    const lr = layerEl.getBoundingClientRect();
+    const get = (side) => {
+      const slot = document.getElementById(side === 'opp' ? 'sprite-opp-wrap' : 'sprite-self-wrap');
+      if (!slot) return null;
+      const img = slot.querySelector('img, .sprite-fallback') || slot;
+      const r = img.getBoundingClientRect();
+      if (!r.width || !r.height) return null;
+      return { x: r.left - lr.left + r.width / 2, y: r.top - lr.top + r.height / 2, size: Math.max(r.width, r.height), img: slot.querySelector('img, .sprite-fallback') };
+    };
+    const defS = defSide === 'self' || defSide === 'opp' ? defSide : 'opp';
+    const atkS = defS === 'opp' ? 'self' : 'opp';
+    const w = Math.max(60, lr.width || 300), h = Math.max(60, lr.height || 300);
+    const a = get(atkS) || { x: w * 0.28, y: h * 0.68, size: 150, img: null };
+    const d = get(defS) || { x: w * 0.72, y: h * 0.32, size: 120, img: null };
+    return { w, h, a, d };
+  }
+
+  MFX.has = function (id) { return !!MFX.REC[id]; };
+
+  MFX.play = function (wrapEl, moveId, defSide) {
+    const rec = MFX.REC[moveId];
+    if (!rec || !wrapEl) return null;
+    const opts = rec.opts;
+    const m = mfxMeasure(wrapEl, defSide);
+    let layers;
+    try { layers = rec.build(); } catch (e) { console.warn('[MoveFX] build失敗', moveId, e); return null; }
+    if (!layers || !layers.length) return null;
+
+    // 幾何：on:'self' のときは「自分」を中心に据える（強化・回復・防御など）
+    const foe = m.d, me = m.a;
+    const tgt = opts.on === 'self' ? me : foe, src = opts.on === 'self' ? foe : me;
+    const dx = tgt.x - src.x, dy = tgt.y - src.y, dist = Math.hypot(dx, dy) || 1;
+    const c = {
+      w: m.w, h: m.h, from: { x: src.x, y: src.y }, to: { x: tgt.x, y: tgt.y }, size: tgt.size,
+      S: Math.max(0.6, Math.min(1.6, tgt.size / 120)), dist, ang: Math.atan2(dy, dx),
+      ux: dx / dist, uy: dy / dist, nx: -dy / dist, ny: dx / dist,
+    };
+
+    const tail = opts.tail == null ? 90 : opts.tail;
+    const dur = Math.max(300, Math.ceil(Math.max.apply(null, layers.map((l) => l.e)) + tail));
+    let hit = opts.hit;
+    if (hit == null) { const hs = layers.filter((l) => l.h != null).map((l) => l.h); hit = hs.length ? Math.min.apply(null, hs) : dur * 0.4; }
+
+    const baseDpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = getFxDpr(baseDpr, m.w, m.h);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(m.w * dpr); canvas.height = Math.round(m.h * dpr);
+    canvas.style.cssText = 'position:absolute;left:0;top:0;pointer-events:none;width:' + m.w + 'px;height:' + m.h + 'px';
+    canvas.className = 'special-fx-canvas';
+    wrapEl.appendChild(canvas);
+    const ctx = getFxContext2D(canvas);
+    ctx.scale(dpr, dpr);
+
+    // ---- 画面フラッシュ／シェイク：指定が無ければ威力から自動で決める ----
+    const mv = (typeof GAME_DATA !== 'undefined' && GAME_DATA && GAME_DATA.moves) ? GAME_DATA.moves[moveId] : null;
+    const pw = mv && mv.power ? mv.power : 0;
+    const pal = (layers.find((l) => l.pal) || {}).pal || PAL_FALLBACK;
+    let flash = opts.flash, shake = opts.shake;
+    if (flash === undefined && pw > 0) flash = [pal[0], Math.min(0.4, 0.1 + pw / 520), 200];
+    if (shake === undefined && pw >= 60) shake = [pw >= 120 ? 15 : pw >= 90 ? 10 : 5, pw >= 90 ? 280 : 200];
+    if (flash) screenFlash(wrapEl, { color: flash[0], peakAlpha: flash[1], durationMs: flash[2] || 220, delay: Math.max(0, hit) });
+    const shakeTarget = wrapEl.parentElement || wrapEl;
+    if (shake) setTimeout(() => screenShake(shakeTarget, { ampPx: shake[0], durationMs: shake[1] || 240, freq: 32 }), Math.max(0, hit));
+
+    // ---- 攻撃側の踏み込み（translate は transform と独立なので既存の演出と競合しない）----
+    if (opts.lunge && me.img && opts.on !== 'self' && me.img.animate) {
+      const lt = opts.lunge[0] || 0, ld = opts.lunge[1] || 180, fr = opts.lunge[2] == null ? 0.55 : opts.lunge[2];
+      try {
+        me.img.animate([
+          { translate: '0px 0px', easing: 'ease-in' },
+          { translate: (dx * fr).toFixed(1) + 'px ' + (dy * fr).toFixed(1) + 'px', offset: ld / (ld * 2.4), easing: 'ease-out' },
+          { translate: '0px 0px' },
+        ], { duration: ld * 2.4, delay: lt });
+      } catch (e) { /* 踏み込みは演出上の飾り。失敗しても本体には影響させない */ }
+    }
+    // 自分に纏う技などでは軽く跳ねる
+    if (opts.hop && tgt.img && tgt.img.animate) {
+      try { tgt.img.animate([{ translate: '0px 0px', easing: 'ease-out' }, { translate: '0px -12px', offset: 0.4, easing: 'ease-in' }, { translate: '0px 0px' }], { duration: opts.hop[1] || 360, delay: opts.hop[0] || 0 }); } catch (e) { /* 同上 */ }
+    }
+
+    let failed = false;
+    const run = runParticleScene({
+      canvas: { getContext: () => ctx, width: m.w, height: m.h },
+      durationMs: dur,
+      spawn: (particles) => {
+        particles.push({
+          delay: 0, maxLife: dur,
+          draw(g, pt) {
+            if (failed) return;
+            const ms = pt * dur;
+            for (let i = 0; i < layers.length; i++) {
+              const ly = layers[i];
+              if (ms < ly.s || ms > ly.e + 60) continue;
+              g.save();
+              try { ly.f(g, ms, c); } catch (e) { failed = true; console.warn('[MoveFX] 描画失敗', moveId, e); }
+              g.restore();
+            }
+          },
+        });
+      },
+    });
+    // 万一アニメーションが止まってもバトルを固めないための安全弁
+    const guard = new Promise((res) => setTimeout(res, dur + 1200));
+    return Promise.race([run, guard]).then(() => { canvas.remove(); });
+  };
+  const PAL_FALLBACK = ['#ffffff', '#fff6d0', '#ffd890'];
+
+  // ============================================================
+  // 技ごとのレシピ（部品の組み合わせ）
+  // 凡例：SL斬撃 BU衝撃 SH連射 OR球 BM光線 RG輪/音波 RN降下 RI立ち上り SW渦 PI柱 CL霧
+  //       BO雷 AR振り抜き SP突出(棘) AU後光 SD防壁 FI場全体 EY目 CR地割れ ST速度線
+  //       TH突き(拳/角/嘴/脚/頭/槌) SPR吐息 WV波 VL画面光
+  // ============================================================
+  {
+    const D = MFX.D, P = MFX.PAL, Lr = MFX.L;
+    const SL = Lr.slash, BU = Lr.burst, SH = Lr.shots, OR = Lr.orb, BM = Lr.beam, RG = Lr.ring, RN = Lr.rain, RI = Lr.rise,
+      SW = Lr.swirl, PI = Lr.pillar, CL = Lr.cloud, BO = Lr.bolt, AR = Lr.arc, SP = Lr.spikes, AU = Lr.aura, SD = Lr.shield,
+      FI = Lr.field, EY = Lr.eye, CR = Lr.crack, ST = Lr.streaks, TH = Lr.thrust, SPR = Lr.spray, WV = Lr.wave, VL = Lr.veil;
+    const LU = [0, 150, 0.55], LUB = [0, 190, 0.72], LUS = [0, 120, 0.4];   // 踏み込み（標準／大／小）
+    const SELF = { on: 'self' }, SELFH = { on: 'self', hop: [0, 380] };
+
+    // ====================== むし ======================
+    D(1, () => [ST({ c: 'bug', n: 8, d: 160 }), SL({ t: 100, c: 'bug', n: 3, ang: -28, gap: 70, len: 1.15, w: 0.8, d: 220 }), BU({ t: 120, shape: 'sparks', c: 'bug', r: 0.7 })], { lunge: LU });                       // れんぞくぎり
+    D(2, () => [SH({ c: 'bug', n: 1, glyph: 'needle', align: true, r: 13, fly: 150, spread: 0 }), BU({ t: 150, shape: ['star', 'cross'], c: 'bug', r: 0.8 })], { lunge: LUS });                                       // とどめばり
+    D(3, () => [ST({ c: 'bug', n: 10, d: 180 }), BU({ t: 130, shape: ['sparks', 'ring'], c: 'bug' }), AR({ t: 140, a0: -210, a1: 10, r: 0.85, sq: 0.45, c: 'bug', d: 300 }), ST({ t: 330, c: 'bug', n: 6, d: 180 })], { lunge: [0, 140, 0.6] });  // とんぼがえり
+    D(4, () => [ST({ c: 'bug', n: 12, d: 170 }), TH({ t: 40, d: 150, kind: 'head', c: 'bug', r: 0.9 }), BU({ t: 180, shape: ['star', 'ring'], c: 'bug' })], { lunge: LUB });                                       // であいがしら
+    D(5, () => [AR({ t: 90, a0: -160, a1: -20, r: 0.8, c: 'bug', d: 220 }), SL({ t: 190, c: 'bug', n: 2, ang: 70, claw: true, len: 1.0, d: 220 }), BU({ t: 200, shape: 'smoke', c: 'bug', r: 0.6 })], { lunge: LU });          // とびつく
+    D(6, () => [AR({ t: 80, a0: -170, a1: -10, r: 0.95, c: 'bug', d: 240, w: 1.2 }), SL({ t: 210, c: 'bug', n: 3, ang: 72, claw: true, len: 1.2, d: 240 }), BU({ t: 215, shape: ['sparks', 'debris'], glyph: 'leaf', c: 'bug' })], { lunge: LUB });  // とびかかる
+    D(8, () => [SW({ c: 'bug', glyph: 'ember', n: 34, radius: 1.1, turns: 2.5, shrink: 0.7, d: 520, add: true, r: 5 }), ST({ t: 380, c: 'bug', n: 8, d: 180 }), BU({ t: 520, shape: ['blast', 'star'], c: 'bug', r: 1.3 })], {});  // よってたかる
+    D(9, () => [ST({ c: 'bug', n: 10, d: 200 }), TH({ t: 40, d: 190, kind: 'horn', c: 'bug', r: 1.5 }), BU({ t: 200, shape: ['star', 'ring', 'sparks'], c: 'bug', r: 1.2 })], { lunge: LUB });                      // メガホーン
+    D(10, () => [ST({ c: 'bug', n: 14, d: 150 }), SH({ c: 'bug', n: 1, glyph: 'needle', align: true, r: 15, fly: 130, spread: 0 }), BU({ t: 130, shape: ['cross', 'sparks'], c: 'bug' })], { lunge: LU });                  // ジェットスピア
+    D(11, () => [SPR({ c: 'bug', glyph: 'ember', n: 30, r: 5, fan: 0.45, fly: 300, d: 520, wob: 6 }), BU({ t: 300, shape: 'ring', c: 'bug', d: 260 })], {});                                                              // むしのていこう
+    D(12, () => [SPR({ c: ['#ffffff', '#dfe8ff', '#a0b0d0'], glyph: 'feather', n: 34, r: 7, fan: 0.5, fly: 320, d: 620, wob: 14, spin: 4 }), RI({ t: 300, c: 'white', glyph: 'star', n: 10, r: 6, at: 'to', up: 0.6 })], {}); // ぎんいろのかぜ
+    D(15, () => [BM({ c: 'white', w: 7, ext: 160, hold: 320, fade: 160, wave: true }), SW({ t: 200, c: 'white', glyph: 'ring', n: 10, radius: 0.55, turns: 1.2, d: 420, r: 7, add: true }), BU({ t: 180, shape: 'ring', c: 'white', d: 300 })], {}); // いとをはく
+    D(16, () => [SW({ c: 'rainbow', glyph: 'petal', n: 26, radius: 0.8, turns: 2.2, d: 800, r: 8, add: true, rise: 0.4 }), RI({ t: 200, c: 'rainbow', glyph: 'star', n: 12, r: 6, up: 1.2 }), AU({ c: 'bug', d: 800, r: 0.8 })], SELFH);   // ちょうのまい
+    D(17, () => [SW({ c: 'bug', glyph: 'star', n: 12, radius: 0.7, turns: 3, d: 700, r: 8, add: true }), AR({ t: 80, a0: -180, a1: 180, r: 0.8, sq: 0.45, c: 'bug', d: 420 }), BU({ t: 380, shape: 'ring', c: 'bug' })], { lunge: LU });   // かくらんひこう
+    D(19, () => [CL({ c: ['#fff0ff', '#c8a0ff', '#7a50d0'], n: 10, d: 700, a: 0.6, add: true }), RI({ c: 'rainbow', glyph: 'star', n: 18, r: 6, d: 600, up: 0.9 }), RI({ t: 100, c: 'gold', glyph: 'dot', n: 16, r: 4, d: 600, spread: 1.1 })], {}); // ワンダーパウダー
+    D(510, () => [SL({ c: 'bug', n: 2, ang: -35, gap: 90, len: 1.2, d: 240 }), SW({ t: 60, c: 'bug', glyph: 'ember', n: 18, radius: 0.8, turns: 1.5, shrink: 0.5, d: 420, add: true, r: 5 }), BU({ t: 180, shape: ['star', 'sparks'], c: 'bug' })], { lunge: LU }); // むしかえし
+    D(517, () => [SW({ c: 'bug', glyph: 'ember', n: 40, radius: 1.3, turns: 2, shrink: 0.8, d: 560, add: true, r: 5 }), ST({ t: 380, c: 'bug', n: 14, d: 170 }), TH({ t: 400, d: 140, kind: 'head', c: 'bug' }), BU({ t: 530, shape: ['blast', 'star', 'ring'], c: 'bug', r: 1.5 })], { lunge: [380, 150, 0.6] }); // しゅうげき
+    D(493, () => [BU({ shape: ['smoke', 'ring'], c: 'bug', r: 1 }), RI({ t: 60, c: 'bug', glyph: 'shard', n: 14, r: 7, d: 500, up: 0.9, spin: 5 }), RI({ t: 200, c: 'white', glyph: 'feather', n: 8, r: 6, d: 400 })], SELF);      // うつせみ
+    D(516, () => [SH({ c: 'white', n: 3, gap: 70, fly: 240, glyph: 'ring', r: 6, lob: 30, spread: 0.3 }), SD({ t: 280, c: 'white', shape: 'hex', r: 0.95, d: 700 }), SW({ t: 300, c: 'white', glyph: 'x', n: 12, radius: 0.5, turns: 0.6, d: 500, r: 6 })], {}); // ねばねばネット
+
+    // ====================== あく ======================
+    D(22, () => [AR({ t: 60, a0: -100, a1: 50, r: 0.7, c: 'dark', d: 220 }), BU({ t: 150, shape: ['sparks', 'ring'], c: 'dark' }), RI({ t: 180, c: 'dark', glyph: 'star5', n: 5, r: 8, d: 300, up: 1.4, spin: 6 })], { lunge: LU });   // はたきおとす
+    D(23, () => [SL({ t: 80, c: 'dark', n: 2, x: true, ang: -35, gap: 90, len: 1.45, w: 1.1, d: 250 }), BU({ t: 200, shape: ['cross', 'sparks'], c: 'dark' })], { lunge: LUB });                                      // つじぎり
+    D(26, () => [TH({ t: 40, d: 200, kind: 'fist', c: 'dark', r: 1.5 }), CR({ t: 220, c: 'dark', d: 500 }), BU({ t: 230, shape: ['star', 'debris', 'smoke'], c: 'dark', r: 1.3 })], { lunge: LUB });                    // ぶちこわす
+    D(27, () => [RG({ dir: true, c: 'dark', n: 4, gap: 150, w: 2.5, arcw: 14, d: 480 }), RI({ t: 350, c: ['#c8d0ff', '#7080d8', '#303a90'], glyph: 'arrow', n: 6, r: 7, d: 450, up: 0.9, down: true })], {});       // ないしょばなし
+    D(29, () => [ST({ c: 'dark', n: 8, d: 130 }), TH({ t: 40, d: 110, kind: 'fist', c: 'dark' }), BU({ t: 130, shape: ['star', 'smoke'], c: 'dark' })], { lunge: [0, 100, 0.6] });                                       // ふいうち
+    D(30, () => [SL({ t: 80, c: 'dark', n: 1, ang: 38, len: 1.8, w: 1.6, curve: 0.4, d: 320 }), BU({ t: 200, shape: ['ring', 'smoke', 'star'], c: 'dark', r: 1.2 })], { lunge: LUB });                                  // しっぺがえし
+    D(31, () => [RG({ dir: true, c: ['#ffd8d8', '#ff5a5a', '#7a1818'], n: 3, gap: 100, w: 8, arcw: 44, d: 420 }), SPR({ c: 'dark', glyph: 'ember', n: 12, r: 6, fan: 0.5, fly: 260, d: 300 })], {});                 // バークアウト
+    D(34, () => [SL({ c: 'steel', n: 3, claw: true, ang: -50, len: 0.9, w: 0.9, d: 300 }), RI({ t: 100, c: 'white', glyph: 'spark', n: 10, r: 6, d: 400, up: 0.6 }), BU({ t: 120, shape: 'cross', c: 'white', r: 0.7 })], SELF);   // つめとぎ
+    D(35, () => [SW({ c: 'gold', glyph: 'star', n: 14, radius: 0.6, turns: 3, d: 800, r: 7, add: true, cone: true }), RI({ t: 100, c: 'gold', glyph: 'star5', n: 10, r: 7, d: 600, up: 1.1 })], {});                    // おだてる
+    D(36, () => [VL({ c: 'dark', dark: true, d: 500, a: 0.35 }), RG({ dir: true, c: 'dark', n: 4, gap: 90, w: 11, arcw: 46, d: 430 }), BU({ t: 260, shape: ['ring', 'smoke'], c: 'dark' })], { shake: [4, 260] });         // ダークロアー
+    D(38, () => [AU({ c: 'dark', d: 800, r: 0.9 }), RI({ c: 'dark', glyph: 'ember', n: 20, r: 6, d: 700, up: 1.2, add: false, tone: 1 }), EY({ t: 200, c: 'red', r: 0.6, d: 500, oy: -0.25 }), RI({ t: 350, c: 'psy', glyph: 'arrowup', n: 4, r: 8, d: 400, up: 0.8 })], SELF); // わるだくみ
+    D(39, () => [VL({ c: 'dark', dark: true, d: 750, a: 0.5 }), EY({ c: 'red', r: 1.2, d: 500, at: 'from' }), RG({ t: 260, dir: true, c: ['#ffd0d0', '#ff4040', '#600808'], n: 5, gap: 90, w: 13, arcw: 50, d: 500 }), BU({ t: 520, shape: ['blast', 'smoke', 'star'], c: 'dark', r: 1.6 })], {}); // グリムハウル
+    D(40, () => [RN({ c: ['#fff0c0', '#b080ff', '#3a1a70'], glyph: 'gem', n: 24, d: 560, r: 8, fall: 300, spread: 1.1, trail: true }), BU({ t: 520, shape: ['blast', 'star'], c: 'dark', r: 1.5 })], {});                      // ナイトアセット
+    D(454, () => [TH({ t: 30, d: 190, kind: 'horn', c: 'dark', r: 1.4 }), RI({ t: 190, c: 'ghost', glyph: 'flame', n: 8, r: 7, d: 400, up: 0.9 }), BU({ t: 200, shape: ['star', 'cross'], c: 'dark' })], { lunge: LU });         // ソウルピアス
+    D(473, () => [SH({ c: 'dark', n: 5, gap: 55, fly: 220, glyph: 'card', r: 9, spin: 14, arc: 36, spread: 0.7 }), SL({ t: 330, c: 'dark', n: 2, x: true, ang: -40, len: 1.2, d: 220 }), BU({ t: 340, shape: ['star', 'sparks'], c: 'dark' })], { lunge: LU }); // イカサマ
+    D(481, () => [PI({ c: 'dark', dir: 'down', w: 0.9, d: 560, glyph: 'ember' }), RG({ t: 160, at: 'ground', c: 'dark', n: 2, d: 460 }), BU({ t: 170, shape: ['smoke', 'ring', 'star'], c: 'dark', r: 1.2 })], {});                // つみほろぼし
+    D(485, () => [RG({ dir: true, c: 'red', n: 3, gap: 140, w: 3, arcw: 18, d: 420 }), RI({ t: 300, c: 'red', glyph: 'spark', n: 8, r: 8, d: 500, up: 0.6, spin: 8 }), EY({ t: 280, c: 'red', r: 0.7, d: 450, oy: -0.4 })], {});       // ちょうはつ
+
+    // ====================== ドラゴン ======================
+    D(41, () => [AR({ t: 60, a0: -150, a1: -30, r: 0.9, sq: 0.38, c: 'dragon', d: 260, w: 1.6 }), BU({ t: 190, shape: ['ring', 'debris', 'star'], c: 'dragon', r: 1.5 })], { lunge: LUB });                                  // ワイドブレイカー
+    D(42, () => [SL({ t: 90, c: 'cyan', n: 3, claw: true, ang: -52, len: 1.35, w: 1.25, spacing: 0.2, d: 340 }), BU({ t: 150, shape: ['sparks', 'cross'], c: 'cyan', r: 0.9 })], { lunge: LU, flash: ['#bfe8ff', 0.25, 220] });   // ドラゴンクロー（原作風：青白い三本爪）
+    D(44, () => [ST({ c: 'dragon', n: 16, d: 240 }), TH({ t: 40, d: 230, kind: 'head', c: 'dragon', r: 1.6 }), BU({ t: 260, shape: ['blast', 'ring', 'star'], c: 'dragon', r: 1.7 })], { lunge: [0, 220, 0.85] });               // ドラゴンダイブ
+    D(45, () => [RN({ c: 'dragon', glyph: 'sword', n: 1, d: 100, r: 34, fall: 300, spread: 0.1, rot: Math.PI, splash: false }), SL({ t: 280, c: 'dragon', n: 1, ang: -62, len: 2.1, w: 2, d: 300 }), BU({ t: 300, shape: ['star', 'cross', 'ring'], c: 'dragon', r: 1.3 })], {}); // ダイナソード
+    D(46, () => [SL({ t: 90, c: ['#fff0e0', '#ff5a8a', '#5a1a7a'], n: 4, claw: true, ang: -58, len: 1.65, w: 1.6, spacing: 0.22, d: 420 }), BU({ t: 180, shape: ['star', 'smoke'], c: 'rouge', r: 1.2 })], { lunge: LUB });         // 覇者の爪痕
+    D(47, () => [AU({ c: 'gold', d: 300, at: 'from', r: 0.7 }), ST({ t: 120, c: 'gold', n: 16, d: 200 }), TH({ t: 200, d: 160, kind: 'fist', c: 'dragon', r: 1.4 }), BU({ t: 350, shape: ['star', 'ring', 'cross', 'sparks'], c: 'gold', r: 1.5 }), PI({ t: 360, c: 'gold', dir: 'up', w: 0.6, d: 400 })], { lunge: [200, 160, 0.7] }); // プルスウルトラ
+    D(48, () => [SH({ c: 'dragon', n: 2, gap: 45, fly: 150, glyph: 'shard', align: true, r: 7, spread: 0.35 })], {});                                                                                                      // スケイルショット（連続技）
+    D(50, () => [AR({ t: 60, a0: -140, a1: 60, r: 0.9, c: 'dragon', d: 280, w: 1.5 }), BU({ t: 200, shape: ['star', 'ring', 'sparks'], c: 'dragon' })], { lunge: LU });                                                       // ドラゴンテール
+    D(51, () => [SW({ c: 'dragon', glyph: 'dot', n: 40, radius: 0.85, turns: 3.5, d: 760, r: 6, add: true, cone: true, rise: 0.5, height: 1.5 }), SW({ t: 80, c: 'dragon', glyph: 'leaf', n: 10, radius: 0.7, turns: 3, d: 640, r: 7, cone: true, height: 1.3 })], {}); // たつまき
+    D(52, () => [SPR({ c: 'dragon', glyph: 'flame', n: 36, r: 9, fan: 0.35, fly: 320, d: 560, wob: 5, spin: 0 }), BU({ t: 320, shape: ['blast', 'sparks'], c: 'dragon', r: 0.9 })], {});                              // りゅうのいぶき
+    D(54, () => [OR({ c: 'dragon', r: 14, charge: 220, fly: 220 }), RG({ t: 200, dir: true, c: 'dragon', n: 4, gap: 70, w: 8, arcw: 24, d: 360 }), BU({ t: 440, shape: ['ring', 'flash', 'sparks'], c: 'dragon', r: 1.2 })], {});    // りゅうのはどう
+    D(56, () => [SW({ c: 'dragon', glyph: 'flame', n: 28, radius: 0.85, turns: 2.5, d: 800, r: 8, add: true, cone: true, rise: 0.3 }), RI({ t: 300, c: 'dragon', glyph: 'star', n: 10, r: 6, d: 500, up: 1.1 }), RI({ t: 400, c: 'red', glyph: 'arrowup', n: 5, r: 8, d: 400, up: 0.8 })], SELFH); // りゅうのまい
+    D(57, () => [OR({ c: 'gold', r: 12, charge: 200, fly: 140, glyph: 'star5', spin: 8 }), BM({ t: 300, c: ['#ffffff', '#ffe070', '#8a60ff'], w: 16, ext: 100, hold: 260, fade: 160, glyph: 'star', gn: 10 }), BU({ t: 400, shape: ['cross', 'star'], c: 'gold', r: 1.2 })], {}); // 穿星波
+    D(58, () => [OR({ c: 'dragon', r: 28, charge: 420, fly: 240 }), BM({ t: 660, c: 'dragon', w: 44, ext: 120, hold: 220, fade: 160, wave: true }), BU({ t: 780, shape: ['blast', 'ring', 'star'], c: 'dragon', r: 1.5 })], {});     // リューズバスター
+    D(59, () => [VL({ c: 'dragon', d: 700, a: 0.4 }), OR({ c: 'dragon', r: 44, charge: 620, fly: 200 }), PI({ t: 820, c: 'dragon', dir: 'down', w: 1.4, d: 700, glyph: 'star' }), BU({ t: 840, shape: ['blast', 'ring', 'star', 'sparks'], c: 'dragon', r: 2.6, d: 600 }), RG({ t: 860, at: 'to', c: 'dragon', n: 3, gap: 120, d: 600, r: 2.2, w: 9 }), BU({ t: 880, shape: 'debris', glyph: 'shard', c: 'dragon', r: 2.2, d: 600 })], { shake: [20, 560], flash: ['#ffffff', 0.7, 320] }); // エルダーバースト
+
+    // ====================== でんき ======================
+    D(62, () => [TH({ t: 30, d: 160, kind: 'fist', c: 'elec', r: 1.1 }), BO({ t: 170, c: 'elec', n: 2, d: 220 }), BU({ t: 175, shape: ['star', 'sparks'], c: 'elec' })], { lunge: LU });                                             // かみなりパンチ
+    D(64, () => [ST({ c: 'elec', n: 10, d: 170 }), BO({ t: 140, c: 'elec', n: 3, src: 'from', d: 240, gap: 60 }), BU({ t: 150, shape: ['sparks', 'ring'], c: 'elec' })], { lunge: LU });                                      // スパーク
+    D(65, () => [ST({ c: 'elec', n: 18, d: 150 }), BO({ t: 90, c: 'elec', n: 2, src: 'from', d: 200 }), BU({ t: 120, shape: ['star', 'sparks'], c: 'elec' })], { lunge: [0, 110, 0.7] });                                     // アクセルボルト
+    D(67, () => [RG({ at: 'to', c: 'elec', n: 4, gap: 90, d: 420, r: 1.8, w: 8 }), BO({ t: 100, c: 'elec', n: 4, gap: 70, d: 260 }), BU({ t: 110, shape: ['flash', 'star', 'sparks'], c: 'elec', r: 1.5 })], { shake: [14, 320] });      // パルスブレイク
+    D(68, () => [SL({ t: 80, c: 'elec', n: 2, x: true, ang: -40, gap: 80, len: 1.4, d: 240 }), BO({ t: 150, c: 'elec', n: 2, d: 200, gap: 50 }), BU({ t: 160, shape: ['cross', 'sparks'], c: 'elec' })], { lunge: LU });          // カッターボルト
+    D(70, () => [RG({ dir: true, c: 'elec', n: 4, gap: 80, w: 7, arcw: 38, d: 380, notes: true }), BO({ t: 250, c: 'elec', n: 2, src: 'from', d: 220 }), BU({ t: 300, shape: ['ring', 'sparks'], c: 'elec' })], {});         // オーバードライブ
+    D(74, () => [SD({ c: 'elec', shape: 'hex', r: 1.0, d: 800 }), BO({ t: 220, c: 'elec', n: 3, d: 200 }), BU({ t: 240, shape: 'sparks', c: 'elec' })], {});                                                               // エレキネット
+    D(77, () => [ST({ c: 'elec', n: 12, d: 130 }), BO({ t: 70, c: 'elec', n: 1, src: 'from', d: 160 }), BU({ t: 100, shape: ['star', 'sparks'], c: 'elec', r: 0.8 })], { lunge: [0, 90, 0.7] });                              // マッハボルト
+    D(80, () => [ST({ c: 'elec', n: 14, d: 160 }), BO({ t: 120, c: 'elec', n: 2, d: 220 }), BU({ t: 150, shape: ['flash', 'sparks'], c: 'elec' }), ST({ t: 340, c: 'elec', n: 8, d: 160 })], { lunge: [0, 130, 0.6] });       // ボルトチェンジ
+    D(487, () => [FI({ c: 'elec', glyph: 'bolt', mode: 'fall', n: 22, r: 8, d: 1000 }), BO({ t: 200, c: 'elec', n: 2, d: 220, gap: 200 })], { on: 'field' });                                                              // エレキフィールド
+    D(495, () => [BO({ c: 'elec', n: 3, d: 220, gap: 110 }), SD({ t: 200, c: 'elec', shape: 'hex', r: 0.8, d: 600 }), RI({ t: 300, c: 'elec', glyph: 'arrowup', n: 5, r: 8, d: 400, up: 0.9 })], SELF);                      // リプループラグ
+    D(501, () => [OR({ c: 'jet', r: 20, charge: 260, fly: 180 }), BM({ t: 420, c: 'jet', w: 40, ext: 110, hold: 300, fade: 160, wave: true }), BO({ t: 460, c: 'jet', n: 3, d: 240 }), BU({ t: 540, shape: ['blast', 'star', 'sparks'], c: 'jet', r: 1.4 })], {}); // ブルージェット
+    D(505, () => [BO({ c: 'elec', n: 3, src: 'sky', d: 240, gap: 100 }), AU({ t: 150, c: 'elec', d: 600 }), RI({ t: 300, c: 'elec', glyph: 'bolt', n: 8, r: 6, d: 400, up: 0.8 }), RI({ t: 400, c: 'red', glyph: 'arrowup', n: 4, r: 8, d: 350 })], SELF); // チャージ
+
+    // ====================== フェアリー ======================
+    D(81, () => [CL({ c: 'fairy', n: 9, d: 600, a: 0.85, at: 'to', r: 0.55 }), BU({ t: 100, shape: ['star', 'sparks'], c: 'fairy', r: 1.0 }), RI({ t: 120, c: 'fairy', glyph: 'star5', n: 9, r: 8, d: 450, up: 0.9, spin: 5 }), RI({ t: 200, c: 'gold', glyph: 'heart', n: 5, r: 8, d: 400, up: 1.1 })], { lunge: LU }); // じゃれつく
+    D(82, () => [TH({ t: 30, d: 170, kind: 'fist', c: 'fairy', r: 1.2 }), BU({ t: 180, shape: ['star', 'ring'], c: 'fairy', r: 1.2 }), RI({ t: 200, c: 'ghost', glyph: 'flame', n: 6, r: 7, d: 350, up: 0.8 })], { lunge: LU });         // ソウルクラッシュ
+    D(83, () => [TH({ t: 30, d: 170, kind: 'horn', c: 'fairy', r: 1.5 }), BU({ t: 190, shape: ['cross', 'star', 'sparks'], c: 'fairy', r: 1.2 })], { lunge: LUB });                                                       // ピアーネイル
+    D(84, () => [TH({ t: 30, d: 160, kind: 'fist', c: 'fairy', r: 1.1 }), BU({ t: 170, shape: 'star', c: 'fairy' }), RI({ t: 190, c: 'fairy', glyph: 'heart', n: 10, r: 9, d: 500, up: 1.2, spin: 2 })], { lunge: LU });       // メロメロパンチ
+    D(85, () => [AR({ t: 40, a0: -200, a1: -20, r: 0.55, c: 'fairy', d: 320, w: 1.4 }), AR({ t: 40, a0: 20, a1: 200, r: 0.55, c: 'fairy', d: 320, w: 1.4 }), RI({ t: 300, c: 'fairy', glyph: 'heart', n: 9, r: 9, d: 450, up: 1.0 }), BU({ t: 330, shape: 'ring', c: 'fairy' })], { lunge: LU }); // パワーハグ
+    D(86, () => [OR({ c: 'fairy', r: 26, charge: 400, fly: 240, glyph: 'heart' }), BU({ t: 650, shape: ['blast', 'star', 'ring'], c: 'fairy', r: 1.6 }), RI({ t: 660, c: 'fairy', glyph: 'star5', n: 14, r: 8, d: 500, up: 1.2 })], {});     // フェアリーゲイン
+    D(87, () => [SH({ c: 'fairy', n: 4, gap: 90, fly: 300, glyph: 'heart', r: 9, lob: 30, spread: 0.4, trail: false }), RI({ t: 380, c: 'fairy', glyph: 'heart', n: 6, r: 7, d: 400, up: 0.8 })], {});                      // あまえる
+    D(88, () => [TH({ t: 40, d: 170, kind: 'foot', c: 'fairy', r: 1.1 }), BU({ t: 190, shape: ['ring', 'star'], c: 'fairy' }), RI({ t: 200, c: 'fairy', glyph: 'heart', n: 4, r: 8, d: 350, up: 0.8 })], { lunge: [0, 160, 0.6] }); // うさぎとび
+    D(91, () => [SH({ c: 'fairy', n: 1, fly: 240, glyph: 'heart', r: 13, lob: 20, spread: 0 }), SH({ t: 320, rev: true, c: 'fairy', n: 8, gap: 55, fly: 320, glyph: 'dot', r: 6, lob: 30, spread: 0.3 }), RI({ t: 600, at: 'from', c: 'grass', glyph: 'cross', n: 5, r: 7, d: 300, up: 0.7 })], {}); // ドレインキッス
+    D(92, () => [SPR({ c: 'fairy', glyph: 'petal', n: 38, r: 7, fan: 0.5, fly: 340, d: 600, wob: 14, spin: 4 }), RI({ t: 300, c: 'fairy', glyph: 'star', n: 10, r: 6, d: 500, up: 0.9 })], {});                          // ようせいのかぜ
+    D(94, () => [SH({ c: 'fairy', n: 3, gap: 100, fly: 280, glyph: 'heart', r: 10, lob: 35, spread: 0.3, trail: false }), SW({ t: 350, c: 'gold', glyph: 'star', n: 10, radius: 0.55, turns: 2.5, d: 600, r: 6, add: true }), RI({ t: 380, c: 'white', glyph: 'feather', n: 6, r: 8, d: 500, up: 0.9 })], {}); // てんしのキッス
+    D(95, () => [EY({ c: 'fairy', r: 0.9, d: 650, oy: -0.2 }), RI({ t: 180, c: 'fairy', glyph: 'star5', n: 12, r: 7, d: 450, up: 0.8 }), RI({ t: 300, c: 'blue', glyph: 'drop', n: 4, r: 6, d: 350, up: 0.4, down: true })], SELF);      // つぶらなひとみ
+    D(96, () => [RG({ dir: true, c: 'fairy', n: 4, gap: 90, w: 8, arcw: 38, d: 420, notes: true }), SPR({ t: 120, c: 'fairy', glyph: 'heart', n: 14, r: 8, fan: 0.5, fly: 320, d: 320 }), BU({ t: 430, shape: ['ring', 'sparks'], c: 'fairy' })], {}); // みわくのボイス
+    D(97, () => [CL({ c: ['#fff0fa', '#c8a0ff', '#8040c0'], n: 14, d: 900, a: 0.75, r: 0.8 }), RI({ t: 200, c: 'fairy', glyph: 'star', n: 14, r: 7, d: 600, up: 1.1 }), SW({ t: 150, c: 'moon', glyph: 'moon', n: 3, radius: 0.7, turns: 1, d: 700, r: 11, add: true })], {}); // あやかしのキリ
+    D(98, () => [VL({ c: ['#ffe0a0', '#ff8a60', '#6030a0'], d: 1000, a: 0.5 }), FI({ c: 'moon', glyph: 'star', mode: 'rise', n: 22, r: 5, d: 1000, tint: 0.12 })], { on: 'field' });                                       // トワイライト
+    D(99, () => [CL({ c: 'fairy', n: 16, d: 800, a: 0.85, r: 1.0, add: true }), BU({ t: 420, shape: ['blast', 'ring', 'star'], c: 'fairy', r: 2.4, d: 500 }), RG({ t: 430, at: 'to', c: 'fairy', n: 3, gap: 100, d: 520, r: 2.3, w: 8 }), RI({ t: 440, c: 'fairy', glyph: 'star5', n: 18, r: 8, d: 500, up: 1.4 })], { shake: [18, 480], flash: ['#fff0fa', 0.6, 320] }); // ミストバースト
+    D(471, () => [SH({ c: 'white', n: 5, gap: 55, fly: 230, glyph: 'card', r: 10, spin: 12, arc: 40, spread: 0.7 }), BU({ t: 330, shape: ['star', 'sparks'], c: 'fairy', r: 1.1 }), RI({ t: 340, c: 'white', glyph: 'star', n: 8, r: 6, d: 380, up: 0.8 })], {}); // クリアカード
+    D(453, () => [CL({ c: ['#ffe0ff', '#c070e0', '#6a2090'], n: 12, d: 800, a: 0.7, r: 0.8 }), RI({ t: 100, c: 'poison', glyph: 'star', n: 12, r: 7, d: 600, up: 1.0 }), RI({ t: 250, c: 'white', glyph: 'zz', n: 3, r: 8, d: 500, up: 1.0, add: false }), BU({ t: 300, shape: 'ring', c: 'poison' })], {}); // えいどくむ
+    D(489, () => [CL({ at: 'field', c: 'fairy', n: 14, r: 1.5, d: 1000, a: 0.5 }), FI({ c: 'fairy', glyph: 'dot', mode: 'rise', n: 26, r: 6, d: 1000, tint: 0.14 })], { on: 'field' });                                    // ミストフィールド
+
+    // ====================== かくとう ======================
+    D(101, () => [SL({ t: 70, c: 'white', n: 1, ang: -68, len: 1.15, w: 1.1, curve: 0.08, d: 220 }), TH({ t: 40, d: 130, kind: 'palm', c: 'fight' }), BU({ t: 150, shape: ['sparks', 'cross'], c: 'fight', r: 0.8 })], { lunge: LU });         // からてチョップ
+    D(102, () => [TH({ t: 30, d: 150, kind: 'fist', c: 'fight', r: 1.15 }), BU({ t: 160, shape: ['star', 'ring'], c: 'fight' }), AU({ t: 0, at: 'from', c: 'fight', d: 300, r: 0.7 })], { lunge: LU });                          // グロウパンチ
+    D(104, () => [SL({ t: 70, c: 'white', n: 2, x: true, ang: -35, gap: 70, len: 1.5, w: 1.3, d: 240 }), BU({ t: 160, shape: ['cross', 'star', 'sparks'], c: 'fight', r: 1.2 })], { lunge: LUB });                          // クロスチョップ
+    D(105, () => [SL({ t: 70, c: 'white', n: 1, ang: -88, len: 1.5, w: 1.4, curve: 0.02, d: 220 }), BU({ t: 150, shape: ['debris', 'sparks', 'ring'], glyph: 'shard', c: ['#ffffff', '#d8f0ff', '#88b0e0'], r: 1.1 }), SD({ t: 150, c: 'ice', shape: 'wall', r: 0.5, d: 260, side: 0 })], { lunge: LU }); // かわらわり
+    D(106, () => [TH({ t: 30, d: 220, kind: 'hammer', c: 'fight', r: 1.4 }), CR({ t: 240, c: 'fight', d: 420, n: 5 }), BU({ t: 250, shape: ['star', 'debris', 'smoke'], c: 'fight', r: 1.3 })], { lunge: LUB });                    // アームハンマー
+    D(107, () => [ST({ c: 'white', n: 10, d: 120 }), TH({ t: 30, d: 100, kind: 'fist', c: 'fight', r: 0.85 }), BU({ t: 110, shape: ['sparks', 'ring'], c: 'white', r: 0.8 })], { lunge: [0, 90, 0.6] });                       // マッハパンチ
+    D(108, () => [BU({ shape: 'smoke', at: 'to', oy: 0.2, c: 'ground', r: 0.8, d: 200 }), BU({ t: 170, shape: ['ring', 'smoke', 'star'], c: 'fight', r: 1.8, d: 380 }), CR({ t: 180, c: 'fight', d: 420, n: 6 })], { lunge: LUB }); // ボディプレス
+    D(109, () => [AU({ at: 'from', c: 'fight', d: 300, r: 0.8 }), PI({ t: 150, c: 'fight', dir: 'up', w: 0.7, d: 420, glyph: 'flame' }), BU({ t: 180, shape: ['star', 'sparks', 'ring'], c: 'fight', r: 1.3 })], { lunge: LU });          // きしかいせい
+    D(110, () => [SL({ t: 60, c: 'fight', n: 3, fan: 35, ang: -60, gap: 60, len: 1.5, d: 240 }), BU({ t: 200, shape: ['star', 'cross', 'sparks'], c: 'fight', r: 1.3 })], { lunge: LUB });                                  // きまりて
+    D(111, () => [ST({ c: 'white', n: 8, d: 160 }), RG({ dir: true, c: 'white', n: 2, gap: 90, w: 3, arcw: 18, d: 300 }), BU({ t: 200, shape: ['ring', 'sparks'], c: 'white', r: 0.9 })], {});                                // しんくうは
+    D(114, () => [AU({ c: 'fight', d: 800, r: 0.9 }), RG({ c: 'fight', n: 2, gap: 200, d: 500, r: 1.1, w: 7 }), RI({ t: 250, c: 'fight', glyph: 'arrowup', n: 6, r: 8, d: 450, up: 0.9 }), BU({ t: 400, shape: 'cross', c: 'white', r: 0.8 })], SELFH); // ビルドアップ
+    D(115, () => [SW({ c: 'fight', glyph: 'ember', n: 24, radius: 1.0, turns: 2.5, shrink: 0.85, d: 480, add: true, r: 5, at: 'from' }), OR({ t: 450, c: 'fight', r: 34, charge: 200, fly: 280 }), BM({ t: 700, c: 'fight', w: 34, ext: 100, hold: 160, fade: 140 }), BU({ t: 780, shape: ['blast', 'ring', 'star', 'cross'], c: 'fight', r: 1.8 })], {}); // しゅうきほう
+    D(116, () => [RG({ at: 'to', c: 'gold', n: 3, gap: 170, d: 500, r: 1.2, w: 7 }), AU({ t: 150, c: 'red', d: 700 }), RI({ t: 250, c: 'gold', glyph: 'star5', n: 10, r: 7, d: 450, up: 1.0 }), RI({ t: 450, c: 'red', glyph: 'arrowup', n: 4, r: 8, d: 350, up: 0.8 })], SELFH); // ファイナルラウンド
+    D(409, () => [SL({ c: 'white', n: 1, ang: -8, len: 2.0, w: 0.7, curve: 0.02, d: 200 }), BU({ t: 60, shape: ['cross', 'flash'], c: 'white', r: 0.9 }), RI({ t: 140, c: 'white', glyph: 'spark', n: 8, r: 6, d: 350, up: 0.6 })], SELF);        // いあい
+    D(451, () => [ST({ c: 'gold', n: 10, d: 200 }), SH({ c: 'gold', n: 6, gap: 55, fly: 240, glyph: 'star5', r: 9, spin: 12, arc: 22, spread: 0.55 }), BU({ t: 300, shape: ['star', 'sparks'], c: 'gold', r: 0.9 })], { lunge: LUS }); // スタアラッシュ
+
+    // ====================== ほのお ======================
+    D(121, () => [SW({ c: 'fire', glyph: 'flame', n: 32, radius: 0.8, turns: 3, d: 800, r: 9, add: true, cone: true, rise: 0.4, height: 1.4 }), BU({ t: 400, shape: ['blast', 'sparks'], c: 'fire', r: 1.2 })], {});                       // ようびのまい
+    D(122, () => [TH({ t: 30, d: 160, kind: 'fist', c: 'fire', r: 1.1 }), SPR({ t: 150, c: 'fire', glyph: 'flame', n: 10, r: 8, fan: 0.4, fly: 140, d: 160, at: 'to' }), BU({ t: 170, shape: ['blast', 'sparks'], c: 'fire' })], { lunge: LU }); // ほのおのパンチ
+    D(125, () => [TH({ t: 30, d: 180, kind: 'foot', c: 'fire', r: 1.2 }), AR({ t: 100, a0: -120, a1: 40, r: 0.8, c: 'fire', d: 240 }), BU({ t: 190, shape: ['blast', 'star', 'sparks'], c: 'fire', r: 1.2 })], { lunge: LUB });         // ブレイズキック
+    D(126, () => [BU({ t: 0, shape: ['star', 'sparks'], c: 'fire', r: 1.3, ox: -0.3, oy: -0.2, d: 360 }), BU({ t: 130, shape: ['star', 'sparks'], c: 'gold', r: 1.5, ox: 0.3, oy: -0.3, d: 360 }), BU({ t: 260, shape: ['star', 'sparks', 'ring'], c: 'fire', r: 1.7, d: 420 }), RN({ t: 200, c: 'fire', glyph: 'ember', n: 22, d: 400, r: 4, fall: 400, spread: 1.3, splash: false })], {}); // せんこうはなび
+    D(127, () => [SPR({ c: 'flame2', glyph: 'flame', n: 30, r: 10, fan: 0.4, fly: 300, d: 480, wob: 8 }), EY({ t: 50, c: 'red', r: 0.7, d: 400, at: 'from', oy: -0.3 }), BU({ t: 320, shape: ['blast', 'star'], c: 'flame2', r: 1.4 })], {});     // ねたみのいかり
+    D(128, () => [TH({ t: 30, d: 190, kind: 'hammer', c: 'fire', r: 1.3 }), BU({ t: 210, shape: ['blast', 'star', 'debris'], c: 'fire', r: 1.4 }), RI({ t: 230, c: 'fire', glyph: 'flame', n: 10, r: 8, d: 400, up: 1.1 })], { lunge: LUB });    // かじばのいちげき
+    D(129, () => [SH({ c: 'fire', n: 1, fly: 240, glyph: 'heart', r: 20, lob: 20, spread: 0 }), BU({ t: 250, shape: ['blast', 'ring', 'sparks'], c: 'fire', r: 1.2 }), RI({ t: 260, c: 'fire', glyph: 'heart', n: 8, r: 8, d: 350, up: 0.9 })], {});     // シアーハート
+    D(134, () => [SH({ c: 'wisp', n: 3, gap: 110, fly: 300, glyph: 'flame', r: 11, lob: 40, spread: 0.3 }), SW({ t: 420, c: 'wisp', glyph: 'flame', n: 5, radius: 0.55, turns: 1.6, d: 600, r: 11, add: true }), BU({ t: 430, shape: 'flash', c: 'wisp', r: 0.9 })], {}); // おにび
+    D(135, () => [OR({ c: 'fire', r: 14, charge: 220, fly: 220 }), BU({ t: 440, shape: ['blast', 'sparks', 'ring'], c: 'fire', r: 1.6 }), RN({ t: 450, c: 'fire', glyph: 'ember', n: 16, d: 300, r: 4, fall: 350, spread: 1.2, splash: false })], {}); // はじけるほのお
+    D(136, () => [SPR({ c: 'ice', glyph: 'snow', n: 20, r: 8, fan: 0.4, fly: 300, d: 360, wob: 10 }), VL({ t: 380, c: 'fire', d: 500, a: 0.5 }), BU({ t: 480, shape: ['flash', 'cross'], c: 'gold', r: 1.6, d: 400 })], {});     // きたかぜたいよう
+    D(137, () => [SPR({ c: 'fire', glyph: 'flame', n: 40, r: 9, fan: 0.6, fly: 320, d: 560, wob: 12, lift: 8 }), CL({ t: 200, c: ['#ffe0a0', '#ff8a40', '#c04010'], n: 8, d: 560, a: 0.45, add: true }), VL({ t: 250, c: 'fire', d: 500, a: 0.25 })], {}); // ねっぷう
+
+    // ====================== ひこう ======================
+    D(141, () => [TH({ t: 20, d: 120, kind: 'beak', c: 'fly', r: 0.8 }), BU({ t: 120, shape: ['sparks', 'ring'], c: 'fly', r: 0.7 })], { lunge: LUS });                                                                         // つつく
+    D(142, () => [ST({ c: 'fly', n: 10, d: 200 }), AR({ t: 100, a0: -180, a1: 180, r: 0.8, c: 'fly', d: 360 }), SPR({ t: 120, c: 'white', glyph: 'feather', n: 8, r: 6, fan: 0.6, fly: 260, d: 240, at: 'to' }), BU({ t: 240, shape: ['ring', 'star'], c: 'fly' })], { lunge: LUB }); // アクロバット
+    D(143, () => [AR({ t: 50, a0: -110, a1: 80, r: 0.8, c: 'fly', d: 260, w: 1.6 }), RI({ t: 150, c: 'white', glyph: 'feather', n: 8, r: 7, d: 350, up: 0.7 }), BU({ t: 170, shape: ['sparks', 'ring'], c: 'fly' })], { lunge: LU }); // つばさでうつ
+    D(144, () => [ST({ c: 'blue', n: 14, d: 260 }), AU({ t: 0, at: 'from', c: 'blue', d: 280, r: 0.9 }), TH({ t: 40, d: 230, kind: 'beak', c: 'blue', r: 1.5 }), BU({ t: 260, shape: ['blast', 'ring', 'star'], c: 'blue', r: 1.6 }), RI({ t: 280, c: 'white', glyph: 'feather', n: 10, r: 8, d: 400, up: 1.1 })], { lunge: [0, 230, 0.85] }); // ブレイブバード
+    D(145, () => [TH({ t: 30, d: 180, kind: 'drill', c: 'fly', r: 1.3 }), SW({ t: 150, c: 'white', glyph: 'dot', n: 14, radius: 0.35, turns: 3, d: 260, r: 4, add: true }), BU({ t: 200, shape: ['star', 'sparks'], c: 'fly', r: 1.1 })], { lunge: LU }); // ドリルくちばし
+    D(146, () => [ST({ c: 'fly', n: 12, d: 200 }), SL({ t: 120, c: 'fly', n: 1, ang: 18, len: 1.9, w: 1.2, curve: 0.2, d: 260 }), BU({ t: 200, shape: ['sparks', 'ring'], c: 'fly' })], { lunge: LU });                          // かっくう
+    D(147, () => [ST({ c: 'white', n: 16, d: 220 }), SPR({ c: 'white', glyph: 'dot', n: 22, r: 5, fan: 0.2, fly: 220, d: 300 }), BU({ t: 230, shape: ['blast', 'ring'], c: 'fly', r: 1.3 })], { lunge: LU });                  // ジェットシュート
+    D(149, () => [RN({ c: 'gold', glyph: 'star5', n: 6, d: 300, r: 10, fall: 280, tilt: 0.3, trail: true, spread: 0.7 }), AR({ t: 300, a0: -130, a1: 50, r: 0.85, c: 'gold', d: 280, w: 1.7 }), BU({ t: 400, shape: ['blast', 'star', 'cross'], c: 'gold', r: 1.4 })], { lunge: LU }); // メテオウィング
+    D(150, () => [SL({ c: 'white', n: 1, ang: -5, len: 2.4, w: 1.6, curve: 0.15, d: 300 }), CL({ t: 100, c: 'storm', n: 8, d: 560, a: 0.6, r: 0.6, drift: 1 }), SPR({ t: 100, c: 'white', glyph: 'dot', n: 16, r: 4, fan: 0.9, fly: 280, d: 300 }), BU({ t: 200, shape: 'ring', c: 'fly', r: 1.2 })], {}); // むらくもばらい
+    D(152, () => [SH({ c: 'fly', n: 3, gap: 80, fly: 210, glyph: 'moon', r: 11, spin: 14, spread: 0.5 }), SL({ t: 300, c: 'fly', n: 2, ang: -30, gap: 70, len: 1.1, d: 200 })], {});                                          // エアーカッター
+    D(154, () => [SL({ t: 40, c: 'fly', n: 3, fan: 28, ang: -22, gap: 60, len: 1.3, w: 0.9, d: 240 }), SPR({ t: 60, c: 'white', glyph: 'dot', n: 12, r: 4, fan: 0.8, fly: 240, d: 240 }), BU({ t: 160, shape: ['sparks', 'ring'], c: 'fly' })], {}); // かまいたち
+    D(155, () => [BM({ c: 'fly', w: 16, ext: 130, hold: 260, fade: 140, wave: true }), SPR({ t: 60, c: 'white', glyph: 'dot', n: 14, r: 4, fan: 0.15, fly: 240, d: 280 })], {});                                              // ジェットきりゅう
+    D(158, () => [SW({ c: 'fly', glyph: 'dot', n: 44, radius: 1.0, turns: 4, d: 760, r: 5, add: true, cone: true, rise: 0.6, height: 1.6 }), RN({ t: 100, c: 'white', glyph: 'shard', n: 14, d: 500, r: 6, fall: 280, tilt: 0.35, align: true, trail: true, splash: false }), VL({ t: 300, c: 'white', d: 400, a: 0.25 })], {}); // ターボストーム
+    D(159, () => [RI({ c: 'white', glyph: 'feather', n: 14, r: 8, d: 800, up: 0.9, down: true, sway: 14, spread: 1.0 }), AU({ t: 200, c: 'grass', d: 700, r: 0.8 }), RI({ t: 300, c: 'grass', glyph: 'cross', n: 6, r: 7, d: 500, up: 1.0 })], SELF); // はねやすめ
+    D(160, () => [FI({ c: 'fly', glyph: 'feather', mode: 'wave', n: 26, r: 8, d: 1000, tint: 0.12 }), ST({ t: 100, c: 'white', n: 12, d: 600 })], { on: 'field' });                                                          // おいかぜ
+    D(478, () => [FI({ c: 'white', glyph: 'dot', mode: 'wave', n: 30, r: 5, d: 900, tint: 0.14 }), SPR({ c: 'white', glyph: 'dot', n: 24, r: 5, fan: 0.9, fly: 400, d: 500, wob: 10 }), VL({ t: 400, c: 'white', d: 400, a: 0.2 })], { on: 'field' });  // きりばらい
+    D(496, () => [CL({ c: 'storm', n: 12, d: 1000, a: 0.7, r: 0.9, add: false }), SW({ t: 80, c: 'fly', glyph: 'dot', n: 50, radius: 1.2, turns: 4, d: 920, r: 6, add: true, cone: true, rise: 0.6, height: 1.7 }), RN({ t: 150, c: 'water', glyph: 'drop', n: 24, d: 600, r: 6, fall: 260, tilt: 0.3, trail: true }), BO({ t: 500, c: 'elec', n: 2, d: 220, gap: 200 })], { shake: [10, 600] }); // ハリケーン
+    D(509, () => [SW({ c: 'fly', glyph: 'dot', n: 34, radius: 0.9, turns: 3, d: 620, r: 5, add: true, cone: true, rise: 0.7, height: 1.4 }), SPR({ t: 80, c: 'white', glyph: 'dot', n: 24, r: 5, fan: 0.5, fly: 300, d: 360 })], {});                  // ふきとばし
+
+    // ====================== ゴースト ======================
+    D(162, () => [CL({ c: 'ghost', n: 6, d: 420, a: 0.7, at: 'ground', r: 0.5, lift: 0.5 }), ST({ t: 40, c: 'ghost', n: 8, d: 150 }), TH({ t: 60, d: 150, kind: 'palm', c: 'ghost', r: 0.9 }), BU({ t: 200, shape: ['smoke', 'ring'], c: 'ghost' })], { lunge: LUS }); // かげうち
+    D(163, () => [SL({ t: 80, c: 'ghost', n: 3, claw: true, ang: -36, len: 1.2, w: 1.1, d: 320 }), BU({ t: 160, shape: ['smoke', 'sparks'], c: 'ghost' })], { lunge: LU });                                                       // シャドークロー
+    D(164, () => [ST({ c: 'ghost', n: 8, d: 150 }), TH({ t: 30, d: 150, kind: 'fist', c: 'ghost', r: 1.1 }), BU({ t: 170, shape: ['smoke', 'star'], c: 'ghost', r: 1.0 })], { lunge: LU });                                 // シャドーパンチ
+    D(165, () => [EY({ c: 'ghost', r: 1.0, d: 520 }), BU({ t: 200, shape: ['flash', 'ring'], c: 'ghost', r: 1.0 }), RG({ t: 150, at: 'to', c: 'ghost', n: 2, d: 360, r: 1.4 })], {});                                          // おどろかす
+    D(166, () => [RI({ c: 'ghost', glyph: 'skull', n: 6, r: 10, d: 500, up: 1.0, add: false, tone: 1 }), SL({ t: 180, c: 'ghost', n: 1, ang: -58, len: 1.9, w: 1.5, d: 300 }), BU({ t: 280, shape: ['smoke', 'ring', 'star'], c: 'ghost', r: 1.3 })], { lunge: LU }); // いのちとり
+    D(167, () => [AR({ t: 40, a0: -160, a1: -40, r: 0.75, c: 'dark', d: 260, w: 1.5 }), AR({ t: 80, a0: 160, a1: 40, r: 0.75, c: 'ghost', d: 260, w: 1.5 }), RI({ t: 160, c: 'black', glyph: 'feather', n: 10, r: 8, d: 400, up: 0.9, add: false }), BU({ t: 200, shape: ['smoke', 'sparks'], c: 'ghost' })], { lunge: LU }); // あんやのつばさ
+    D(168, () => [CL({ c: 'ghost', n: 10, d: 600, a: 0.55, at: 'field', r: 1.2 }), VL({ c: 'black', dark: true, d: 520, a: 0.45 }), SL({ t: 380, c: 'ghost', n: 1, ang: -22, len: 2.7, w: 2.3, curve: 0.12, d: 340 }), SL({ t: 430, c: 'white', n: 1, ang: -22, len: 2.7, w: 0.8, curve: 0.12, d: 300 }), BU({ t: 420, shape: ['cross', 'smoke', 'ring'], c: 'ghost', r: 1.8 })], { lunge: [300, 130, 0.7], flash: ['#e8d0ff', 0.55, 300], shake: [16, 360] }); // 朧一閃
+    D(169, () => [SW({ c: 'ghost', glyph: 'flame', n: 4, radius: 0.55, turns: 1.4, d: 520, r: 11, add: true }), CL({ t: 150, c: 'ghost', n: 6, d: 420, a: 0.6, r: 0.5 }), BU({ t: 400, shape: ['smoke', 'ring', 'star'], c: 'ghost', r: 1.1 })], { lunge: LUS });                  // ソウルシェイプ
+    D(174, () => [SW({ c: 'wisp', glyph: 'ember', n: 3, radius: 0.5, turns: 1.5, d: 600, r: 9, add: true }), BU({ t: 100, shape: 'flash', c: ['#ffffff', '#c8f0ff', '#8aa0ff'], r: 1.1, d: 500 }), RI({ t: 250, c: 'wisp', glyph: 'star', n: 6, r: 6, d: 350, up: 0.6 })], {}); // あやしいひかり
+    D(176, () => [SH({ c: 'ghost', n: 1, fly: 280, glyph: 'ember', r: 24, spread: 0, trail: true }), SW({ t: 300, c: 'ghost', glyph: 'skull', n: 6, radius: 0.5, turns: 3, d: 600, r: 9 }), BU({ t: 310, shape: ['smoke', 'ring', 'star'], c: 'ghost', r: 1.4 })], {});     // のりうつる
+    D(177, () => [SW({ c: 'rainbow', glyph: 'star', n: 18, radius: 0.8, turns: 3, d: 650, r: 8, add: true }), SH({ t: 80, c: 'ghost', n: 5, gap: 70, fly: 240, glyph: 'spark', r: 8, spin: 10, spread: 0.7, arc: 30 }), BU({ t: 420, shape: ['star', 'sparks', 'ring'], c: 'rainbow', r: 1.4 }), BU({ t: 480, shape: 'star', c: 'ghost', r: 1.0, ox: 0.3, oy: -0.3 })], {}); // カオストリック
+    D(178, () => [OR({ c: 'ghost', r: 28, charge: 400, fly: 280, glyph: 'skull' }), BU({ t: 680, shape: ['blast', 'smoke', 'ring'], c: 'ghost', r: 1.6 }), RI({ t: 690, c: 'ghost', glyph: 'skull', n: 8, r: 9, d: 450, up: 1.1, add: false, tone: 1 })], {});   // カースブラスト
+    D(179, () => [EY({ c: 'red', r: 1.3, d: 700, at: 'from' }), RG({ t: 300, at: 'to', c: 'red', n: 3, gap: 120, d: 460, r: 1.4, w: 5 }), BU({ t: 450, shape: ['smoke', 'ring'], c: 'blood', r: 1.2 })], {});                      // 不倶戴天
+    D(180, () => [SP({ c: 'ghost', kind: 'thorn', n: 6, h: 0.95, d: 800, spread: 0.8 }), SW({ t: 250, c: 'ghost', glyph: 'ring', n: 10, radius: 0.55, turns: 1, d: 520, r: 8, add: true }), CL({ t: 100, c: 'ghost', n: 6, d: 600, a: 0.5, at: 'ground', r: 0.6 })], {}); // テラーバインド
+    D(507, () => [RN({ c: 'ghost', glyph: 'needle', n: 6, d: 260, r: 9, fall: 220, spread: 0.6, rot: Math.PI, splash: false }), BU({ t: 300, shape: ['smoke', 'sparks'], c: 'ghost', r: 1.0 }), CL({ t: 280, c: 'ghost', n: 5, d: 400, a: 0.5, at: 'ground', r: 0.5 })], {});  // かげぬい
+
+    // ====================== くさ ======================
+    D(183, () => [SL({ t: 70, c: 'grass', n: 2, ang: -45, gap: 90, len: 1.4, w: 1.1, d: 260 }), SPR({ t: 100, c: 'grass', glyph: 'leaf', n: 10, r: 8, fan: 0.6, fly: 220, d: 200, at: 'to', spin: 6 }), BU({ t: 190, shape: ['sparks', 'ring'], c: 'grass' })], { lunge: LU }); // リーフブレード
+    D(184, () => [SL({ t: 70, c: 'pinkgrass', n: 1, ang: -50, len: 1.7, w: 1.4, d: 300 }), BU({ t: 170, shape: ['debris', 'star'], glyph: 'petal', c: 'pinkgrass', r: 1.3 }), RI({ t: 180, c: 'pinkgrass', glyph: 'petal', n: 14, r: 8, d: 500, up: 1.0, spin: 5 })], { lunge: LU }); // ブルームエッジ
+    D(185, () => [TH({ t: 30, d: 220, kind: 'hammer', c: 'grass', r: 1.5 }), CR({ t: 240, c: 'grass', d: 420, n: 5 }), BU({ t: 250, shape: ['star', 'debris', 'ring'], glyph: 'leaf', c: 'grass', r: 1.4 })], { lunge: LUB });          // ウッドハンマー
+    D(186, () => [SW({ c: 'pinkgrass', glyph: 'petal', n: 36, radius: 1.0, turns: 3, d: 760, r: 8, rise: 0.5, height: 1.3 }), BU({ t: 420, shape: ['star', 'ring'], c: 'pinkgrass', r: 1.3 })], {});                           // くるいざき
+    D(187, () => [PI({ c: 'grass', dir: 'up', w: 0.45, h: 1.7, d: 520, glyph: 'leaf' }), SL({ t: 280, c: 'lime', n: 1, ang: -62, len: 2.3, w: 2, d: 320 }), BU({ t: 300, shape: ['star', 'cross', 'debris'], glyph: 'leaf', c: 'lime', r: 1.5 })], { lunge: LUB }); // グロウブレード
+    D(188, () => [SL({ t: 60, c: 'grass', n: 3, ang: -8, gap: 70, len: 1.5, w: 0.9, d: 240 }), SPR({ t: 80, c: 'grass', glyph: 'leaf', n: 14, r: 7, fan: 0.7, fly: 220, d: 260, at: 'to', spin: 6 }), BU({ t: 160, shape: 'sparks', c: 'grass' })], { lunge: LU }); // くさわけ
+    D(189, () => [SH({ c: 'grass', n: 2, gap: 45, fly: 160, glyph: 'seed', align: true, r: 6, spread: 0.4 })], {});                                                                                                         // タネマシンガン（連続技）
+    D(192, () => [SH({ rev: true, c: 'grass', n: 9, gap: 55, fly: 340, glyph: 'dot', r: 6, lob: 30, spread: 0.4 }), AU({ c: 'grass', d: 500, r: 0.9 }), RI({ t: 500, at: 'from', c: 'grass', glyph: 'cross', n: 6, r: 7, d: 400, up: 0.8 })], {}); // メガドレイン
+    D(194, () => [OR({ c: 'grass', r: 24, charge: 340, fly: 260 }), BU({ t: 600, shape: ['blast', 'ring', 'star'], c: 'grass', r: 1.3 })], {});                                                                              // エナジーボール
+    D(195, () => [RI({ c: 'white', glyph: 'ember', n: 22, r: 10, d: 800, up: 1.0, spread: 1.3, sway: 14, add: false, tone: 0 }), AU({ t: 100, c: 'white', d: 700, r: 0.9 })], SELFH);                                         // コットンパワー
+    D(196, () => [SPR({ c: ['#f0ffd0', '#b0e060', '#60a030'], glyph: 'dot', n: 40, r: 5, fan: 0.55, fly: 340, d: 560, wob: 10, add: false }), RI({ t: 400, c: 'white', glyph: 'zz', n: 3, r: 9, d: 500, up: 1.0, add: false })], {}); // ねむりごな
+    D(197, () => [SH({ c: 'grass', n: 7, gap: 50, fly: 280, glyph: 'leaf', r: 9, spin: 10, arc: 50, spread: 0.45 }), RI({ t: 400, c: 'white', glyph: 'star', n: 8, r: 5, d: 300, up: 0.6 })], {});                           // マジカルリーフ
+    D(200, () => [SH({ c: 'moon', n: 1, fly: 300, glyph: 'moon', r: 22, spin: 10, spread: 0, arc: 40 }), BU({ t: 310, shape: ['ring', 'sparks', 'star'], c: 'moon', r: 1.1 })], {});                                          // 弓張月
+    D(486, () => [FI({ c: 'grass', glyph: 'leaf', mode: 'rise', n: 32, r: 8, d: 1100, tint: 0.2 }), SW({ t: 200, c: 'grass', glyph: 'leaf', n: 12, radius: 0.9, turns: 1, d: 700, r: 7 })], { on: 'field' });          // グラスフィールド
+    D(491, () => [RG({ dir: true, c: 'grass', n: 5, gap: 85, w: 9, arcw: 46, d: 440 }), SPR({ t: 100, c: 'grass', glyph: 'leaf', n: 22, r: 8, fan: 0.6, fly: 300, d: 360, spin: 6 }), BU({ t: 450, shape: ['ring', 'sparks'], c: 'grass' })], {}); // こだまのさけび
+    D(498, () => [VL({ c: 'gold', d: 520, a: 0.28 }), SL({ t: 120, c: 'grass', n: 1, ang: -15, len: 1.5, w: 1, curve: 0.3, d: 360 }), RI({ t: 200, c: 'pinkgrass', glyph: 'petal', n: 10, r: 7, d: 500, up: 0.9 }), BU({ t: 230, shape: ['ring', 'flash'], c: 'grass', r: 1.0 })], { lunge: LU }); // あさなぎ
+
+    // ====================== じめん ======================
+    D(201, () => [CR({ at: 'ground', c: 'ground', d: 560, n: 7 }), RG({ t: 100, at: 'ground', c: 'ground', n: 2, d: 400, r: 1.6, w: 7 }), BU({ t: 120, shape: ['smoke', 'debris'], c: 'ground', r: 1.4 })], { shake: [8, 300] });             // じならし
+    D(202, () => [TH({ t: 30, d: 220, kind: 'foot', c: 'ground', r: 1.6 }), CR({ t: 240, c: 'ground', d: 520, n: 7 }), BU({ t: 250, shape: ['smoke', 'debris', 'star'], c: 'ground', r: 1.6 })], { lunge: LUB });                    // 10まんばりき
+    D(204, () => [TH({ t: 30, d: 180, kind: 'drill', c: 'ground', r: 1.4 }), SP({ t: 150, c: 'rock', kind: 'rock', n: 3, h: 0.7, d: 500, spread: 0.3 }), BU({ t: 200, shape: ['smoke', 'debris'], c: 'ground', r: 1.2 })], { lunge: LU });   // ドリルライナー
+    D(205, () => [SH({ c: 'mud', n: 5, gap: 50, fly: 260, glyph: 'rock', r: 11, lob: 50, spread: 0.6, spin: 8 }), BU({ t: 300, shape: ['smoke', 'debris', 'ring'], c: 'mud', r: 1.5 })], {});                                    // ソイルシュート
+    D(207, () => [SL({ t: 60, c: 'sand', n: 3, claw: true, ang: -28, len: 1.3, w: 1.1, d: 320 }), CL({ t: 100, c: 'sand', n: 7, d: 500, a: 0.6, r: 0.55 }), SPR({ t: 90, c: 'sand', glyph: 'dot', n: 16, r: 4, fan: 0.6, fly: 260, d: 240, at: 'to', add: false })], { lunge: LU }); // サンドレイク
+    D(208, () => [ST({ c: 'gold', n: 22, d: 200 }), TH({ t: 40, d: 170, kind: 'head', c: 'ground', r: 1.3 }), BU({ t: 220, shape: ['blast', 'ring', 'star', 'smoke'], c: 'ground', r: 1.6 }), RG({ t: 230, at: 'to', c: 'ground', n: 2, d: 360, r: 1.8 })], { lunge: [0, 170, 0.9] }); // 韋駄天
+    D(211, () => [SH({ c: 'mud', n: 3, gap: 70, fly: 260, glyph: 'ember', r: 9, lob: 36, spread: 0.4, trail: false, hit: false }), BU({ t: 320, shape: ['smoke', 'ring'], c: 'mud', r: 1.0 })], {});                                // どろかけ
+    D(212, () => [SH({ c: 'mud', n: 6, gap: 45, fly: 230, glyph: 'ember', r: 8, spread: 0.55 }), BU({ t: 290, shape: ['smoke', 'ring', 'sparks'], c: 'mud', r: 1.1 })], {});                                                 // マッドショット
+    D(213, () => [OR({ c: 'mud', r: 26, charge: 260, fly: 300, lob: 60, glyph: 'rock', spin: 6 }), BU({ t: 580, shape: ['blast', 'smoke', 'debris', 'ring'], c: 'mud', r: 1.7 })], {});                                      // どろばくだん
+    D(217, () => [CR({ at: 'ground', c: 'ground', d: 520, n: 8 }), PI({ t: 200, c: 'ground', dir: 'up', w: 1.1, h: 1.8, d: 700, glyph: 'rock' }), SP({ t: 160, c: 'rock', kind: 'rock', n: 5, h: 1.1, d: 700, spread: 1.1 }), BU({ t: 260, shape: ['smoke', 'debris'], c: 'ground', r: 1.8 })], { shake: [18, 520] }); // アースライザー
+    D(219, () => [SW({ c: 'steel', glyph: 'ring', n: 12, radius: 0.8, turns: 1.2, d: 700, r: 9, add: true }), RG({ c: 'steel', n: 3, gap: 140, d: 500, r: 1.3, w: 5 }), BO({ t: 200, c: 'elec', n: 2, d: 200, gap: 160 }), AU({ t: 100, c: 'steel', d: 600 })], SELF); // マグナライズ
+    D(514, () => [SH({ c: 'steel', n: 7, gap: 55, fly: 280, glyph: 'x', r: 7, lob: 50, spread: 1.1, trail: false, hit: false }), BU({ t: 380, shape: 'smoke', c: 'ground', r: 0.9 })], {});                                    // まきびし
+
+    // ====================== こおり ======================
+    D(221, () => [SH({ c: 'ice', n: 3, gap: 45, fly: 170, glyph: 'shard', align: true, r: 8, spread: 0.35 }), BU({ t: 200, shape: ['sparks', 'ring'], c: 'ice', r: 0.8 })], { lunge: LUS });                                // こおりのつぶて
+    D(223, () => [TH({ t: 30, d: 160, kind: 'fist', c: 'ice', r: 1.1 }), BU({ t: 170, shape: ['star', 'debris', 'ring'], glyph: 'shard', c: 'ice' }), RI({ t: 180, c: 'ice', glyph: 'snow', n: 8, r: 7, d: 400, up: 0.8 })], { lunge: LU }); // れいとうパンチ
+    D(224, () => [RN({ c: 'ice', glyph: 'shard', n: 6, d: 360, r: 13, fall: 240, spread: 0.55, rot: Math.PI, splash: false }), BU({ t: 330, shape: ['ring', 'debris', 'star'], glyph: 'shard', c: 'ice', r: 1.3 })], {});     // つららおとし
+    D(225, () => [SP({ c: 'ice', kind: 'ice', n: 5, h: 0.95, d: 700, spread: 0.8 }), BU({ t: 120, shape: ['sparks', 'ring'], c: 'ice', r: 1.1 })], {});                                                                      // せいひょう
+    D(226, () => [TH({ t: 30, d: 160, kind: 'fist', c: ['#ffffff', '#d8f4ff', '#9ac8e8'], r: 1.1 }), CL({ t: 150, c: 'ice', n: 6, d: 420, a: 0.55, r: 0.5, add: true }), BU({ t: 170, shape: ['ring', 'sparks'], c: 'ice' })], { lunge: LU }); // ひややかパンチ
+    D(228, () => [RN({ c: 'white', glyph: 'ember', n: 36, d: 520, r: 12, fall: 330, spread: 1.4, tilt: 0.3, splash: false }), WV({ t: 180, c: 'ice', w: 1.6, h: 1.0, d: 460 }), CL({ t: 300, c: 'white', n: 10, d: 600, a: 0.7, r: 1.0, at: 'to', add: false }), BU({ t: 440, shape: ['smoke', 'debris', 'ring'], glyph: 'shard', c: 'ice', r: 1.8 })], { shake: [16, 500] }); // ゆきなだれ
+    D(229, () => [AR({ t: 20, a0: -180, a1: 180, r: 0.7, c: 'ice', d: 240, w: 1.3 }), BU({ t: 130, shape: ['sparks', 'ring'], c: 'ice', r: 0.9 })], { lunge: [0, 100, 0.5] });                                                      // トリプルアクセル（連続技）
+    D(232, () => [SPR({ c: 'ice', glyph: 'snow', n: 38, r: 8, fan: 0.45, fly: 330, d: 560, wob: 12, spin: 4 }), CL({ t: 200, c: 'ice', n: 6, d: 520, a: 0.35, add: true })], {});                                         // こごえるかぜ
+    D(234, () => [BM({ c: 'rainbow', w: 36, ext: 130, hold: 340, fade: 180, wave: true }), BM({ c: 'ice', w: 16, ext: 130, hold: 340, fade: 180 }), RI({ t: 200, c: 'rainbow', glyph: 'star', n: 10, r: 6, d: 400, up: 0.8 }), BU({ t: 160, shape: ['flash', 'ring'], c: 'ice', r: 1.1 })], {}); // オーロラビーム
+    D(238, () => [SD({ c: 'ice', shape: 'hex', r: 0.85, d: 800 }), RI({ t: 100, c: 'ice', glyph: 'snow', n: 12, r: 7, d: 600, up: 0.9 }), BU({ t: 120, shape: ['sparks', 'cross'], c: 'ice', r: 0.9 })], SELF);                    // アイシイ
+    D(239, () => [CL({ at: 'field', c: 'black', n: 18, r: 1.6, d: 1000, a: 0.75, add: false }), RI({ t: 300, c: 'white', glyph: 'cross', n: 6, r: 6, d: 500, up: 0.6 })], { on: 'field' });                                    // くろいきり
+
+    // ====================== ノーマル ======================
+    D(243, () => [ST({ c: 'gold', n: 24, d: 150 }), TH({ t: 20, d: 110, kind: 'head', c: 'white', r: 0.8 }), BU({ t: 120, shape: ['ring', 'sparks', 'flash'], c: 'white', r: 1.0 })], { lunge: [0, 90, 0.9] });             // しんそく
+    D(245, () => [ST({ c: 'white', n: 10, d: 180 }), TH({ t: 40, d: 160, kind: 'head', c: 'normal', r: 1.2 }), SPR({ t: 0, at: 'from', c: 'fire', glyph: 'flame', n: 8, r: 6, fan: 0.2, fly: 160, d: 200 }), BU({ t: 190, shape: ['star', 'ring'], c: 'normal', r: 1.1 })], { lunge: LUB }); // ロケットずつき
+    D(246, () => [SL({ t: 60, c: 'white', n: 1, ang: 32, len: 1.3, w: 1.1, curve: 0.1, d: 240 }), BU({ t: 140, shape: ['ring', 'sparks'], c: 'normal', r: 0.8 })], { lunge: LU });                                           // みねうち
+    D(247, () => [SL({ t: 60, c: 'white', n: 1, ang: -50, len: 1.7, w: 1.2, curve: 0.1, d: 260 }), BU({ t: 150, shape: ['sparks', 'cross'], c: 'white', r: 0.9 })], { lunge: LU });                                           // いあいぎり
+    D(248, () => [ST({ c: 'normal', n: 14, d: 220 }), TH({ t: 40, d: 200, kind: 'head', c: 'normal', r: 1.5 }), BU({ t: 230, shape: ['blast', 'ring', 'star', 'sparks'], c: 'normal', r: 1.6 })], { lunge: [0, 210, 0.85] });  // すてみタックル
+    D(249, () => [AR({ t: 30, a0: -200, a1: 160, r: 0.85, c: 'normal', d: 320, w: 1.5 }), ST({ t: 20, c: 'white', n: 6, d: 200 }), BU({ t: 180, shape: ['star', 'ring'], c: 'normal', r: 1.2 })], { lunge: LU });      // スピンテール
+    D(250, () => [TH({ t: 30, d: 220, kind: 'fist', c: 'normal', r: 1.8 }), BU({ t: 240, shape: ['star', 'ring', 'flash', 'sparks'], c: 'normal', r: 1.9 })], { lunge: LUB });                                          // メガトンパンチ
+    D(251, () => [AU({ c: 'fire', d: 400, r: 1.0 }), VL({ t: 300, c: 'white', d: 500, a: 0.7 }), BU({ t: 420, shape: ['blast', 'ring', 'star', 'smoke'], c: 'fire', r: 3.0, d: 640 }), RG({ t: 430, at: 'to', c: 'fire', n: 3, gap: 110, d: 560, r: 2.4, w: 10 }), BU({ t: 450, shape: 'debris', glyph: 'ember', c: 'fire', r: 2.6, d: 600 })], { shake: [22, 600], flash: ['#ffffff', 0.9, 360] }); // だいばくはつ
+    D(252, () => [SH({ c: 'gold', n: 7, gap: 45, fly: 300, glyph: 'star5', r: 9, spin: 12, arc: 34, spread: 0.55 }), BU({ t: 340, shape: ['star', 'sparks'], c: 'gold', r: 0.9 })], {});                                      // スピードスター
+    D(255, () => [RG({ dir: true, c: 'sound', n: 5, gap: 75, w: 10, arcw: 52, d: 460, notes: true }), VL({ t: 250, c: 'white', d: 300, a: 0.2 }), BU({ t: 420, shape: ['ring', 'sparks'], c: 'sound', r: 1.2 })], { shake: [8, 360] }); // ハイパーボイス
+    D(256, () => [RG({ dir: true, c: ['#ffffff', '#9ae0ff', '#4a90e0'], n: 3, gap: 160, w: 6, arcw: 36, d: 480, notes: true }), BU({ t: 380, shape: ['ring'], c: 'blue', r: 0.9 })], {});                                    // エコーボイス
+    D(257, () => [AR({ at: 'to', a0: -40, a1: 40, r: 0.55, rot: 30, c: 'normal', d: 220, w: 1 }), AR({ t: 230, at: 'to', a0: 40, a1: -40, r: 0.55, rot: 30, c: 'normal', d: 220, w: 1 }), RI({ t: 150, c: 'gold', glyph: 'star', n: 6, r: 6, d: 400, up: 0.7 })], SELFH); // しっぽをふる
+    D(258, () => [RG({ dir: true, c: 'normal', n: 3, gap: 120, w: 5, arcw: 30, d: 420, notes: true }), RI({ t: 320, c: 'blue', glyph: 'arrow', n: 6, r: 8, d: 450, up: 0.9, down: true })], {});                           // なきごえ
+    D(259, () => [SW({ c: 'steel', glyph: 'sword', n: 8, radius: 0.85, turns: 1.6, d: 800, r: 9, spin: 0.2 }), AU({ t: 100, c: 'red', d: 700 }), RI({ t: 500, c: 'red', glyph: 'arrowup', n: 5, r: 8, d: 400, up: 0.8 })], SELFH); // つるぎのまい
+    D(260, () => [PI({ c: 'white', dir: 'down', w: 1.3, d: 700 }), RN({ t: 150, c: 'rainbow', glyph: 'star5', n: 26, d: 500, r: 7, fall: 320, spread: 1.4, splash: false }), BU({ t: 420, shape: ['star', 'cross', 'ring', 'flash'], c: 'gold', r: 2.0 }), RG({ t: 440, at: 'to', c: 'gold', n: 3, gap: 100, d: 500, r: 2.0, w: 8 })], { lunge: [300, 150, 0.7], shake: [16, 440] }); // ドラマチックな登場
+    D(403, () => [ST({ c: 'white', n: 8, d: 150 }), TH({ t: 30, d: 150, kind: 'horn', c: 'normal', r: 1.3 }), BU({ t: 170, shape: ['star', 'sparks'], c: 'normal' })], { lunge: LU });                                      // つのでつく
+    D(404, () => [ST({ c: 'white', n: 10, d: 170 }), TH({ t: 40, d: 160, kind: 'head', c: 'normal', r: 1.2 }), BU({ t: 190, shape: ['smoke', 'ring', 'star'], c: 'normal', r: 1.1 })], { lunge: LUB });                // とっしん
+    D(405, () => [ST({ c: 'white', n: 12, d: 110 }), TH({ t: 20, d: 90, kind: 'head', c: 'white', r: 0.7 }), BU({ t: 100, shape: ['sparks', 'ring'], c: 'white', r: 0.7 })], { lunge: [0, 80, 0.7] });                   // でんこうせっか
+    D(406, () => [SL({ t: 60, c: 'white', n: 2, gap: 90, ang: -42, len: 1.3, w: 1.1, d: 260 }), BU({ t: 170, shape: ['sparks', 'cross'], c: 'white', r: 0.9 })], { lunge: LU });                                      // きりさく
+    D(407, () => [SL({ t: 70, c: 'normal', n: 3, claw: true, ang: -42, len: 1.2, w: 1.1, d: 280 }), BU({ t: 150, shape: ['debris', 'sparks'], glyph: 'shard', c: 'normal', r: 1.0 })], { lunge: LU });              // ブレイククロー
+    D(408, () => [SL({ t: 80, c: 'white', n: 1, ang: -35, len: 2.5, w: 2.2, curve: 0.1, d: 320 }), BU({ t: 200, shape: ['cross', 'star', 'ring', 'sparks'], c: 'red', r: 1.7 })], { lunge: LUB, flash: ['#ffd0d0', 0.5, 300] }); // うちとる
+    D(411, () => [BU({ shape: 'ring', c: 'red', d: 600, r: 1.6 }), BU({ shape: 'cross', c: 'red', d: 600, r: 1.8 }), BU({ t: 150, shape: 'ring', c: 'red', d: 450, r: 0.9 })], { flash: null });                           // ロックオン
+    D(412, () => [EY({ c: 'red', r: 1.3, d: 650 }), VL({ t: 150, c: 'dark', dark: true, d: 400, a: 0.3 }), RI({ t: 350, c: 'blue', glyph: 'arrow', n: 5, r: 8, d: 400, up: 0.8, down: true })], {});                         // こわいかお
+    D(413, () => [AU({ c: 'steel', d: 700, r: 0.9 }), BU({ t: 120, shape: ['cross', 'ring'], c: 'white', r: 1.1, d: 500 }), RI({ t: 250, c: 'white', glyph: 'spark', n: 8, r: 6, d: 400, up: 0.7 })], SELFH);          // かくばる
+    D(414, () => [SW({ c: 'fight', glyph: 'dot', n: 26, radius: 1.0, turns: 1.5, shrink: 0.9, d: 520, r: 5, add: true }), BU({ t: 480, shape: ['flash', 'ring'], c: 'fight', r: 0.9 }), AU({ t: 380, c: 'fight', d: 450 })], SELF); // きあいだめ
+    D(415, () => [RG({ dir: true, c: 'sound', n: 4, gap: 90, w: 5, arcw: 40, d: 400 }), SPR({ c: 'white', glyph: 'x', n: 10, r: 7, fan: 0.6, fly: 300, d: 260 }), RI({ t: 300, c: 'blue', glyph: 'arrow', n: 5, r: 8, d: 400, up: 0.8, down: true })], { shake: [4, 300] }); // いやなおと
+    D(418, () => [SH({ c: 'fire', n: 1, fly: 260, glyph: 'dot', r: 12, spread: 0.5, arc: 28 }), SH({ c: 'ice', n: 1, fly: 260, glyph: 'dot', r: 12, spread: 0.5, arc: -28 }), SH({ c: 'elec', n: 1, fly: 260, glyph: 'dot', r: 12, spread: 0.5 }), BU({ t: 280, shape: ['star', 'ring', 'flash'], c: 'rainbow', r: 1.4 })], {}); // トライアタック
+    D(434, () => [SW({ c: 'rouge', glyph: 'petal', n: 26, radius: 0.85, turns: 2, d: 700, r: 8, cone: true, rise: 0.3, height: 1.2 }), BU({ t: 320, shape: ['star', 'sparks', 'ring'], c: 'rouge', r: 1.2 }), RI({ t: 380, c: 'rouge', glyph: 'petal', n: 10, r: 8, d: 400, up: 1.0 })], {}); // アネモネルージュ
+    D(461, () => [TH({ t: 10, d: 120, kind: 'fist', c: 'normal', r: 0.9 }), BU({ t: 110, shape: ['sparks', 'ring'], c: 'normal', r: 0.8, d: 220 })], { lunge: [0, 90, 0.45] });                                          // れんぞくパンチ（連続技）
+    D(477, () => [ST({ c: 'white', n: 8, d: 200 }), SH({ c: 'white', n: 1, fly: 260, glyph: 'star', r: 14, spin: 14, spread: 0, arc: 24 }), RG({ t: 250, at: 'to', c: 'white', n: 2, d: 360, r: 1.3 })], {});          // バトンタッチ
+    D(479, () => [RG({ c: 'white', n: 2, d: 420, r: 1.0, w: 5 }), SW({ t: 150, c: 'rainbow', glyph: 'star5', n: 12, radius: 0.7, turns: 2.5, d: 600, r: 8, add: true }), RI({ t: 300, c: 'rainbow', glyph: 'note', n: 6, r: 7, d: 450, up: 0.9 })], SELFH); // ゆびをふる
+    D(492, () => [PI({ c: 'white', dir: 'down', w: 0.9, d: 640 }), RI({ t: 150, c: 'gold', glyph: 'note', n: 8, r: 8, d: 500, up: 1.1 }), RI({ t: 250, c: 'gold', glyph: 'star5', n: 10, r: 7, d: 450, up: 0.9 }), RG({ t: 300, at: 'ground', c: 'gold', n: 2, d: 400, r: 1.1 })], {}); // アンコール
+    D(503, () => [OR({ c: 'rainbow', r: 22, charge: 280, fly: 260, glyph: 'ring', spin: 8 }), BU({ t: 540, shape: ['blast', 'ring', 'star'], c: 'rainbow', r: 1.3 })], {});                                              // ウェザーボール
+    D(504, () => [OR({ c: 'white', r: 18, charge: 240, fly: 220 }), RG({ t: 460, at: 'ground', c: 'ground', n: 3, gap: 80, d: 420, r: 1.5, w: 6 }), BU({ t: 470, shape: ['blast', 'ring', 'debris'], c: 'sand', r: 1.2 })], {}); // だいちのはどう
+    D(506, () => [AU({ c: 'gold', d: 800, r: 0.9 }), SD({ t: 100, c: 'gold', shape: 'ring', r: 0.8, d: 600 }), RI({ t: 300, c: 'red', glyph: 'arrowup', n: 3, r: 8, d: 400, up: 0.7 })], SELF);                          // こらえる
+    D(508, () => [RG({ dir: true, c: 'normal', n: 4, gap: 90, w: 11, arcw: 50, d: 440 }), SPR({ c: 'white', glyph: 'dot', n: 14, r: 5, fan: 0.6, fly: 260, d: 240 })], { shake: [6, 340] });                            // ほえる
+    D(2019, () => [SD({ c: 'aqua', shape: 'hex', r: 0.85, d: 780 }), BU({ t: 120, shape: ['ring', 'flash'], c: 'aqua', r: 1.0, d: 400 })], SELF);                                                                          // まもる
+
+    // ====================== どく ======================
+    D(262, () => [TH({ t: 30, d: 170, kind: 'horn', c: 'poison', r: 1.3 }), BU({ t: 190, shape: ['star', 'sparks'], c: 'poison' }), RI({ t: 200, c: 'poison', glyph: 'drop', n: 8, r: 6, d: 400, up: 0.7, down: true })], { lunge: LU }); // どくづき
+    D(263, () => [SH({ c: 'toxic', n: 4, gap: 60, fly: 250, glyph: 'rock', r: 12, lob: 50, spread: 0.6, spin: 8 }), BU({ t: 300, shape: ['smoke', 'debris', 'ring'], c: 'toxic', r: 1.5 }), CL({ t: 300, c: 'toxic', n: 6, d: 500, a: 0.5, r: 0.6 })], {}); // ダストシュート
+    D(264, () => [AR({ t: 50, a0: -130, a1: 70, r: 0.85, c: 'poison', d: 270, w: 1.4 }), BU({ t: 180, shape: ['star', 'sparks'], c: 'poison' }), RI({ t: 200, c: 'poison', glyph: 'drop', n: 8, r: 6, d: 400, up: 0.6, down: true })], { lunge: LU }); // ポイズンテール
+    D(265, () => [SH({ c: 'poison', n: 6, gap: 55, fly: 240, glyph: 'leaf', r: 9, spin: 12, arc: 30, spread: 0.5 }), BU({ t: 320, shape: ['sparks', 'ring'], c: 'poison' })], {});                                          // ポイズンリーフ
+    D(266, () => [SL({ t: 70, c: 'poison', n: 2, x: true, ang: -38, gap: 80, len: 1.4, w: 1.1, d: 250 }), BU({ t: 170, shape: ['cross', 'sparks'], c: 'poison' }), CL({ t: 180, c: 'poison', n: 4, d: 400, a: 0.4, r: 0.4 })], { lunge: LU }); // クロスポイズン
+    D(267, () => [SL({ t: 80, c: 'blood', n: 3, claw: true, ang: -50, len: 1.4, w: 1.3, spacing: 0.2, d: 360 }), RI({ t: 180, c: 'blood', glyph: 'drop', n: 10, r: 7, d: 450, up: 0.6, down: true }), BU({ t: 170, shape: ['star', 'smoke'], c: 'blood', r: 1.2 })], { lunge: LUB }); // ブラッドネイル
+    D(271, () => [OR({ c: 'toxic', r: 14, charge: 120, fly: 260, lob: 40 }), BU({ t: 380, shape: ['smoke', 'star', 'ring'], c: 'toxic', r: 1.2 }), RI({ t: 390, c: 'toxic', glyph: 'bubble', n: 9, r: 8, d: 450, up: 0.8 })], {}); // アシッドボム
+    D(272, () => [BO({ c: 'poison', n: 3, d: 240, gap: 80 }), BU({ t: 120, shape: ['ring', 'sparks'], c: 'poison', r: 1.1 }), RI({ t: 150, c: 'poison', glyph: 'bubble', n: 8, r: 7, d: 400, up: 0.8 })], {});       // べノムショック
+    D(274, () => [CL({ c: 'poison', n: 10, d: 800, a: 0.6, r: 0.6 }), RI({ t: 100, c: 'poison', glyph: 'bubble', n: 14, r: 8, d: 650, up: 1.1 }), RI({ t: 250, c: 'poison', glyph: 'skull', n: 2, r: 9, d: 450, up: 0.8, add: false, tone: 1 })], {}); // どくどく
+    D(275, () => [CL({ c: 'toxic', n: 16, d: 900, a: 0.8, r: 1.0, add: false }), RI({ t: 150, c: 'toxic', glyph: 'bubble', n: 14, r: 9, d: 600, up: 1.0 }), BU({ t: 480, shape: ['smoke', 'ring', 'star'], c: 'toxic', r: 1.7 })], { shake: [8, 400], flash: ['#e8ffc8', 0.3, 300] }); // ふしょくのきり
+    D(278, () => [VL({ c: 'poison', dark: true, d: 520, a: 0.3 }), RG({ dir: true, c: 'poison', n: 5, gap: 85, w: 12, arcw: 56, d: 460 }), SW({ t: 200, c: 'poison', glyph: 'x', n: 14, radius: 0.8, turns: 2.5, d: 500, r: 7, add: true }), BU({ t: 440, shape: ['ring', 'smoke', 'star'], c: 'poison', r: 1.5 })], {}); // カオスウェーブ
+    D(494, () => [SH({ c: 'poison', n: 3, gap: 70, fly: 210, glyph: 'needle', align: true, r: 11, spread: 0.4 }), BU({ t: 250, shape: ['sparks', 'ring'], c: 'poison' }), CL({ t: 260, c: 'toxic', n: 4, d: 400, a: 0.4, r: 0.4 })], {});     // エリミネイト
+    D(500, () => [SW({ c: 'steel', glyph: 'x', n: 16, radius: 0.6, turns: 1.4, d: 620, r: 8 }), SP({ t: 100, c: 'steel', kind: 'thorn', n: 6, h: 0.7, d: 640, spread: 0.7 }), BU({ t: 300, shape: ['sparks', 'ring'], c: 'steel' })], {}); // 有刺鉄線
+    D(515, () => [SH({ c: 'poison', n: 7, gap: 55, fly: 280, glyph: 'shard', r: 7, lob: 50, spread: 1.1, trail: false, hit: false }), BU({ t: 380, shape: 'smoke', c: 'poison', r: 0.9 })], {});                              // どくびし
+
+    // ====================== エスパー ======================
+    D(281, () => [SL({ t: 50, c: 'psy', n: 2, ang: -35, gap: 70, len: 1.5, w: 1.1, d: 250 }), SH({ c: 'psy', n: 2, gap: 80, fly: 200, glyph: 'moon', r: 10, spin: 14, spread: 0.3 }), BU({ t: 240, shape: ['sparks', 'cross'], c: 'psy' })], {}); // サイコカッター
+    D(282, () => [TH({ t: 30, d: 170, kind: 'head', c: 'psy', r: 1.2 }), RG({ t: 160, at: 'to', c: 'psy', n: 2, d: 360, r: 1.4 }), BU({ t: 180, shape: ['star', 'ring'], c: 'psy', r: 1.2 })], { lunge: LU });                     // しねんのずつき
+    D(285, () => [PI({ c: 'gold', dir: 'down', w: 1.0, d: 600 }), RI({ t: 120, c: 'ice', glyph: 'snow', n: 12, r: 7, d: 500, up: 0.9 }), BU({ t: 180, shape: ['flash', 'cross', 'ring'], c: 'gold', r: 1.3 })], {});         // ふゆのひざし
+    D(286, () => [SD({ c: 'psy', shape: 'hex', r: 0.95, d: 520 }), BU({ t: 420, shape: ['blast', 'debris', 'ring', 'star'], glyph: 'shard', c: 'psy', r: 1.5 })], {});                                                    // バリアブラスト
+    D(287, () => [VL({ c: 'psy', dark: true, d: 520, a: 0.3 }), SL({ t: 120, c: 'psy', n: 2, x: true, ang: -40, gap: 90, len: 2.1, w: 1.6, d: 300 }), BU({ t: 260, shape: ['cross', 'ring', 'star'], c: 'psy', r: 1.6 }), RG({ t: 270, at: 'to', c: 'psy', n: 2, d: 460, r: 1.8 })], { shake: [12, 360] }); // オルタナティブ
+    D(291, () => [RG({ at: 'to', c: 'psy', n: 3, gap: 110, d: 460, r: 1.3, w: 5 }), SW({ t: 100, c: 'psy', glyph: 'star', n: 8, radius: 0.5, turns: 2, d: 500, r: 6, add: true }), BU({ t: 180, shape: 'ring', c: 'psy' })], {});   // ねんりき
+    D(293, () => [RG({ at: 'to', c: 'psy', n: 5, gap: 100, d: 500, r: 1.4, w: 3 }), SW({ c: 'psy', glyph: 'ring', n: 9, radius: 0.5, turns: 3, d: 800, r: 8, add: true }), RI({ t: 400, c: 'white', glyph: 'zz', n: 3, r: 9, d: 500, up: 1.0 })], {}); // さいみんじゅつ
+    D(294, () => [SH({ c: 'psy', n: 5, gap: 45, fly: 220, glyph: 'shard', align: true, r: 9, spread: 0.6 }), BU({ t: 270, shape: ['ring', 'sparks'], c: 'psy', r: 1.1 })], {});                                          // サイコショック
+    D(295, () => [RN({ c: 'gold', glyph: 'star5', n: 10, d: 420, r: 9, fall: 300, spread: 0.9, trail: true, tilt: 0.1 }), BU({ t: 400, shape: ['star', 'ring', 'sparks'], c: 'gold', r: 1.2 })], {});                       // せんせいじゅつ
+    D(296, () => [SW({ c: ['#ffffff', '#ffd0e0', '#ff90b0'], glyph: 'petal', n: 24, radius: 0.85, turns: 1.6, d: 800, r: 8, add: true }), RG({ t: 100, c: 'gold', n: 3, gap: 160, d: 500, r: 1.2, w: 6 }), AU({ t: 150, c: 'gold', d: 700 }), RI({ t: 400, c: 'gold', glyph: 'note', n: 5, r: 7, d: 400, up: 0.9 })], SELFH); // 御神楽
+    D(297, () => [SW({ c: 'psy', glyph: 'dot', n: 24, radius: 0.8, turns: 1.4, shrink: 1, d: 520, r: 5, add: true, rise: 0.5 }), BU({ t: 460, shape: ['flash', 'ring'], c: 'psy', r: 1.1 }), RI({ t: 480, c: 'psy', glyph: 'star', n: 10, r: 6, d: 400, up: 1.0 })], SELF); // テレポート
+    D(298, () => [SW({ c: 'psy', glyph: 'ring', n: 8, radius: 0.55, turns: 2, d: 700, r: 8, add: true }), AU({ c: 'psy', d: 700 }), RI({ t: 400, c: 'psy', glyph: 'arrowup', n: 5, r: 8, d: 400, up: 0.8 })], SELF);   // ドわすれ
+    D(299, () => [AU({ c: 'psy', d: 900, r: 0.9 }), RG({ c: 'psy', n: 2, gap: 220, d: 600, r: 1.1, w: 5 }), SW({ t: 100, c: 'psy', glyph: 'dot', n: 20, radius: 0.9, turns: 1, shrink: 0.8, d: 650, r: 4, add: true }), RI({ t: 500, c: 'psy', glyph: 'arrowup', n: 5, r: 8, d: 400, up: 0.8 })], SELFH); // めいそう
+    D(472, () => [BU({ shape: ['ring', 'sparks'], c: 'psy', r: 0.8, d: 240 }), RG({ at: 'to', c: 'psy', n: 1, d: 260, r: 0.9, w: 3 })], { flash: null, shake: null });                                                          // テレキネシス（連続技）
+    D(474, () => [FI({ c: 'psy', grid: true, glyph: 'star', mode: 'wave', n: 14, r: 6, d: 1100, tint: 0.2 }), VL({ t: 300, c: 'psy', d: 600, a: 0.15 })], { on: 'field' });                                                 // トリックルーム
+    D(475, () => [SD({ c: 'psy', shape: 'wall', r: 0.85, d: 900, side: -0.5 }), RI({ t: 200, c: 'psy', glyph: 'spark', n: 8, r: 6, d: 500, up: 0.8 })], SELF);                                                              // リフレクター
+    D(476, () => [SD({ c: 'gold', shape: 'wall', r: 0.85, d: 900, side: -0.5 }), RI({ t: 200, c: 'gold', glyph: 'star', n: 8, r: 6, d: 500, up: 0.8 })], SELF);                                                             // ひかりのかべ
+    D(482, () => [OR({ c: 'white', r: 16, charge: 260, fly: 160 }), BM({ t: 400, c: 'red', w: 52, ext: 120, hold: 300, fade: 180 }), BM({ t: 400, c: 'lime', w: 36, ext: 120, hold: 300, fade: 180 }), BM({ t: 400, c: 'blue', w: 22, ext: 120, hold: 300, fade: 180 }), BM({ t: 400, c: 'white', w: 9, ext: 120, hold: 300, fade: 180 }), BU({ t: 520, shape: ['flash', 'star', 'ring'], c: 'rainbow', r: 1.4 })], {}); // ナナイロレーザー
+    D(488, () => [FI({ c: 'psy', glyph: 'ring', mode: 'wave', n: 22, r: 8, d: 1100, tint: 0.2 }), RG({ at: 'field', c: 'psy', n: 3, gap: 250, d: 700, r: 5, w: 6 })], { on: 'field' });                                       // サイコフィールド
+    D(497, () => [AU({ c: 'grass', d: 800, r: 0.9 }), RI({ c: 'grass', glyph: 'cross', n: 10, r: 8, d: 700, up: 1.1 }), RI({ t: 200, c: 'white', glyph: 'star', n: 10, r: 5, d: 500, up: 1.0 }), RG({ t: 100, c: 'grass', n: 2, gap: 200, d: 500, r: 1.0, w: 5 })], SELFH); // じこさいせい
+
+    // ====================== いわ ======================
+    D(301, () => [SH({ c: 'rock', n: 1, fly: 250, glyph: 'rock', r: 20, lob: 60, spin: 10, spread: 0.1 }), BU({ t: 260, shape: ['debris', 'smoke', 'star'], c: 'rock', r: 1.2 })], {});                                    // いわおとし
+    D(302, () => [SP({ c: 'rock', kind: 'rock', n: 7, h: 0.85, d: 800, spread: 0.85, sw: 0.12 }), BU({ t: 100, shape: ['debris', 'smoke'], c: 'rock', r: 1.1 })], {});                                                        // がんせきふうじ
+    D(303, () => [SP({ c: 'rock', kind: 'ice', n: 7, h: 1.2, d: 680, spread: 1.0, sw: 0.13 }), CR({ at: 'ground', c: 'rock', d: 460, n: 5 }), BU({ t: 130, shape: ['debris', 'star', 'smoke'], c: 'rock', r: 1.4 })], { shake: [12, 360] }); // ストーンエッジ
+    D(304, () => [ST({ c: 'rock', n: 12, d: 220 }), TH({ t: 40, d: 210, kind: 'head', c: 'rock', r: 1.6 }), CR({ t: 250, c: 'rock', d: 420, n: 5 }), BU({ t: 250, shape: ['debris', 'blast', 'star', 'smoke'], c: 'rock', r: 1.7 })], { lunge: [0, 210, 0.85] }); // もろはのずつき
+    D(305, () => [RN({ c: 'rock', glyph: 'rock', n: 14, d: 560, r: 13, fall: 330, spread: 1.2, tilt: 0.3, splash: false }), CL({ t: 300, c: 'sand', n: 8, d: 600, a: 0.55, r: 0.7, add: false }), BU({ t: 420, shape: ['debris', 'smoke'], c: 'rock', r: 1.6 })], { shake: [12, 480] }); // いわなだれ
+    D(306, () => [ST({ c: 'rock', n: 10, d: 170 }), TH({ t: 40, d: 150, kind: 'fist', c: 'rock', r: 1.1 }), SH({ t: 120, c: 'rock', n: 2, gap: 60, fly: 150, glyph: 'shard', r: 7, spread: 0.3, align: true }), BU({ t: 200, shape: ['debris', 'sparks'], c: 'rock' })], { lunge: LU }); // ついげき
+    D(307, () => [RN({ c: 'rock', glyph: 'rock', n: 1, d: 50, r: 64, fall: 460, spread: 0.1, splash: false }), CR({ t: 440, at: 'ground', c: 'rock', d: 520, n: 7 }), BU({ t: 460, shape: ['debris', 'smoke', 'ring', 'star'], c: 'rock', r: 2.0 })], { shake: [18, 480] }); // グランボールダ
+    D(308, () => [RN({ c: 'rock', glyph: 'rock', n: 34, d: 760, r: 16, fall: 420, spread: 1.5, tilt: 0.5, splash: false }), CL({ t: 400, c: 'sand', n: 14, d: 800, a: 0.7, r: 1.0, add: false }), CR({ t: 700, at: 'ground', c: 'rock', d: 500, n: 8 }), BU({ t: 650, shape: ['debris', 'smoke', 'ring', 'star'], c: 'rock', r: 2.4, d: 520 })], { shake: [22, 800], flash: ['#f0e8d0', 0.5, 300] }); // 山麓崩壊
+    D(309, () => [SH({ c: 'rock', n: 2, gap: 40, fly: 150, glyph: 'rock', r: 8, spread: 0.35, spin: 8 })], {});                                                                                                            // ロックブラスト（連続技）
+    D(311, () => [SW({ at: 'from', c: 'rock', glyph: 'rock', n: 6, radius: 1.0, turns: 1, d: 420, r: 10, spin: 2 }), SH({ t: 350, c: 'rock', n: 5, gap: 45, fly: 240, glyph: 'rock', r: 10, spread: 0.55, spin: 8 }), BU({ t: 600, shape: ['debris', 'star'], c: 'rock', r: 1.2 })], {}); // げんしのちから
+    D(313, () => [SW({ at: 'from', c: ['#fff0d0', '#ffa060', '#8a4a30'], glyph: 'rock', n: 8, radius: 0.9, turns: 1.2, shrink: 0.8, d: 460, r: 8, add: true }), BM({ t: 440, c: ['#fff0d0', '#ffa060', '#8a4a30'], w: 40, ext: 110, hold: 260, fade: 160, glyph: 'rock', gn: 10 }), BU({ t: 560, shape: ['blast', 'debris', 'ring'], c: 'rock', r: 1.6 })], {}); // メテオビーム
+    D(314, () => [AU({ c: 'rock', d: 700, r: 0.85 }), RI({ c: 'white', glyph: 'star', n: 10, r: 6, d: 600, up: 0.9 }), BU({ t: 150, shape: 'cross', c: 'white', r: 0.9, ox: -0.2, oy: -0.2 }), BU({ t: 330, shape: 'cross', c: 'white', r: 0.8, ox: 0.2, oy: 0.1 })], SELFH); // ロックカット
+    D(316, () => [SPR({ c: 'sand', glyph: 'dot', n: 34, r: 6, fan: 0.4, fly: 320, d: 540, wob: 8, add: false }), BU({ t: 320, shape: ['smoke', 'ring'], c: 'sand', r: 1.1 })], {});                                              // こだいのいぶき
+
+    // ====================== はがね ======================
+    D(321, () => [SL({ t: 70, c: 'steel', n: 3, claw: true, ang: -42, len: 1.2, w: 1.0, d: 280 }), BU({ t: 150, shape: ['sparks', 'cross'], c: 'steel', r: 0.9 })], { lunge: LU });                                         // メタルクロー
+    D(322, () => [TH({ t: 30, d: 170, kind: 'horn', c: 'steel', r: 1.4 }), BU({ t: 190, shape: ['star', 'sparks'], c: 'steel' }), RI({ t: 200, c: 'gold', glyph: 'star', n: 5, r: 6, d: 300, up: 0.6 })], { lunge: LU });    // スマートホーン
+    D(323, () => [AR({ t: 50, a0: -130, a1: 60, r: 0.85, c: 'steel', d: 270, w: 1.5 }), BU({ t: 180, shape: ['sparks', 'star', 'ring'], c: 'steel', r: 1.1 })], { lunge: LU });                                           // アイアンテール
+    D(324, () => [ST({ c: 'steel', n: 8, d: 120 }), TH({ t: 20, d: 100, kind: 'fist', c: 'steel', r: 0.85 }), TH({ t: 130, d: 90, kind: 'fist', c: 'steel', r: 0.85 }), BU({ t: 230, shape: ['sparks', 'ring'], c: 'steel', r: 0.9 })], { lunge: [0, 90, 0.6] }); // バレットパンチ
+    D(325, () => [TH({ t: 30, d: 170, kind: 'head', c: 'steel', r: 1.3 }), BU({ t: 190, shape: ['star', 'ring', 'sparks'], c: 'steel', r: 1.2 })], { lunge: LUB });                                                       // アイアンヘッド
+    D(326, () => [AR({ t: 40, a0: -150, a1: -30, r: 0.8, c: 'steel', d: 260, w: 1.5 }), AR({ t: 80, a0: 150, a1: 30, r: 0.8, c: 'steel', d: 260, w: 1.5 }), BU({ t: 200, shape: ['sparks', 'cross'], c: 'steel', r: 1.1 })], { lunge: LU }); // はがねのつばさ
+    D(327, () => [ST({ c: 'gold', n: 14, d: 200 }), TH({ t: 40, d: 170, kind: 'fist', c: 'steel', r: 1.3 }), SH({ t: 80, c: 'gold', n: 3, gap: 40, fly: 160, glyph: 'star5', r: 7, spread: 0.2, src: 'from' }), BU({ t: 210, shape: ['star', 'sparks', 'ring'], c: 'gold', r: 1.3 })], { lunge: LUB }); // コメットパンチ
+    D(328, () => [SL({ t: 80, c: 'steel', n: 1, ang: -28, len: 2.4, w: 1.9, curve: 0.08, d: 320 }), SL({ t: 100, c: 'white', n: 1, ang: -28, len: 2.4, w: 0.7, curve: 0.08, d: 280 }), BU({ t: 180, shape: ['sparks', 'cross', 'flash'], c: 'steel', r: 1.5 })], { lunge: LUB });  // ざんてつけん
+    D(329, () => [SL({ t: 40, c: 'steel', n: 4, ang: -4, gap: 70, len: 1.7, w: 0.8, spacing: 0.2, d: 200 }), SL({ t: 340, c: 'steel', n: 4, ang: 86, gap: 70, len: 1.7, w: 0.8, spacing: 0.2, d: 200 }), BU({ t: 540, shape: ['cross', 'sparks', 'ring', 'star'], c: 'steel', r: 1.6 }), SD({ t: 520, c: 'steel', shape: 'hex', r: 0.9, d: 300 })], { lunge: [0, 150, 0.55] }); // デスラティス
+    D(330, () => [SH({ c: 'steel', n: 3, gap: 90, fly: 230, glyph: 'shard', align: true, r: 11, arc: 40, spread: 0.5 }), SPR({ t: 0, at: 'from', c: 'fire', glyph: 'ember', n: 8, r: 5, fan: 0.3, fly: 140, d: 260 }), BU({ t: 320, shape: ['blast', 'sparks', 'ring'], c: 'fire', r: 1.3 }), BU({ t: 450, shape: ['blast', 'sparks'], c: 'fire', r: 1.0, ox: 0.2, oy: -0.2 })], {}); // ランチャーアーム
+    D(331, () => [OR({ c: 'steel', r: 15, charge: 160, fly: 150 }), BM({ t: 300, c: ['#ffffff', '#e0ecff', '#90a8c8'], w: 24, ext: 100, hold: 220, fade: 150 }), BU({ t: 390, shape: ['flash', 'cross', 'sparks'], c: 'white', r: 1.3 })], {}); // ミラーショット
+    D(336, () => [SPR({ c: 'steel', glyph: 'star', n: 36, r: 7, fan: 0.5, fly: 320, d: 520, wob: 10, spin: 5 }), RI({ t: 300, c: 'white', glyph: 'star5', n: 12, r: 6, d: 450, at: 'to', up: 0.8 }), BU({ t: 340, shape: ['star', 'sparks'], c: 'steel', r: 1.0 })], {}); // スターダスト
+    D(337, () => [SD({ c: 'steel', shape: 'hex', r: 0.85, d: 750 }), BU({ t: 120, shape: ['cross', 'ring'], c: 'white', r: 1.0, d: 450 }), RI({ t: 300, c: 'white', glyph: 'spark', n: 8, r: 6, d: 400, up: 0.6 })], SELFH);                // てっぺき
+
+    // ====================== みず ======================
+    D(341, () => [ST({ c: 'water', n: 16, d: 190 }), WV({ t: 0, c: 'water', w: 0.7, h: 0.4, d: 200 }), TH({ t: 30, d: 150, kind: 'head', c: 'water', r: 1.0 }), BU({ t: 170, shape: ['ring', 'sparks'], c: 'water' }), RI({ t: 180, c: 'water', glyph: 'drop', n: 8, r: 6, d: 300, up: 0.7 })], { lunge: [0, 110, 0.85] }); // アクアジェット
+    D(342, () => [PI({ c: 'water', dir: 'up', w: 0.85, h: 1.5, d: 640, glyph: 'drop' }), BU({ t: 140, shape: ['ring', 'star'], c: 'water', r: 1.3 }), RN({ t: 350, c: 'water', glyph: 'drop', n: 14, d: 250, r: 6, fall: 280, spread: 1.0, splash: false })], { lunge: LU }); // たきのぼり
+    D(343, () => [AR({ t: 50, a0: -130, a1: 60, r: 0.85, c: 'water', d: 270, w: 1.5 }), RI({ t: 170, c: 'water', glyph: 'drop', n: 10, r: 7, d: 400, up: 0.9 }), BU({ t: 180, shape: ['ring', 'sparks'], c: 'water' })], { lunge: LU }); // アクアテール
+    D(344, () => [SL({ t: 70, c: 'water', n: 1, ang: -85, len: 1.5, w: 1.3, d: 240 }), BU({ t: 160, shape: ['debris', 'ring', 'sparks'], glyph: 'drop', c: 'water', r: 1.2 })], { lunge: LU });                                // アクアブレイク
+    D(345, () => [RN({ c: 'water', glyph: 'drop', n: 12, d: 380, r: 10, fall: 260, spread: 0.7, trail: true }), BU({ t: 400, shape: ['ring', 'sparks'], c: 'water', r: 1.1 })], {});                                          // マリンドロップ
+    D(346, () => [ST({ c: 'water', n: 14, d: 240 }), WV({ t: 0, c: 'water', w: 1.5, h: 1.0, d: 280 }), TH({ t: 40, d: 220, kind: 'head', c: 'water', r: 1.5 }), BU({ t: 270, shape: ['blast', 'ring', 'star', 'sparks'], c: 'water', r: 1.7 }), RI({ t: 280, c: 'water', glyph: 'drop', n: 14, r: 8, d: 450, up: 1.2 })], { lunge: [0, 230, 0.85] }); // ウェーブタックル
+    D(347, () => [PI({ c: 'deep', dir: 'down', w: 1.0, d: 620, glyph: 'bubble' }), RI({ t: 150, c: 'deep', glyph: 'bubble', n: 14, r: 9, d: 500, up: 1.0 }), BU({ t: 200, shape: ['ring', 'smoke'], c: 'deep', r: 1.3 })], {});             // デプスレーン
+    D(349, () => [ST({ c: 'water', n: 10, d: 170 }), AR({ t: 90, a0: -200, a1: -20, r: 0.8, sq: 0.5, c: 'water', d: 260 }), BU({ t: 150, shape: ['ring', 'sparks'], c: 'water' }), RI({ t: 160, c: 'water', glyph: 'drop', n: 8, r: 6, d: 300, up: 0.7 })], { lunge: [0, 120, 0.6] }); // クイックターン
+    D(351, () => [SPR({ c: 'water', glyph: 'bubble', n: 14, r: 11, fan: 0.35, fly: 320, d: 440, wob: 10, lift: 14, tone: 1, add: false, glow: false }), BU({ t: 330, shape: 'ring', c: 'water', r: 0.9 })], {});                    // あわ
+    D(352, () => [OR({ c: 'water', r: 12, charge: 200, fly: 220 }), RG({ t: 400, at: 'to', c: 'water', n: 3, gap: 90, d: 400, r: 1.3, w: 5 }), RI({ t: 410, c: 'water', glyph: 'bubble', n: 8, r: 8, d: 400, up: 0.8 })], {});     // みずのはどう
+    D(356, () => [SD({ c: 'water', shape: 'dome', r: 0.85, d: 780 }), RI({ t: 100, c: 'water', glyph: 'bubble', n: 12, r: 8, d: 600, up: 1.0, add: false, tone: 1 })], SELF);                                                // アクアバリア
+    D(357, () => [SW({ c: 'water', glyph: 'drop', n: 52, radius: 1.0, turns: 3, d: 900, r: 7, cone: true, rise: 0.3, height: 1.6 }), PI({ t: 100, c: 'water', dir: 'up', w: 0.9, h: 1.7, d: 700 }), SW({ t: 150, c: 'white', glyph: 'ring', n: 8, radius: 0.8, turns: 3, d: 700, r: 8, add: true }), BU({ t: 400, shape: ['blast', 'ring', 'star'], c: 'water', r: 1.8 })], { shake: [14, 560] }); // アクアスワール
+    D(358, () => [RN({ c: 'water', glyph: 'drop', n: 46, d: 820, r: 8, fall: 260, spread: 1.3, tilt: 0.15, trail: true }), FI({ c: 'storm', glyph: 'dot', mode: 'fall', n: 8, r: 3, d: 900, tint: 0.2 })], {});                       // ゆうだち
+    D(359, () => [SH({ c: 'water', n: 3, gap: 80, fly: 240, glyph: 'star', r: 11, spin: 18, arc: 30, spread: 0.5 }), BU({ t: 330, shape: ['ring', 'sparks'], c: 'water', r: 1.0 })], {});                                      // みずしゅりけん
+    D(433, () => [SPR({ c: 'water', glyph: 'bubble', n: 24, r: 11, fan: 0.5, fly: 360, d: 600, wob: 14, lift: 24, tone: 1, add: false, glow: false }), RI({ at: 'from', c: 'water', glyph: 'note', n: 8, r: 8, d: 600, up: 0.9 }), BU({ t: 360, shape: ['ring', 'sparks'], c: 'water', r: 1.2 })], {}); // うたかたのアリア
+    D(502, () => [WV({ c: 'deep', w: 1.5, h: 0.9, d: 600 }), SPR({ t: 80, c: 'white', glyph: 'dot', n: 24, r: 5, fan: 0.5, fly: 340, d: 400, add: false }), BU({ t: 540, shape: ['blast', 'ring', 'smoke'], c: 'deep', r: 1.5 }), RN({ t: 540, c: 'water', glyph: 'drop', n: 14, d: 240, r: 6, fall: 260, spread: 1.0, splash: false })], { shake: [8, 420] }); // 黒潮
+
+    // ====================== おと ======================
+    D(361, () => [SH({ c: 'sound', n: 1, fly: 420, glyph: 'note', r: 30, spread: 0, trail: false }), BU({ t: 440, shape: ['ring', 'star'], c: 'sound', r: 1.3 }), RG({ t: 450, at: 'to', c: 'sound', n: 2, gap: 130, d: 480, r: 1.3, w: 6 })], {});               // ラルゴ
+    D(362, () => [SH({ c: 'sound', n: 3, gap: 90, fly: 200, glyph: 'note', r: 15, spread: 0.4, trail: false }), BU({ t: 230, shape: ['sparks', 'ring'], c: 'sound', r: 1.0 })], {});                                           // ランボア
+    D(363, () => [RG({ at: 'to', c: ['#ffffff', '#7a5aff', '#301a8a'], n: 4, gap: 100, d: 520, r: 1.8, w: 12 }), RG({ dir: true, c: ['#ffffff', '#7a5aff', '#301a8a'], n: 3, gap: 110, w: 12, arcw: 34, d: 400, notes: true }), BU({ t: 400, shape: ['ring', 'smoke'], c: 'blue', r: 1.4 })], { shake: [14, 420] }); // ヘビー・バス
+    D(364, () => [FI({ c: 'sound', glyph: 'note', mode: 'rise', n: 28, r: 9, d: 800, tint: 0.1 }), RG({ t: 400, at: 'to', c: 'sound', n: 3, gap: 100, d: 480, r: 1.9, w: 8 }), BU({ t: 420, shape: ['blast', 'star', 'ring'], c: 'sound', r: 1.7 })], { lunge: [300, 150, 0.6] }); // ドルケストラ
+    D(365, () => [ST({ c: 'sound', n: 12, d: 180 }), SH({ c: 'sound', n: 8, gap: 40, fly: 200, glyph: 'note', r: 11, spread: 0.6, trail: false }), BU({ t: 300, shape: ['star', 'sparks'], c: 'sound', r: 1.0 })], { lunge: LUS }); // ヴィヴァーチェ
+    D(366, () => [VL({ c: ['#e0c8ff', '#7a3aa8', '#220a40'], dark: true, d: 600, a: 0.45 }), RG({ dir: true, c: ['#e0c8ff', '#7a3aa8', '#220a40'], n: 5, gap: 90, w: 14, arcw: 50, d: 480 }), RI({ t: 300, c: 'ghost', glyph: 'skull', n: 6, r: 9, d: 450, up: 1.0, add: false, tone: 1 }), BU({ t: 500, shape: ['smoke', 'ring', 'star'], c: 'ghost', r: 1.6 })], { lunge: [0, 140, 0.4] }); // デスアルト
+    D(367, () => [SH({ c: 'sound', n: 2, gap: 40, fly: 150, glyph: 'note', r: 9, spread: 0.4, trail: false }), BU({ t: 160, shape: ['sparks', 'ring'], c: 'sound', r: 0.7, d: 220 })], {});                                      // シーケンス（連続技）
+    D(372, () => [RI({ c: 'gold', glyph: 'note', n: 4, r: 13, d: 500, up: 0.6 }), BU({ t: 150, shape: 'ring', c: 'sound', r: 1.4, d: 700 }), RG({ t: 160, at: 'to', c: 'sound', n: 2, gap: 220, d: 700, r: 1.5, w: 7 }), BU({ t: 360, shape: ['flash', 'star'], c: 'sound', r: 1.1 })], {}); // フェルマータ
+    D(373, () => [SW({ c: ['#fff0fa', '#ffb8d8', '#d070b0'], glyph: 'note', n: 10, radius: 0.7, turns: 1.6, d: 700, r: 10, add: true }), RI({ t: 100, c: 'fairy', glyph: 'petal', n: 12, r: 7, d: 600, up: 1.0 }), RG({ t: 300, at: 'to', c: 'fairy', n: 2, gap: 140, d: 440, r: 1.3, w: 5 }), BU({ t: 400, shape: ['star', 'ring'], c: 'fairy', r: 1.1 })], {}); // グラツィオーソ
+    D(375, () => [FI({ c: 'sound', glyph: 'note', mode: 'rise', n: 32, r: 10, d: 1000, tint: 0.12 }), RG({ dir: true, c: 'sound', n: 6, gap: 80, w: 12, arcw: 56, d: 480, notes: true }), VL({ t: 500, c: 'white', d: 400, a: 0.4 }), BU({ t: 560, shape: ['blast', 'star', 'ring', 'sparks'], c: 'sound', r: 2.0 })], { shake: [16, 480] }); // シンフォニア
+    D(376, () => [RG({ at: 'to', c: 'white', n: 5, gap: 70, d: 460, r: 1.4, w: 2.5 }), BU({ t: 280, shape: ['cross', 'ring', 'flash'], c: 'white', r: 1.2 }), RI({ t: 300, c: 'white', glyph: 'star', n: 8, r: 5, d: 350, up: 0.7 })], {}); // アブソリュート
+    D(377, () => [RG({ dir: true, c: 'fairy', n: 4, gap: 85, w: 9, arcw: 44, d: 440 }), SPR({ t: 50, c: 'fairy', glyph: 'heart', n: 20, r: 9, fan: 0.55, fly: 320, d: 360 }), BU({ t: 400, shape: ['star', 'ring'], c: 'fairy', r: 1.2 })], {}); // 愛スクリ〜ム!
+    D(378, () => [RG({ at: 'to', c: 'sound', n: 6, gap: 65, d: 420, r: 1.2, w: 5 }), BU({ t: 400, shape: ['ring', 'debris', 'flash'], glyph: 'shard', c: 'sound', r: 1.6 }), RG({ t: 410, at: 'to', c: 'white', n: 2, gap: 80, d: 400, r: 2.0, w: 8 })], { shake: [16, 440] }); // レゾナンスクライ
+    D(379, () => [RG({ at: 'to', c: 'sound', n: 1, d: 260, r: 0.9, w: 4 }), RG({ t: 90, at: 'to', c: 'sound', n: 1, d: 260, r: 1.3, w: 5 }), RG({ t: 180, at: 'to', c: 'sound', n: 1, d: 280, r: 1.8, w: 7 }), BU({ t: 200, shape: ['star', 'sparks'], c: 'sound', r: 1.0 })], {}); // クレッシェンド
+    D(490, () => [FI({ c: 'sound', glyph: 'note', mode: 'rise', n: 26, r: 10, d: 1100, tint: 0.16 }), RG({ at: 'field', c: 'sound', n: 3, gap: 250, d: 700, r: 5, w: 5 })], { on: 'field' });                                    // メロディフィールド
+
+    // ====================== シャイン ======================
+    D(382, () => [SH({ c: 'shine', n: 1, fly: 200, glyph: 'needle', align: true, r: 17, spread: 0.1 }), BU({ t: 220, shape: ['cross', 'ring', 'star'], c: 'shine', r: 1.3 }), RI({ t: 230, c: 'white', glyph: 'feather', n: 6, r: 8, d: 400, up: 0.9 })], {}); // せいなるや
+    D(383, () => [VL({ c: 'white', d: 600, a: 0.55 }), RI({ c: 'white', glyph: 'dot', n: 34, r: 5, d: 600, up: 1.4, spread: 1.0 }), BU({ t: 250, shape: ['flash', 'ring'], c: 'white', r: 1.4 })], {});                          // バニシング
+    D(384, () => [PI({ c: 'shine', dir: 'down', w: 0.55, d: 700, ox: -0.8 }), PI({ t: 120, c: 'shine', dir: 'down', w: 0.55, d: 700, ox: 0.8 }), PI({ t: 240, c: 'white', dir: 'down', w: 1.3, d: 800, glyph: 'star' }), BU({ t: 400, shape: ['blast', 'ring', 'star', 'cross'], c: 'shine', r: 2.2, d: 520 }), RG({ t: 410, at: 'to', c: 'shine', n: 3, gap: 100, d: 520, r: 2.2, w: 8 })], { shake: [16, 480], flash: ['#ffffff', 0.7, 340] }); // ジャッジメント
+    D(385, () => [SW({ c: ['#ffffff', '#ffd8f0', '#ffa0d0'], glyph: 'petal', n: 30, radius: 0.9, turns: 2, d: 700, r: 8, add: true, rise: 0.4 }), BU({ t: 300, shape: ['flash', 'star', 'ring'], c: 'shine', r: 1.5 }), RI({ t: 340, c: 'fairy', glyph: 'petal', n: 12, r: 8, d: 450, up: 1.1 })], {}); // ブロッサムライト
+    D(386, () => [VL({ c: 'black', dark: true, d: 560, a: 0.5 }), BU({ t: 300, shape: ['flash', 'ring', 'cross'], c: 'shine', r: 2.2, d: 520 }), RG({ t: 340, at: 'to', c: 'shine', n: 2, gap: 150, d: 520, r: 1.8, w: 9 }), RI({ t: 400, c: 'gold', glyph: 'star5', n: 12, r: 8, d: 450, up: 1.0 })], { shake: [8, 340] }); // グローイクリプス
+    D(387, () => [SL({ t: 60, c: 'shine', n: 2, ang: -40, gap: 80, len: 1.6, w: 1.4, d: 280 }), RI({ t: 170, c: 'white', glyph: 'star', n: 8, r: 6, d: 350, up: 0.8 }), BU({ t: 150, shape: ['cross', 'sparks'], c: 'shine' })], { lunge: LU }); // ひかりのやいば
+    D(388, () => [VL({ c: 'white', d: 200, a: 0.45 }), SL({ t: 20, c: 'shine', n: 1, ang: -35, len: 1.3, w: 1.1, d: 200 }), BU({ t: 60, shape: ['cross', 'sparks'], c: 'white', r: 0.9, d: 220 })], { lunge: [0, 80, 0.5] }); // ストロボエッジ（連続技）
+    D(389, () => [RN({ c: 'shine', glyph: 'sword', n: 1, d: 50, r: 52, fall: 420, spread: 0.1, rot: Math.PI, splash: false }), PI({ t: 200, c: 'shine', dir: 'down', w: 0.5, d: 360 }), BU({ t: 440, shape: ['blast', 'cross', 'star', 'ring'], c: 'shine', r: 1.8 })], { shake: [12, 360] }); // ゼニスオブソード
+    D(391, () => [PI({ c: 'white', dir: 'down', w: 1.0, d: 700 }), RG({ t: 150, at: 'ground', c: 'white', n: 2, gap: 200, d: 500, r: 1.4, w: 6 }), RI({ t: 200, c: 'gold', glyph: 'star', n: 12, r: 6, d: 500, up: 1.0 })], { flash: ['#ffffff', 0.2, 300] }); // スポットライト
+    D(392, () => [OR({ c: 'white', r: 12, charge: 180, fly: 120 }), BM({ t: 300, c: ['#ffffff', '#fffadc', '#d8d0a0'], w: 62, ext: 120, hold: 320, fade: 180 }), BU({ t: 420, shape: ['flash', 'cross'], c: 'white', r: 1.4 })], {}); // サーチライト
+    D(393, () => [BU({ shape: ['star', 'cross', 'ring', 'flash'], c: 'shine', r: 2.2, n: 14, d: 520 }), RI({ t: 100, c: 'gold', glyph: 'star5', n: 16, r: 8, d: 550, up: 1.2, spread: 1.1 })], {});                                // シャイニング
+    D(396, () => [VL({ c: 'white', d: 520, a: 0.85 }), BU({ t: 120, shape: ['star', 'sparks', 'ring', 'cross'], c: 'white', r: 2.0, n: 16, d: 460 }), RG({ t: 140, at: 'to', c: 'shine', n: 3, gap: 100, d: 480, r: 2.0, w: 8 })], { shake: [10, 320], flash: ['#ffffff', 0.8, 300] }); // はじける閃光
+    D(398, () => [VL({ c: 'black', dark: true, d: 640, a: 0.7 }), BU({ t: 200, shape: ['ring', 'flash'], c: 'shine', r: 2.0, d: 500 }), RG({ t: 220, at: 'to', c: 'white', n: 3, gap: 120, d: 500, r: 1.8, w: 5 }), RI({ t: 300, c: 'white', glyph: 'star', n: 12, r: 6, d: 400, up: 1.0 })], { shake: [10, 360] }); // 眩しい暗闇
+    D(400, () => [EY({ c: 'shine', r: 1.1, d: 600, at: 'to' }), BM({ t: 220, c: 'shine', w: 14, ext: 100, hold: 200, fade: 140 }), BU({ t: 340, shape: ['cross', 'ring', 'flash'], c: 'shine', r: 1.3 })], {});          // ホーリーグレア
+  }
+
+  // ------------------------------------------------------------
+  // どくどくのキバ(261)／獣王の牙(206)：既存の牙エンジン（spawnFangSpecial）に配色だけ載せて登録
+  // ------------------------------------------------------------
+  function spawnPoisonFangSpecial(particles, w, h, info) {
+    spawnFangSpecial(particles, w, h, info, {
+      core: '#f6d8ff', main: '#b040d8', deep: '#3a0a50',
+      attach(particles, target, hitMs, S) {
+        // 毒の雫がしたたり落ち、紫の泡が浮かぶ
+        for (let i = 0; i < 10; i++) {
+          const ox = rand(-22, 22) * S, oy = rand(-14, 6) * S;
+          particles.push({
+            delay: hitMs + rand(0, 90), maxLife: rand(320, 480),
+            draw(ctx, t) {
+              const x = target.x + ox, y = target.y + oy + t * t * 46 * S;
+              ctx.fillStyle = rgba(i % 2 ? '#c050e0' : '#7a1fa0', (1 - t) * 0.9);
+              ctx.beginPath(); ctx.moveTo(x, y - 5 * S); ctx.quadraticCurveTo(x + 4 * S, y + 1 * S, x, y + 4 * S); ctx.quadraticCurveTo(x - 4 * S, y + 1 * S, x, y - 5 * S); ctx.fill();
+            },
+          });
+        }
+        for (let i = 0; i < 6; i++) {
+          const a0 = rand(0, Math.PI * 2), dist = rand(10, 30) * S;
+          particles.push({
+            delay: hitMs + rand(0, 80), maxLife: rand(360, 520),
+            draw(ctx, t) {
+              const x = target.x + Math.cos(a0) * dist * t, y = target.y + Math.sin(a0) * dist * t - t * 20 * S;
+              ctx.strokeStyle = rgba('#e0a0ff', (1 - t) * 0.9); ctx.lineWidth = 1.4 * S;
+              ctx.beginPath(); ctx.arc(x, y, (3 + 4 * t) * S, 0, Math.PI * 2); ctx.stroke();
+            },
+          });
+        }
+      },
+    });
+  }
+  // 獣王の牙（オリジナル・威力120）：大顎で噛みつき、大地の岩塊が砕け散る
+  function spawnBeastKingFangSpecial(particles, w, h, info) {
+    spawnBiteSpecial(particles, w, h, info, {
+      core: '#fff2d0', main: '#c8883a', deep: '#3a2008',
+      attach(particles, target, hitMs, S) {
+        for (let i = 0; i < 8; i++) {
+          const a0 = rand(0, Math.PI * 2), len = rand(20, 44) * S;
+          particles.push({
+            delay: hitMs, maxLife: 260,
+            draw(ctx, t) {
+              const e = easeOutQuint(t);
+              ctx.strokeStyle = rgba('#ffe6a8', (1 - t) * 0.9); ctx.lineWidth = Math.max(1.2, 2.6 * S * (1 - t * 0.5)); ctx.lineCap = 'round';
+              ctx.beginPath(); ctx.moveTo(target.x, target.y); ctx.lineTo(target.x + Math.cos(a0) * len * e, target.y + Math.sin(a0) * len * e); ctx.stroke();
+            },
+          });
+        }
+        for (let i = 0; i < 12; i++) {
+          const a0 = rand(-Math.PI, 0), dist = rand(18, 48) * S;
+          particles.push({
+            delay: hitMs + rand(0, 60), maxLife: rand(320, 480), rot: rand(0, Math.PI * 2),
+            draw(ctx, t) {
+              const e = easeOutCubic(t), x = target.x + Math.cos(a0) * dist * e, y = target.y + Math.sin(a0) * dist * e + t * t * 30 * S;
+              ctx.save(); ctx.translate(x, y); ctx.rotate(this.rot + t * 6); ctx.fillStyle = rgba(i % 2 ? '#c8883a' : '#6e4418', (1 - t) * 0.9);
+              ctx.beginPath(); ctx.moveTo(-4 * S, -3 * S); ctx.lineTo(4 * S, -2 * S); ctx.lineTo(2 * S, 4 * S); ctx.lineTo(-3 * S, 3 * S); ctx.closePath(); ctx.fill(); ctx.restore();
+            },
+          });
+        }
+      },
+    });
+  }
+  SPECIAL_SCENES[261] = spawnPoisonFangSpecial;
+  SPECIAL_SCENES[206] = spawnBeastKingFangSpecial;
+  SPECIAL_DURATION_MS[261] = FANG_END_MS + 120;
+  SPECIAL_DURATION_MS[206] = FANG_END_MS + 160;
+  FLIGHT_MOVE_IDS.push(261, 206);
+  SPECIAL_IMPACT_FX[261] = {
+    flashes: [
+      { color: '#f6d8ff', peakAlpha: 0.45, durationMs: 200, delay: FANG_BITE_MS },
+      { color: '#b040d8', peakAlpha: 0.24, durationMs: 380, delay: FANG_BITE_MS + 30 },
+    ],
+    shakes: [{ ampPx: 7, durationMs: 200, freq: 34, delay: FANG_BITE_MS }],
+  };
+  SPECIAL_IMPACT_FX[206] = {
+    flashes: [
+      { color: '#fff2d0', peakAlpha: 0.55, durationMs: 220, delay: FANG_BITE_MS },
+      { color: '#c8883a', peakAlpha: 0.3, durationMs: 420, delay: FANG_BITE_MS + 30 },
+    ],
+    shakes: [{ ampPx: 15, durationMs: 260, freq: 36, delay: FANG_BITE_MS }],
+  };
+
   function playSpecialTypeEffect(wrapEl, moveId, defSide) {
   // フレアドライブは「ポケモンの画像そのものが移動する」専用演出を使う
   if (moveId === 123) {
@@ -24394,6 +25630,8 @@ SPECIAL_IMPACT_FX[338] = SPECIAL_IMPACT_FX[333];
     return playOutrageOnCanvas(wrapEl, defSide);
   }
 const spawn = SPECIAL_SCENES[moveId];
+    // 専用シーンが無い技は、技ごとのレシピ（MoveFX）で個別演出を再生する
+    if (!spawn && wrapEl && MFX.has(moveId)) return MFX.play(wrapEl, moveId, defSide);
     if (!spawn || !wrapEl) return null;
     const rect = wrapEl.getBoundingClientRect();
     const w = Math.max(60, Math.round(rect.width || wrapEl.offsetWidth || 300));
@@ -24444,5 +25682,6 @@ const spawn = SPECIAL_SCENES[moveId];
     playSpecial: playSpecialTypeEffect,
     SUPPORTED_TYPES: Object.keys(SCENES),
     SPECIAL_MOVE_IDS: Object.keys(SPECIAL_SCENES).map(Number),
+    GENERIC_MOVE_IDS: Object.keys(MFX.REC).map(Number),
   };
 })(window);
