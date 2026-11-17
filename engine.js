@@ -2451,13 +2451,13 @@ const MEGA_EVOLUTION_DATA = {
   "1006": {
     "type1": "shine",
     "type2": "flying",
-    "ability": 139,
+    "ability": 137,
     "baseStats": {
       "hp": 108,
-      "atk": 40,
-      "def": 72,
+      "atk": 0,
+      "def": 118,
       "spa": 118,
-      "spd": 129,
+      "spd": 123,
       "spe": 145
     }
   },
