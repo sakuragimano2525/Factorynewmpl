@@ -5,10 +5,58 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>ポケリエ バトルファクトリー</title>
 <link rel="manifest" href="manifest.json">
+<script>
+/* 【軽量化】低スペック端末・iPhone・通信節約中を自動判定して <html class="lite"> を付ける（最初の描画より前に実行）。
+   lite のときだけ、重い描画効果（背景ぼかし・常時ループの装飾アニメ）と、重い事前読み込みを控える。
+   URL に ?lite=1 を付けると強制ON、?lite=0 で強制OFF（動作確認用）。 */
+(function(){
+  try{
+    var ua = navigator.userAgent || '';
+    var ios = /iP(hone|ad|od)/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    var q = /[?&]lite=(0|1)/.exec(location.search);
+    var low = ios ||
+      (navigator.deviceMemory && navigator.deviceMemory <= 4) ||
+      (navigator.hardwareConcurrency && navigator.hardwareConcurrency <= 4) ||
+      !!(navigator.connection && navigator.connection.saveData);
+    var on = q ? q[1] === '1' : !!low;
+    window.__LITE = on;
+    window.__LITE_FORCED = !!q;
+    if (on) document.documentElement.classList.add('lite');
+    /* 判定に引っかからなかった端末でも、実際に動きがカクついている（目安 30fps 未満）なら、起動5秒後に自動で lite にする */
+    if (!on && !q && window.requestAnimationFrame) {
+      window.addEventListener('load', function(){
+        setTimeout(function(){
+          var dts = [], last = 0;
+          (function frame(t){
+            if (last) { var d = t - last; if (d < 200) dts.push(d); }
+            last = t;
+            if (dts.length < 45) { requestAnimationFrame(frame); return; }
+            dts.sort(function(a, b){ return a - b; });
+            if (dts[dts.length >> 1] > 33) { window.__LITE = true; document.documentElement.classList.add('lite'); }
+          })(0);
+        }, 5000);
+      });
+    }
+  }catch(e){ window.__LITE = false; }
+})();
+</script>
+<!-- 【軽量化】ゲーム本体のスクリプトは defer で並行ダウンロードし、HTMLの解析が終わってから順番に実行する。
+     Firebase（対人戦用）は最後に回し、通信が遅くてもゲーム本体の起動を待たせない（ルーム作成/参加の時に初めて使う） -->
+<script defer src="firebase-config.js"></script>
+<script defer src="gamedata.js"></script>
+<script defer src="engine.js"></script>
+<script defer src="net.js"></script>
+<script defer src="typefx.js"></script>
+<script defer src="achievements.js"></script>
+<script defer src="ui.js"></script>
+<script defer src="gamepad.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/12.18.0/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/12.18.0/firebase-database-compat.js"></script>
 <!-- 【軽量化】フォントは CSS の @import ではなく <link> で読む（CSS全体の読み込みを待たせず、並行して取得できる） -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800;900&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800;900&family=Zen+Maru+Gothic:wght@500;700;900&display=swap" media="print" onload="this.media='all'">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800;900&family=Zen+Maru+Gothic:wght@500;700;900&display=swap"></noscript>
 <style>
 
 :root{
@@ -979,6 +1027,7 @@ html,body{
 .record-tag.mega{ color: #fff; background: linear-gradient(135deg, var(--accent-b), var(--accent-a)); }
 .record-tag.team{ color: #fff; background: linear-gradient(135deg, #37b24d, #2f9e44); }
 .record-tag.hard{ color: #fff; background: linear-gradient(135deg, #ff7a5c, #e63946); }
+.record-tag.dread{ color: #fff; background: linear-gradient(135deg, #a76bff, #5a22b8); }
 .record-team-sprites{
   display: flex; justify-content: center; gap: 10px;
 }
@@ -2644,6 +2693,7 @@ html,body{
 }
 .npc-diff-btn[data-diff="easy"] .ndb-val{ background: linear-gradient(135deg, #4fd67a, #2fb85f); }
 .npc-diff-btn[data-diff="hard"] .ndb-val{ background: linear-gradient(135deg, #ff7a5c, #e63946); }
+.npc-diff-btn[data-diff="dread"] .ndb-val{ background: linear-gradient(135deg, #a76bff, #5a22b8); }
 /* 上部バー（ホーム画面の右上、アイコン群の左隣）に置いたときの見た目：画面下で見切れないようにする */
 .title-topbar .npc-diff-btn{
   margin-top:0; flex:0 1 auto; min-width:0; white-space:nowrap;
@@ -2654,7 +2704,7 @@ html,body{
   .title-topbar .npc-diff-btn{ padding:4px 4px 4px 4px; }
   .title-topbar .npc-diff-btn .ndb-label{ display:none; }
 }
-.npc-diff-card{ width: min(94%, 520px); }
+.npc-diff-card{ width: min(94%, 520px); max-height: 92vh; overflow-y: auto; }
 .npc-diff-list{ display:flex; flex-direction:column; gap:10px; margin-bottom:14px; }
 .npc-diff-opt{
   display:flex; flex-direction:column; align-items:flex-start; gap:4px;
@@ -2666,6 +2716,7 @@ html,body{
 .npc-diff-opt[data-diff="easy"] .ndo-title{ color:#2fb85f; }
 .npc-diff-opt[data-diff="normal"] .ndo-title{ color:#5b8cff; }
 .npc-diff-opt[data-diff="hard"] .ndo-title{ color:#e63946; }
+.npc-diff-opt[data-diff="dread"] .ndo-title{ color:#8a3fe0; }
 .npc-diff-opt.selected{ box-shadow: inset 0 0 0 3px var(--accent-a); }
 @media (max-height: 420px){ .npc-diff-btn{ margin-top:10px; } }
 #btn-pick-confirm[disabled]{ opacity:0.4; cursor:not-allowed; }
@@ -5774,6 +5825,73 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
 }
 
 /* =========================================================
+   ボックスの特性絞り込み（タイプ絞り込みの見た目・動作に合わせる）
+   ・ボタンは .sb-type-filter-btn をそのまま使う。特性名が長くてもヘッダーが崩れないよう幅を抑えて省略表示する
+   ・グレーアウト（.tf-dim）もタイプ絞り込みと共通
+   ========================================================= */
+.sb-ability-filter-btn .sb-tf-label{ max-width:9.5em; overflow:hidden; text-overflow:ellipsis; }
+.sb-af-card{ height:100%; max-height:620px; }
+.sb-af-tools{ flex:0 0 auto; display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; }
+.sb-af-search{
+  flex:1 1 150px; min-width:0; box-sizing:border-box;
+  padding:7px 12px; border-radius:999px; border:2px solid rgba(255,255,255,.25);
+  font-family:inherit; font-size:14px; font-weight:800; color:#2a2463; background:#fff;
+  outline:none; -webkit-appearance:none; appearance:none;
+}
+.sb-af-search:focus{ border-color:#c8f24a; }
+.sb-af-strict{ display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:800; color:#f0edff; cursor:pointer; white-space:nowrap; }
+.sb-af-strict input{ width:15px; height:15px; margin:0; accent-color:#9edb1e; cursor:pointer; }
+.sb-af-count{ font-size:11px; font-weight:800; color:rgba(240,237,255,.7); margin-left:auto; }
+.sb-af-list{
+  flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain;
+  display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:6px; align-content:start;
+  padding:2px;
+}
+.sb-af-item{
+  position:relative; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:1px;
+  min-height:40px; padding:6px 34px 6px 11px; border:none; border-radius:12px; cursor:pointer; text-align:left;
+  font-family:inherit; color:#3a32b8;
+  background:linear-gradient(180deg,#fff,#e9e5ff);
+  box-shadow:0 2px 0 rgba(0,0,0,.18);
+  -webkit-tap-highlight-color:transparent;
+}
+.sb-af-item:active{ transform:scale(.97); }
+.sb-af-name{ font-size:12.5px; font-weight:900; letter-spacing:.02em; line-height:1.25; }
+.sb-af-item > span{ flex:0 0 auto; max-width:100%; }
+.sb-af-desc{ font-size:9.5px; font-weight:700; color:#6a64a8; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sb-af-num{
+  position:absolute; right:8px; top:50%; transform:translateY(-50%);
+  min-width:20px; padding:1px 6px; border-radius:999px; text-align:center;
+  font-size:10px; font-weight:900; color:#fff; background:#7a6ee0;
+}
+.sb-af-item.selected{
+  background:linear-gradient(180deg,#c8f24a,#9edb1e); color:#264f00;
+  box-shadow:0 0 0 2.5px #fff, 0 0 12px 3px rgba(190,255,60,.7);
+}
+.sb-af-item.selected .sb-af-desc{ color:#3f6a0a; }
+.sb-af-item.selected .sb-af-num{ background:#3f7a00; }
+.sb-af-empty{ grid-column:1 / -1; text-align:center; padding:22px 8px; font-size:13px; font-weight:800; color:rgba(240,237,255,.75); }
+@media (max-height: 460px){
+  .sb-af-card{ max-height:100%; }
+  .sb-af-search{ padding:4px 10px; font-size:12px; }
+  .sb-af-strict{ font-size:10px; }
+  .sb-af-list{ gap:4px; grid-template-columns:repeat(3, minmax(0,1fr)); }
+  .sb-af-item{ min-height:32px; padding:3px 28px 3px 8px; border-radius:10px; }
+  .sb-af-name{ font-size:10.5px; }
+  .sb-af-desc{ display:none; }
+  .sb-af-num{ right:5px; font-size:9px; padding:0 5px; min-width:16px; }
+}
+@media (min-width: 900px) and (min-height: 500px){
+  .sb-af-card{ max-width:760px; }
+  .sb-af-list{ grid-template-columns:repeat(3, minmax(0,1fr)); gap:8px; }
+  .sb-af-item{ min-height:52px; }
+  .sb-af-name{ font-size:14px; }
+  .sb-af-desc{ font-size:11px; }
+  .sb-af-search{ font-size:15px; }
+  .sb-af-strict{ font-size:13px; }
+}
+
+/* =========================================================
    型の保存/ロード（ボックス画面の「保存/ロード」）
    ・6スロットを縦に並べる。空き＝「保存」／埋まり＝「ロード」「上書き」「削除」
    ========================================================= */
@@ -6160,6 +6278,7 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
 .title-topbar .npc-diff-btn[data-diff="easy"] .ndb-val{ background: linear-gradient(180deg,#4fd67a,#2fb85f); }
 .title-topbar .npc-diff-btn[data-diff="normal"] .ndb-val{ background: linear-gradient(180deg,#4f86ff,#2a5de6); }
 .title-topbar .npc-diff-btn[data-diff="hard"] .ndb-val{ background: linear-gradient(180deg,#ff7a5c,#e63946); }
+.title-topbar .npc-diff-btn[data-diff="dread"] .ndb-val{ background: linear-gradient(180deg,#a76bff,#5a22b8); }
 
 /* ヒーロー：左＝ロゴ / 右＝メニュー の2カラム */
 .title-hero{
@@ -6444,6 +6563,7 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
 .result-title{ font-family:var(--u-display); font-weight:400; font-size:clamp(24px,4vw,38px); }
 .result-title.win{ color:#1fa35c; }
 .result-title.lose{ color:var(--u-red); }
+.result-title.dread{ color:#8a3fe0; text-shadow:0 0 14px rgba(138,63,224,.45); }
 .result-desc, .surrender-panel-desc{ color:var(--u-ink-2); }
 .trade-title, .confirm-text, .settings-title, .surrender-panel-title, .opponent-left-title{ color:var(--u-ink); font-weight:900; }
 
@@ -6469,6 +6589,7 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
 .npc-diff-opt.selected{ border-color:var(--u-blue); background:#eaf0ff; box-shadow:0 4px 0 rgba(47,107,255,.35); }
 .npc-diff-opt[data-diff="easy"].selected{ border-color:#2fb85f; background:#eefaf2; box-shadow:0 4px 0 rgba(47,184,95,.35); }
 .npc-diff-opt[data-diff="hard"].selected{ border-color:#e63946; background:#fff0f1; box-shadow:0 4px 0 rgba(230,57,70,.35); }
+.npc-diff-opt[data-diff="dread"].selected{ border-color:#8a3fe0; background:#f4edff; box-shadow:0 4px 0 rgba(138,63,224,.35); }
 
 @media (prefers-reduced-motion: reduce){
   .title-emblem, #screen-battle .msg-toast.show::after, .turn-timer-badge.warn{ animation:none; }
@@ -6759,6 +6880,27 @@ linear-gradient(165deg,#f2fbff,#c9ecfa 50%,#94d3f0);
    表示された時は続きから再開するので、見た目は変わらない */
 .screen:not(.active), .screen:not(.active) *, .screen:not(.active)::before, .screen:not(.active)::after{ animation-play-state:paused !important; }
 </style>
+
+<!-- ===== 【軽量化】lite モード（低スペック端末・iPhone） =====
+     html.lite のときだけ、描画コストの高い装飾を省く。レイアウト・色・画像の解像度は変えない。
+     ・背景ぼかし(backdrop-filter)：背面が動くたびに毎フレーム再計算される。対戦ログ・各ダイアログの背景が対象
+     ・グロー用の blur()：すでにぼけた放射グラデーションにさらにぼかしを重ねているだけなので外しても見た目はほぼ同じ
+     ・常時ループの装飾（ロゴのきらめき・ランク枠の虹・メガボタンの光・NEWバッジの虹）：毎フレーム再描画が発生するため止める -->
+<style id="lite-mode">
+html.lite *, html.lite *::before, html.lite *::after{
+  -webkit-backdrop-filter:none !important; backdrop-filter:none !important;
+}
+html.lite .title-bg-orb,
+html.lite #screen-title .title-menu-btn::after,
+html.lite .shop-cell::after,
+html.lite .shop-cell.owned::after,
+html.lite .shop-detail-imgwrap::after,
+html.lite .wfx-sand-band{ filter:none !important; }
+html.lite .title-logo,
+html.lite .mega-evo-btn,
+html.lite .tpc-new-badge.tpc-new-badge-mega,
+html.lite .title-record-btn.rank-rainbow{ animation:none !important; }
+</style>
 </head>
 <body>
 
@@ -6956,6 +7098,9 @@ linear-gradient(165deg,#f2fbff,#c9ecfa 50%,#94d3f0);
               <span class="sb-tf-ico" id="sb-type-filter-ico"></span>
               <span class="sb-tf-label" id="sb-type-filter-label">タイプ絞込</span>
             </button>
+            <button type="button" id="sb-ability-filter-btn" class="sb-type-filter-btn sb-ability-filter-btn" aria-label="特性で絞り込む" aria-haspopup="dialog">
+              <span class="sb-tf-label" id="sb-ability-filter-label">特性絞込</span>
+            </button>
           </div>
           <div class="sb-box-grid" id="sb-box-grid"></div>
         </div>
@@ -6974,6 +7119,23 @@ linear-gradient(165deg,#f2fbff,#c9ecfa 50%,#94d3f0);
         <div class="sb-tf-foot">
           <button type="button" class="sb-tf-clear" id="sb-tf-clear">解除</button>
           <button type="button" class="sb-tf-close" id="sb-tf-close">とじる</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 特性絞り込み：特性名で検索して1つ選ぶ。選んだ特性を持てる（または今セットしている）ポケモンだけボックスの上に来て、残りはグレーで下へ。解除するまで固定。タイプ絞り込みとの併用可 -->
+    <div class="sb-tf-overlay sb-af-overlay" id="sb-af-overlay" role="dialog" aria-label="特性で絞り込む">
+      <div class="sb-tf-card sb-af-card">
+        <div class="sb-tf-title">特性で絞り込み</div>
+        <div class="sb-af-tools">
+          <input type="search" class="sb-af-search" id="sb-af-search" placeholder="特性名で さがす" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="特性名で探す">
+          <label class="sb-af-strict"><input type="checkbox" id="sb-af-strict"><span>いまセット中の特性だけ</span></label>
+          <span class="sb-af-count" id="sb-af-count"></span>
+        </div>
+        <div class="sb-af-list" id="sb-af-list"></div>
+        <div class="sb-tf-foot">
+          <button type="button" class="sb-tf-clear" id="sb-af-clear">解除</button>
+          <button type="button" class="sb-tf-close" id="sb-af-close">とじる</button>
         </div>
       </div>
     </div>
@@ -7271,6 +7433,10 @@ linear-gradient(165deg,#f2fbff,#c9ecfa 50%,#94d3f0);
         <button class="neu-btn npc-diff-opt" type="button" data-diff="hard">
           <span class="ndo-title">ハード</span>
           <span class="ndo-sub">AIがさらに強化</span>
+        </button>
+        <button class="neu-btn npc-diff-opt" type="button" data-diff="dread">
+          <span class="ndo-title">ドレッド</span>
+          <span class="ndo-sub">？？？</span>
         </button>
       </div>
       <button id="btn-npc-diff-close" class="neu-btn" type="button">とじる</button>
@@ -7716,21 +7882,6 @@ linear-gradient(165deg,#f2fbff,#c9ecfa 50%,#94d3f0);
 
 </div>
 
-<!-- Firebase SDK (compat) -->
-<script src="https://www.gstatic.com/firebasejs/12.18.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/12.18.0/firebase-database-compat.js"></script>
-
-<!-- ゲーム本体 -->
-<script src="firebase-config.js"></script>
-<script src="gamedata.js"></script>
-<script src="engine.js"></script>
-<script src="net.js"></script>
-<script src="typefx.js"></script>
-<script src="achievements.js"></script>
-<script src="dungeon-home.js"></script>
-<script src="dungeon-map.js"></script>
-<script src="dungeon-run.js"></script>
-<script src="ui.js"></script>
-<script src="gamepad.js"></script>
+<!-- スクリプトは <head> 内の defer で読み込む（上を参照） -->
 </body>
 </html>

@@ -25,7 +25,73 @@ const NATURE_NAME = {
   21: 'うっかりや', 22: 'いじっぱり', 23: 'むじゃき', 24: 'やんちゃ', 25: 'きまぐれ',
 };
 function natureName(natureId) {
+  if (natureId >= DREAD_NATURE_BASE) return 'ドレッド';
   return NATURE_NAME[natureId] || 'まじめ';
+}
+
+/* ---- ドレッド難易度：NPCポケモン専用の性格 ----
+   通常の性格は「1つ上昇(×1.1)・1つ下降(×0.9)」だが、ドレッドの相手は下降側も×1.1になり、
+   2つの能力が×1.1になる。既存の実数値再計算（メガシンカ・フォルムチェンジ等）はすべて
+   natureMultiplier(poke.nature, key) を通るので、性格IDを 100〜124 の専用IDに差し替えるだけで済む。
+   ID = 100 + (1つ目の能力の番号) * 5 + (2つ目の能力の番号)。番号は DREAD_STAT_KEYS の並び順。 */
+const DREAD_NATURE_BASE = 100;
+const DREAD_STAT_KEYS = ['atk', 'def', 'spa', 'spd', 'spe'];
+const DREAD_ACC_BONUS = 5; // ドレッドのNPCの技の命中率に足す値（%）
+
+// NPCポケモンにドレッドの強化（性格×1.1が2つ・命中率+5）を付ける。実数値も再計算する。
+function applyDreadBuff(poke) {
+  if (!poke || poke.dreadBuffed) return;
+  const entry = NATURE_TABLE[poke.nature];
+  let a, b;
+  if (entry && entry[0] && entry[1]) {
+    // 上昇する能力と、本来は下降する能力の両方を×1.1にする
+    a = entry[0]; b = entry[1];
+  } else {
+    // 無補正の性格は、ランダムな2つの能力を×1.1にする
+    const keys = DREAD_STAT_KEYS.slice().sort(() => Math.random() - 0.5);
+    a = keys[0]; b = keys[1];
+  }
+  poke.dreadOrigNature = poke.nature;
+  poke.nature = DREAD_NATURE_BASE + DREAD_STAT_KEYS.indexOf(a) * 5 + DREAD_STAT_KEYS.indexOf(b);
+  poke.dreadAccBonus = DREAD_ACC_BONUS;
+  poke.dreadBuffed = true;
+  recalcMegaStats(poke, poke.species.baseStats);
+}
+
+// ドレッドの強化を外して元の性格に戻す（相手からもらう時に使う）。実数値の再計算は呼び出し側で行う。
+function clearDreadBuff(poke) {
+  if (!poke || !poke.dreadBuffed) return;
+  if (poke.dreadOrigNature != null) poke.nature = poke.dreadOrigNature;
+  poke.dreadOrigNature = null;
+  poke.dreadAccBonus = 0;
+  poke.dreadBuffed = false;
+}
+
+// ドレッドのボス用：全技の中から「威力minPower以上の category（'physical'|'special'）の技」を
+// ランダムに4つ選び、元の技構成を丸ごと上書きする。
+// 自分が戦闘不能になる技（だいばくはつ等：selfDestruct）はボスが自滅してしまうので候補から除く。
+function setBossMovesByCategory(poke, category, minPower = 90, count = 4) {
+  if (!poke) return;
+  const pool = Object.keys(GAME_DATA.moves).map(Number).filter((id) => {
+    const m = GAME_DATA.moves[id];
+    return m && m.category === category && (m.power ?? 0) >= minPower && !m.selfDestruct;
+  });
+  const picked = pool.sort(() => Math.random() - 0.5).slice(0, count);
+  const moves = picked.map((id) => buildMoveObject(id)).filter(Boolean);
+  if (moves.length === 0) return; // 候補が無ければ元の技のまま
+  poke.moves = moves;
+  poke.originalMoveIds = null;
+}
+
+// レベルを変更し、実数値・最大HP・現在HPを再計算する（バトル開始前の相手ポケモン用）。
+function setPokeLevel(poke, level) {
+  if (!poke) return;
+  poke.level = level;
+  const base = poke.species.baseStats;
+  recalcMegaStats(poke, base);
+  poke.maxHp = calcStat(base.hp, poke.iv, poke.evs[0], level, true, 1);
+  poke.stats.hp = poke.maxHp;
+  poke.currentHp = poke.maxHp;
 }
 // 5x5グリッド用：[上昇ステータスキー, 下降ステータスキー] から性格IDを引く。
 // 対角（上昇=下降）は無補正の5性格を1つずつ順番に割り当てる。
@@ -71,7 +137,8 @@ function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 // ID:1031=チーム戦10連勝ごとのボス）は
 // ボス専用のポケモンなので、3匹・6匹の手持ち生成や交換候補など、
 // 通常のランダム抽選には絶対に含めない。
-const BOSS_ONLY_SPECIES_IDS = [1011, 1014, 1031];
+// ID:1998 / 1999 はドレッド難易度の11戦目ボス専用（ランダムでどちらか。ui.js の DREAD_BOSSES 参照）。
+const BOSS_ONLY_SPECIES_IDS = [1011, 1014, 1031, 1998, 1999];
 const BOSS_ONLY_SPECIES_ID = BOSS_ONLY_SPECIES_IDS[0]; // 後方互換用（メガなしボスID）
 
 // ---- 乱入ボス（メガありNPC戦の3〜5戦目のどれか1戦で、3匹目として乱入してくるポケモン） ----
@@ -519,37 +586,56 @@ const POKEDEX_CUSTOM_ORDER = [
   183, // Fロトム
   184, // Kロトム
   185, // Pロトム
+  1103, // No.497 ジャローダ
   1029, // No.500 エンブオー
+  1104, // No.503 ダイケンキ
   20, // No.505 ミルホッグ
+  1105, // No.508 ムーランド
   584, // No.510 レパルダス
   191, // No.512 ヤナッキー
   193, // No.514 バオッキー
   195, // No.516 ヒヤッキー
   783,
+  1106, // No.518 ムシャーナ
+  1107, // No.521 ケンホロウ
+  1108, // No.528 ココロモリ
   513, // No.530 ドリュウズ
   585, // No.531 タブンネ
   516, // No.534 ローブシン
   745,
   367, // No.538 ナゲキ
   368, // No.539 ダゲキ
+  1109, // No.542 ハハコモリ
   325, // No.545 ペンドラー
   298, // No.547 エルフーン
   562, // No.549 ドレディア
   236, // No.553 ワルビアル
   746,
+  1110, // No.555 ヒヒダルマ
   209, // No.558 イワパレス
   1019, // No.560 ズルズキン
   71, // No.561 シンボラー
+  1111, // No.563 デスカーン
+  1112, // No.565 アバゴーラ
+  1113, // No.567 アーケオス
+  1114, // No.569 ダストダス
   485, // No.571 ゾロアーク
   266, // No.573 チラチーノ
+  1115, // No.576 ゴチルゼル
+  1116, // No.579 ランクルス
+  1117, // No.581 スワンナ
   290, // No.584 バイバニラ
   755,
+  1118, // No.587 エモンガ
   197, // No.589 シュバルゴ
+  1119, // No.591 モロバレル
+  1120, // No.593 ブルンゲル
   217, // No.594 ママンボウ
   587, // No.596 デンチュラ
   219, // No.598 ナットレイ
   347, // No.601 ギギギアル
   1018, // No.604 シビルドン
+  1121, // No.606 オーベム
   309, // No.609 シャンデラ
   134, // No.612 オノノクス
   326, // No.615 フリージオ
@@ -559,6 +645,7 @@ const POKEDEX_CUSTOM_ORDER = [
   441, // No.621 クリムガン
   1020, // No.623 ゴルーグ
   517, // No.626 バッフロン
+  1122, // No.630 バルジーナ
   120, // No.631 クイタラン
   121, // No.632 アイアント
   245, // No.635 サザンドラ
@@ -959,6 +1046,13 @@ function calcStat(base, iv, ev, level, isHp, natureMod) {
 }
 
 function natureMultiplier(natureId, statKey) {
+  if (natureId >= DREAD_NATURE_BASE) {
+    // ドレッド専用の性格：2つの能力が×1.1（デコード方法は applyDreadBuff 参照）
+    const i = natureId - DREAD_NATURE_BASE;
+    const k1 = DREAD_STAT_KEYS[Math.floor(i / 5)];
+    const k2 = DREAD_STAT_KEYS[i % 5];
+    return (statKey === k1 || statKey === k2) ? 1.1 : 1.0;
+  }
   const entry = NATURE_TABLE[natureId];
   if (!entry) return 1.0;
   if (entry[0] === statKey) return 1.1;
@@ -1434,7 +1528,7 @@ const MEGA_EVOLUTION_DATA = {
   "97": {
     "type1": "rock",
     "type2": "dark",
-    "ability": 31,
+    "ability": 159,
     "baseStats": {
       "hp": 80,
       "atk": 154,
@@ -1463,8 +1557,8 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 87,
     "baseStats": {
       "hp": 70,
-      "atk": 200,
-      "def": 80,
+      "atk": 180,
+      "def": 100,
       "spa": 0,
       "spd": 80,
       "spe": 125
@@ -1489,10 +1583,10 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 68,
     "baseStats": {
       "hp": 70,
-      "atk": 0,
-      "def": 105,
-      "spa": 205,
-      "spd": 115,
+      "atk": 50,
+      "def": 95,
+      "spa": 185,
+      "spd": 95,
       "spe": 160
     }
   },
@@ -1502,9 +1596,9 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 133,
     "baseStats": {
       "hp": 95,
-      "atk": 255,
+      "atk": 225,
       "def": 80,
-      "spa": 30,
+      "spa": 50,
       "spd": 110,
       "spe": 85
     }
@@ -1603,13 +1697,13 @@ const MEGA_EVOLUTION_DATA = {
   "189": {
     "type1": "fighting",
     "type2": null,
-    "ability": 98,
+    "ability": 137,
     "baseStats": {
       "hp": 75,
       "atk": 137,
       "def": 160,
-      "spa": 60,
-      "spd": 85,
+      "spa": 40,
+      "spd": 105,
       "spe": 103
     }
   },
@@ -1889,7 +1983,7 @@ const MEGA_EVOLUTION_DATA = {
   "329": {
     "type1": "dragon",
     "type2": "ground",
-    "ability": 93,
+    "ability": 137,
     "baseStats": {
       "hp": 108,
       "atk": 170,
@@ -2302,6 +2396,19 @@ const MEGA_EVOLUTION_DATA = {
       "spe": 104
     }
   },
+  "587": {
+    "type1": "bug",
+    "type2": "electric",
+    "ability": 78,
+    "baseStats": {
+      "hp": 70,
+      "atk": 117,
+      "def": 110,
+      "spa": 117,
+      "spd": 110,
+      "spe": 110
+    }
+  },
   "1003": {
     "type1": "bug",
     "type2": "rock",
@@ -2674,9 +2781,9 @@ const MEGA_EVOLUTION_DATA = {
       "hp": 98,
       "atk": 145,
       "def": 130,
-      "spa": 20,
+      "spa": 40,
       "spd": 90,
-      "spe": 130
+      "spe": 110
     }
   },
   "1083": {
@@ -2684,15 +2791,138 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "steel",
     "ability": 68,
     "baseStats": {
-      "hp": 108,
+      "hp": 68,
       "atk": 45,
       "def": 50,
       "spa": 177,
       "spd": 105,
       "spe": 165
     }
+  },
+  "1110": {
+    "type1": "fire",
+    "type2": "psychic",
+    "ability": 137,
+    "baseStats": {
+      "hp": 105,
+      "atk": 145,
+      "def": 125,
+      "spa": 30,
+      "spd": 125,
+      "spe": 95
+    }
   }
 }
+
+// ================= Zメガシンカ（Z-A系メガ）=================
+// 【ここに Zメガ の数値を入れる】
+// MEGA_EVOLUTION_DATA（XYメガ）と全く同じ書式です。キーは「メガシンカ前の種族ID」。
+//   "種族ID": { "type1": "dragon", "type2": "ground", "ability": 特性ID,
+//               "baseStats": { "hp": 0, "atk": 0, "def": 0, "spa": 0, "spd": 0, "spe": 0 } }
+// 起動時に MEGA_EVOLUTION_DATA へ自動で合流します。合流のルールは次の3通り：
+//   ① その種族に既存のメガが無い      → 単一フォームのメガとして追加（表記・画像名は通常メガと同じ m{ID}.png）
+//   ② 既存が単一メガ（例：ガブリアス）  → 「M(通常メガ)」と「Z」の2フォームになる。トレーニング画面で選べる。画像は m{ID}.png / m{ID}z.png
+//   ③ 既存が X/Y の2フォーム         → X/Y に Z が加わり3フォームになる。画像は m{ID}z.png
+// 対戦中の表記は「Zガブリアス」のように頭にZが付きます（Mフォームは何も付きません）。
+const MEGA_Z_EVOLUTION_DATA = {
+  "41": {
+    "type1": "dark",
+    "type2": "ghost",
+    "ability": 86,
+    "baseStats": {
+      "hp": 70,
+      "atk": 164,
+      "def": 80,
+      "spa": 35,
+      "spd": 80,
+      "spe": 151
+    }
+  },
+  "329": {
+    "type1": "dragon",
+    "type2": null,
+    "ability": 19,
+    "baseStats": {
+      "hp": 108,
+      "atk": 150,
+      "def": 85,
+      "spa": 171,
+      "spd": 85,
+      "spe": 151
+    }
+  },
+  "1005": {
+    "name": "イビルアーサ",
+    "type1": "ghost",
+    "type2": "fighting",
+    "ability": 160,
+    "baseStats": {
+      "hp": 105,
+      "atk": 180,
+      "def": 70,
+      "spa": 0,
+      "spd": 100,
+      "spe": 155
+    }
+  },
+  "1079": {
+    "type1": "fighting",
+    "type2": "steel",
+    "ability": 127,
+    "baseStats": {
+      "hp": 70,
+      "atk": 100,
+      "def": 70,
+      "spa": 184,
+      "spd": 70,
+      "spe": 151
+    }
+  }
+};
+
+// フォームの並び順（トレーニング画面のボタン順・図鑑の並び順・抽選の候補順）。
+// M＝既存の単一メガ（Zと並ぶ時だけ使われる「通常メガ」）。画像名の接尾辞は M＝なし／X＝x／Y＝y／Z＝z。
+const MEGA_FORM_ORDER = ['M', 'X', 'Y', 'Z'];
+
+(function mergeMegaZData() {
+  Object.keys(MEGA_Z_EVOLUTION_DATA).forEach((id) => {
+    const z = MEGA_Z_EVOLUTION_DATA[id];
+    if (!z || !z.baseStats) return;               // 未入力・不完全なデータは無視
+    const cur = MEGA_EVOLUTION_DATA[id];
+    if (!cur) MEGA_EVOLUTION_DATA[id] = z;                                  // ① 新規
+    else if (cur.forms) cur.forms.Z = z;                                    // ③ X/Y に Z を追加
+    else MEGA_EVOLUTION_DATA[id] = { forms: { M: cur, Z: z } };             // ② 単一メガ + Z
+  });
+})();
+
+// raw（MEGA_EVOLUTION_DATA[id]）の中から、指定フォームが無ければ最初の有効フォームを返す。フォーム無しはnull。
+function resolveMegaFormKey(raw, key) {
+  if (!raw || !raw.forms) return null;
+  if (key && raw.forms[key]) return key;
+  return MEGA_FORM_ORDER.find((k) => raw.forms[k]) || Object.keys(raw.forms)[0] || null;
+}
+// その種族が持つメガフォームのキー一覧（M/X/Y/Zの順）。フォーム無しなら空配列。
+function getMegaFormKeys(speciesId) {
+  const raw = MEGA_EVOLUTION_DATA[speciesId];
+  if (!raw || !raw.forms) return [];
+  return MEGA_FORM_ORDER.filter((k) => raw.forms[k]);
+}
+// 選出時の抽選：持っているフォームから等確率で1つ（フォーム無しはnull）。
+function pickRandomMegaForm(speciesId) {
+  const keys = getMegaFormKeys(speciesId);
+  return keys.length ? keys[rand(0, keys.length - 1)] : null;
+}
+// 名前の頭に付ける表記。M（通常メガ）とフォーム無しは空文字。
+function megaFormDisplayLabel(key) { return (key && key !== 'M') ? key : ''; }
+// 図鑑用のメガ名：「メガ＋種族名＋フォーム」（例：メガリザードンX／メガ〇〇Z）。
+// メガ用データに特別名 "name" があるフォームは、その名前だけを返す（例：【イビルアーサ】）。
+function megaDexName(speciesId, formKey, baseName) {
+  const md = getMegaEvolutionDataForSpeciesId(speciesId, formKey);
+  if (md && md.name) return md.name;
+  return `メガ${baseName}${megaFormDisplayLabel(formKey)}`;
+}
+// 画像名の接尾辞。M（通常メガ）とフォーム無しは空文字、X/Y/Zは小文字。
+function megaFormSpriteSuffix(key) { return (key && key !== 'M') ? String(key).toLowerCase() : ''; }
 
 // 指定したポケモンのメガ進化データを取得する。
 // フォーム違い（forms.X/forms.Y）がある場合、poke.megaForm（既に決まっていればそれ、
@@ -3021,6 +3251,7 @@ function createRandomPokemon(speciesId, level = 100, shinyPercent = 5) {
     firstTurn: true,
     gyakujouTriggered: false,
     energyStacks: 0,
+    chimyaku: 0,           // 地脈（0〜3）：付与されると、カリブレーション持ち・じめん/いわタイプから受けるダメージが増える
     tauntTurns: 0, // 挑発ターン
     bindTurns: 0,  // バインド状態残りターン
     shadowTrappedBy: null, // かげぬい：縫い付けた相手への参照。その相手が場にいる限り逃げられない（交代不可）
@@ -3291,6 +3522,8 @@ const ABILITY = {
   SHINKIROU: 156,     // しんきろう（オリジナル）：技4つ目のタイプが技1つ目と同じタイプになり、威力1.2倍
   NOTENKI: 157,       // ノーてんき：場にいる間、天候の効果を無効化する（天候自体は変わる）
   JINGLE_BELL: 158,   // ジングルベール（オリジナル）：手持ちの「こおりタイプorジングルベール持ち」が1匹で1.4倍、以降1匹ごとに+0.4（3匹で2.2倍）。手持ち全員の攻撃・特攻に乗る（瀕死でも有効）
+  CALIBRATION: 159,   // カリブレーション（オリジナル）：地脈を付与された相手に与えるダメージが、地脈の段階に応じて1.5/2/2.5倍になる（このポケモン自身が地脈ダメージ増加の発動源になる）。場に出た時、フィールドがジオ・マテリアライズなら5ターン延長する
+  ZERO_POINT_PILLAR: 160, // ゼロポイントピラー（オリジナル）：場に出たとき、5ターンのあいだジオ・マテリアライズを展開する
 };
 
 const KIKENYOCHI_ABILITIES = [ABILITY.KIKIKAIHI, ABILITY.KIKENYOCHI_2];
@@ -3320,6 +3553,7 @@ const TERRAIN_SET_ABILITY = {
   [ABILITY.PSYCHIC_MAKER]: 'psychic',
   [ABILITY.MIST_MAKER]: 'misty',
   [ABILITY.MELODY_MAKER]: 'melody',
+  [ABILITY.ZERO_POINT_PILLAR]: 'geomat',
 };
 const WEATHER_SPEED_BOOST_ABILITY = {
   [ABILITY.SUISUI]: 'rain',
@@ -3377,9 +3611,42 @@ const MULTI_HIT_MOVES = {
   189: { maxHits: 5, minHits: 2, fixed: false, powerStep: 0, basePower: 25 },
 };
 
-// ---- エナジースタック操作 ----
-function addEnergyStacks(poke, amount, logFn) {
+// ---- 地脈（チャージの別版：相手に付与するスタック） ----
+// 技209・217・219・310を使うと、相手に地脈を1付与する（最大3段階）。
+// 地脈を付与されたポケモンは、特性カリブレーション or じめん／いわタイプの相手から受けるダメージが
+// 1段階:1.5倍 / 2段階:2倍 / 3段階:2.5倍 になる。
+const CHIMYAKU_MOVE_IDS = [209, 217, 219, 310];
+const CHIMYAKU_MAX = 3;
+const CHIMYAKU_DAMAGE_MULT = [1, 1.5, 2, 2.5];
+const CHIMYAKU_ICON_HTML = '<img src="./timy.png" class="inline-stat-icon" onerror="this.style.visibility=\'hidden\'">';
+
+function addChimyaku(poke, amount, logFn) {
   if (!poke || poke.fainted) return;
+  const before = poke.chimyaku || 0;
+  if (before >= CHIMYAKU_MAX) {
+    if (logFn) logFn(`${poke.species.name}の${CHIMYAKU_ICON_HTML}地脈はこれ以上増えない！`);
+    return;
+  }
+  poke.chimyaku = Math.min(CHIMYAKU_MAX, before + amount);
+  if (logFn) logFn(`${poke.species.name}に${CHIMYAKU_ICON_HTML}地脈が付与された！（${poke.chimyaku}段階）`);
+}
+
+// 地脈ダメージ増加の発動源か（特性カリブレーション、またはじめん／いわタイプ）
+function isChimyakuSource(attacker) {
+  if (!attacker) return false;
+  if (attacker.ability === ABILITY.CALIBRATION) {
+    const gasActive = battleField.chemicalGasActive;
+    if (!gasActive || attacker.ability === ABILITY.KAGAKUHENKAGASU) return true;
+  }
+  const types = getEffectiveTypes(attacker);
+  return types.includes('ground') || types.includes('rock');
+}
+
+// ---- エナジースタック操作 ----
+// noDouble=true のときはジオ・マテリアライズによる2倍化をしない（グランドアンカーの「チャージを2にする」用）
+function addEnergyStacks(poke, amount, logFn, noDouble) {
+  if (!poke || poke.fainted) return;
+  if (!noDouble && battleField.terrain === 'geomat') amount *= 2;
   const before = poke.energyStacks;
   poke.energyStacks += amount;
   if (logFn) logFn(`${poke.species.name}の<img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">が${amount}増えた！（現在${poke.energyStacks}）`);
@@ -3563,6 +3830,7 @@ const WEATHER_JP = {
 const TERRAIN_JP = {
   none: 'なし', grassy: 'グラスフィールド', electric: 'エレキフィールド',
   psychic: 'サイコフィールド', misty: 'ミストフィールド', melody: 'メロディフィールド',
+  geomat: 'ジオ・マテリアライズ',
 };
 const STARRY_SKY_BOOST_MOVE_IDS = [53, 93, 252, 327, 336, 451, 482];
 const GRASSY_HALVED_MOVE_IDS = [201, 203];
@@ -3643,10 +3911,21 @@ function setTerrain(key, turns, logFn) {
     psychic: 'あたりが　ふしぎな　かんじに　なった！',
     misty: 'あたりに　きりが　ひろがった！',
     melody: 'すてきな　メロディが　ながれはじめた！',
+    geomat: 'あたりが　ちみゃくの　エネルギーに　つつまれた…',
   }[key];
   // weatherFx: UI側でフィールド発動時の画面演出（背景エフェクト）を出すための合図。
   // 天候（setWeather）と同じ仕組みをそのまま流用する。
   if (msg) logFn(msg, { weatherFx: key });
+}
+
+// ---- ジオ・マテリアライズ（新フィールド） ----
+// じめん・いわ・シャインタイプの威力1.3倍／地脈持ちはターン終了時に最大HP1/8のダメージ／
+// チャージが溜まる時2倍（addEnergyStacks）／下記の技が必中（checkAccuracy）。
+const GEOMAT_ALWAYS_HIT_MOVES = [126, 307, 308, 309, 303, 304, 302, 202, 205, 213, 389, 388, 386, 398];
+
+// 技210ジオ・マテリアライズ：使うとフィールドがジオ・マテリアライズになる（すでに展開中なら何もしない）
+function triggerGeomatMove(move, logFn) {
+  if (move.id === 210 && battleField.terrain !== 'geomat') setTerrain('geomat', 5, logFn);
 }
 
 // 交代／登場時処理
@@ -3705,6 +3984,10 @@ function applyWeatherTerrainAbilityOnSwitchIn(poke, logFn, opponent) {
   if (tKey && battleField.terrain !== tKey) {
     logFn(`${poke.species.name}の${abilityJp(poke.ability)}が発動！`);
     setTerrain(tKey, 5, logFn);
+  }
+  // カリブレーション：場に出た時、フィールドがジオ・マテリアライズなら5ターン延長する（ログなし）
+  if (poke.ability === ABILITY.CALIBRATION && battleField.terrain === 'geomat') {
+    battleField.terrainTurns += 5;
   }
 }
 
@@ -3919,6 +4202,17 @@ function calcDamage(attacker, defender, move, logFn) {
   const isSpaStat = atkStat === attacker.stats.spa;
   const isDefSpd = (defStat === defender.stats.spd);
   const isDefDef = (defStat === defender.stats.def);
+  // カリブレーション：ジオ・マテリアライズ中、この特性を持つポケモンが場にいると、
+  // この特性以外のポケモンの攻撃・特攻が3/4になる（ログ・説明なし）。
+  // 実際にステータスを参照する側（oppXxx系の計算式では相手側）が対象。防御を攻撃に使う技（selfDefVsOppDef）は対象外。
+  if (battleField.terrain === 'geomat' && move.damageFormula !== 'selfDefVsOppDef') {
+    const calibActive = (p) => p.ability === ABILITY.CALIBRATION
+      && (!battleField.chemicalGasActive || p.ability === ABILITY.KAGAKUHENKAGASU);
+    if (calibActive(attacker) || calibActive(defender)) {
+      const statOwner = (move.damageFormula === 'oppSpaVsOppSpd' || move.damageFormula === 'oppAtkVsOppDef') ? defender : attacker;
+      if (statOwner.ability !== ABILITY.CALIBRATION) effAtk *= 0.75;
+    }
+  }
   if (effWeather === 'sand' && isDefSpd && defTypes.includes('rock')) effDef *= 1.5;
   if (effWeather === 'snow' && isDefDef && defTypes.includes('ice')) effDef *= 1.5;
   if (attacker.ability === ABILITY.KONJOU && attacker.status === STATUS.BURN && isAtkStat) {
@@ -4015,6 +4309,8 @@ function calcDamage(attacker, defender, move, logFn) {
     if (move.type === 'dragon') terrainMult = 0.5;
   } else if (battleField.terrain === 'melody') {
     if (move.type === 'sound') terrainMult = 1.3;
+  } else if (battleField.terrain === 'geomat') {
+    if (move.type === 'ground' || move.type === 'rock' || move.type === 'shine') terrainMult = 1.3;
   }
 
   let dmg = Math.floor(base * stab * dmgTypeMult * randomFactor * critMult * burnMult * pinchMult * moraibiMult * weatherMult * terrainMult);
@@ -4127,6 +4423,12 @@ function calcDamage(attacker, defender, move, logFn) {
     }
   }
 
+  // 地脈：地脈を付与されている相手に、カリブレーション持ち／じめん・いわタイプが攻撃すると段階に応じて威力アップ
+  if ((defender.chimyaku || 0) > 0 && isChimyakuSource(attacker)) {
+    const chimyakuMult = CHIMYAKU_DAMAGE_MULT[Math.min(CHIMYAKU_MAX, defender.chimyaku)];
+    dmg = Math.floor(dmg * chimyakuMult);
+    if (logFn) logFn(`${defender.species.name}は${CHIMYAKU_ICON_HTML}地脈の影響で受けるダメージが${chimyakuMult}倍になった！`);
+  }
   if (!ignoreWalls && attacker.ability !== ABILITY.KATAYABURI) {
     const side = defender.side === 'player' ? 'player' : 'cpu';
     const reflectTurns = side === 'player' ? battleField.playerReflect : battleField.cpuReflect;
@@ -4172,6 +4474,7 @@ function checkAccuracy(attacker, defender, move, logFn) {
   if (attacker.ability === ABILITY.NO_GUARD || defender.ability === ABILITY.NO_GUARD) return true;
   if (battleField.weather === 'rain' && RAIN_ALWAYS_HIT_MOVES.includes(move.id) && !isNotenkiActive(attacker, defender)) return true;
   if (battleField.weather === 'snow' && SNOW_ALWAYS_HIT_MOVES.includes(move.id) && !isNotenkiActive(attacker, defender)) return true;
+  if (battleField.terrain === 'geomat' && GEOMAT_ALWAYS_HIT_MOVES.includes(move.id)) return true;
 
   // てんねん：自分が技を使う時は相手の回避率ランクを、自分が技を受ける時は相手の命中率ランクを無視する。
   // ログは実際にランクが0以外で意味のある無視が発生した時だけ出す。
@@ -4189,7 +4492,9 @@ function checkAccuracy(attacker, defender, move, logFn) {
   let mult = accEvaMultiplier(stage);
   if (attacker.ability === ABILITY.FUKUGAN) mult *= 1.3;
   if (attacker.ability === ABILITY.HARIKIRI) mult *= 0.8;
-  const finalAcc = Math.min(100, move.accuracy * mult);
+  // ドレッド：NPC側（強化されたポケモン）の技は命中率+5
+  const baseAcc = move.accuracy + (attacker.dreadAccBonus || 0);
+  const finalAcc = Math.min(100, baseAcc * mult);
   return rand(1, 100) <= finalAcc;
 }
 
@@ -4943,6 +5248,10 @@ function effectivePriority(attacker, move, defenderFainted) {
   if (move.id === 501 && battleField.terrain === 'electric') {
     p = Math.max(1, p + 1);
   }
+  // グランドアンカー(209)：ジオ・マテリアライズ中に使うと優先度+1
+  if (move.id === 209 && battleField.terrain === 'geomat') {
+    p += 1;
+  }
 
   if (attacker.ability === ABILITY.HAYATE_NO_TSUBASA && move.type === 'flying') {
     p = Math.max(1, p + 1);
@@ -5545,6 +5854,32 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     }
   }
 
+  // ---- アリダードサイト(220)：使うとチャージ+2、攻撃と特攻の高い方で攻撃（物理／特殊が切り替わる） ----
+  if (move.id === 220) {
+    if (!gasActive || gasImmune(attacker)) addEnergyStacks(attacker, 2, logFn);
+    // ランク補正込みの実効値で比較（同値なら元の分類＝特殊のまま）
+    const effAtkForCat = attacker.stats.atk * rankMultiplier(attacker.ranks.atk);
+    const effSpaForCat = attacker.stats.spa * rankMultiplier(attacker.ranks.spa);
+    const newCategory = effAtkForCat > effSpaForCat ? 'physical' : (effSpaForCat > effAtkForCat ? 'special' : move.category);
+    move = { ...move, category: newCategory };
+    logFn(`${attacker.species.name}の${move.name}は${newCategory === 'physical' ? '物理技' : '特殊技'}になった！`);
+  }
+
+  // ---- グランドアンカー(209)：チャージが2以下なら、チャージを2にしてから攻撃 ----
+  if (move.id === 209 && attacker.energyStacks <= 2 && (!gasActive || gasImmune(attacker))) {
+    const need = 2 - attacker.energyStacks;
+    if (need > 0) addEnergyStacks(attacker, need, logFn, true);
+  }
+
+  // ---- ファセットグロース(310)：チャージが4以上なら全て消費し、攻撃を2段階上げてから攻撃 ----
+  if (move.id === 310 && attacker.energyStacks >= 4) {
+    const facetConsumed = consumeEnergyStacks(attacker, logFn);
+    if (facetConsumed > 0) {
+      logFn(`${attacker.species.name}は <img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'"> ${facetConsumed} を 全て 消費した！`);
+      applyRankChange(attacker, [100, 2, 0, 0, 0, 0, 0, 0], logFn, null, defender);
+    }
+  }
+
   // スタック消費技
   let energyConsumed = 0;
   if (move.id === 218 || move.id === 334) {
@@ -5671,6 +6006,8 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     applyRankChange(defender, move.oppRank, logFn, null, attacker);
     applyStatus(attacker, move.selfStatus, logFn);
     applyStatus(defender, move.oppStatus, logFn, effectiveAbilityId(attacker));
+    // 地脈：マグナライズ(219)など、使うと相手に地脈を1付与する
+    if (CHIMYAKU_MOVE_IDS.includes(move.id)) addChimyaku(defender, 1, logFn);
     // 技を使った本人（attacker）のlastUsedMoveIdを記録（アンコール・ひややかパンチ用）
     attacker.lastUsedMoveId = move.id;
     return;
@@ -5719,10 +6056,24 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     }
   }
 
+  // ---- グランドアンカー(209)：ジオ・マテリアライズ中は、攻撃の前に先に地脈を付与する ----
+  // （そのためこの一撃のダメージ計算から地脈の倍率が乗る）。無効（相性0・ふゆう）の相手には付与しない。
+  let chimyakuPreGranted = false;
+  if (move.id === 209 && battleField.terrain === 'geomat') {
+    const gaDefTypes = getEffectiveTypes(defender);
+    const gaFuyuImmune = defender.ability === ABILITY.FUYU && attacker.ability !== ABILITY.KATAYABURI
+      && (!battleField.chemicalGasActive || defender.ability === ABILITY.KAGAKUHENKAGASU);
+    if (!gaFuyuImmune && getTypeEffectiveness(move.type, gaDefTypes[0], gaDefTypes[1], move.id) !== 0) {
+      addChimyaku(defender, 1, logFn);
+      chimyakuPreGranted = true;
+    }
+  }
+
   const moveForCalc = { ...move, power: modifiedPower };
   const { damage: firstHitDamage, typeMult, isCrit: firstHitCrit } = calcDamage(attacker, defender, moveForCalc, logFn);
   if (typeMult === 0) {
     logFn(`${defender.species.name}には効果がないようだ…`);
+    triggerGeomatMove(move, logFn);
     return;
   }
 
@@ -5821,6 +6172,8 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     // 2回発動してしまう不具合があった。currentHpで判定することで、相手を倒した
     // ときは自分のselfRankが下のブロックで1回だけ発動するようにする。
     if (defender.currentHp > 0) {
+      // 地脈：209・217・310など、命中すれば相手に地脈を1付与（おやこあい等の複数ヒットでも1回だけ）
+      if (hitNum === 1 && CHIMYAKU_MOVE_IDS.includes(move.id) && !chimyakuPreGranted) addChimyaku(defender, 1, logFn);
       if (!suppressSecondary) {
         let flinchChance = move.flinchChance || 0;
         if (attacker.ability === ABILITY.TEN_NO_MEGUMI && abilityActive(attacker)) flinchChance = Math.min(100, flinchChance * 2);
@@ -5915,11 +6268,14 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     logFn(`${attacker.species.name}は体力を吸い取った！`, { hit: attacker.side });
   }
 
+  // ---- ジオ・マテリアライズ(210)：ダメージを与えたあと、フィールドを展開 ----
+  triggerGeomatMove(move, logFn);
+
   // ---- エルダーバースト：フィールド破壊 ----
   if (move.id === 59 && battleField.terrain !== 'none') {
     battleField.terrain = 'none';
     battleField.terrainTurns = 0;
-    logFn(`フィールドが破壊された！`);
+    logFn(`フィールドが破壊された！`, { weatherFx: 'fieldend' }); // UI側：常時表示のフィールド演出（ジオ・マテリアライズ）を終える合図
   }
 
   // ---- かげぬい／ランチャーアーム：命中してもなお相手が場に残っていれば、逃げられなくする ----
@@ -6283,6 +6639,17 @@ function applyEndOfTurnField(pokeList, logFn) {
       }
     });
   }
+  if (battleField.terrain === 'geomat') {
+    pokeList.forEach((poke) => {
+      if (poke.fainted || !(poke.chimyaku > 0)) return;
+      const dmg = Math.max(1, Math.floor(poke.maxHp / 8));
+      poke.currentHp = Math.max(0, poke.currentHp - dmg);
+      logFn(`${poke.species.name}は　${CHIMYAKU_ICON_HTML}地脈の　エネルギーで　ダメージを受けている…`, { hit: poke.side });
+      if (poke.currentHp <= 0) { poke.currentHp = 0; poke.fainted = true; logFn(`${poke.species.name}は倒れた！`, { faint: poke.side }); }
+      checkAndTriggerFundo(poke, logFn);
+      applyDamageTakenEffects(poke, logFn);
+    });
+  }
   if (battleField.terrain === 'grassy') {
     pokeList.forEach((poke) => {
       if (poke.fainted) return;
@@ -6318,7 +6685,7 @@ function applyEndOfTurnField(pokeList, logFn) {
     battleField.terrainTurns--;
     if (battleField.terrainTurns <= 0) {
       battleField.terrain = 'none';
-      logFn('フィールドの　効果が　きえた。');
+      logFn('フィールドの　効果が　きえた。', { weatherFx: 'fieldend' }); // UI側：常時表示のフィールド演出（ジオ・マテリアライズ）を終える合図
     }
   }
 
@@ -6384,6 +6751,8 @@ function weatherTerrainScoreMult(moveType, moveId, attacker, defender) {
     if (moveType === 'dragon') mult *= 0.5;
   } else if (battleField.terrain === 'melody') {
     if (moveType === 'sound') mult *= 1.2;
+  } else if (battleField.terrain === 'geomat') {
+    if (moveType === 'ground' || moveType === 'rock' || moveType === 'shine') mult *= 1.3;
   }
   return mult;
 }
@@ -6475,7 +6844,7 @@ function resolveEffectiveMoveType(move, battleField, attacker) {
     return map[weather] || move.type;
   }
   if (move.id === 504) {
-    const map = { electric: 'electric', grassy: 'grass', misty: 'fairy', psychic: 'psychic', melody: 'sound' };
+    const map = { electric: 'electric', grassy: 'grass', misty: 'fairy', psychic: 'psychic', melody: 'sound', geomat: 'ground' };
     return map[battleField.terrain] || move.type;
   }
   return move.type;

@@ -188,6 +188,77 @@ function describeStatus(statusData, targetLabel) {
   return `${chancePrefix}${targetLabel}を${statusName}にする`;
 }
 
+// ---- 技の「チャージ付与」「条件つき効果」の説明（天候・フィールド・相手の状態などで変わる効果） ----
+// 実際の判定は engine.js 側（威力変更・必中・優先度・タイプ変化・チャージ付与）で行う。ここは表示用の対応表。
+// 必中／ダメージ補正の技リストは engine.js の定数をそのまま参照するので、技を足してもここは自動で追従する。
+const COND_ENERGY_ICON = `<img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">`;
+
+// 条件ラベル：'w:' = 天候キー、't:' = フィールドキー、それ以外はそのまま表示。空文字は条件なし。
+const MOVE_COND_DEFS = {
+  502: [['w:rain', '威力2倍', '相手をバインド状態にする']],   // 黒潮（必中は下の自動付与）
+  496: [['w:rain', '威力130']],                              // ハリケーン（必中は下の自動付与）
+  150: [['w:rain', '威力180', '天候がなくなる']],             // むらくもばらい
+  498: [['w:sun', '威力130', '必ず命中する']],                // あさなぎ
+  501: [['t:electric', '威力80', '優先度+1', '必ず命中する']], // ブルージェット
+  499: [['t:grassy', '威力160']],                            // やけのはら
+  70:  [['t:electric', '威力120']],                          // オーバードライブ
+  511: [['t:psychic', '威力120']],                           // ワイドフォース
+  59:  [['フィールドがある時', '必ず命中する', '使うとフィールドが壊れる'], ['フィールドがない時', '効果がない']], // エルダーバースト
+  500: [['相手が状態異常の時', '威力2倍'], ['フィールドがある時', '相手をもうどくにする']], // 有刺鉄線
+  494: [['相手がどく・もうどくの時', '威力150']],             // エリミネイト
+  19:  [['相手の特攻が自分より高い時', '威力2倍']],           // ワンダーパウダー
+  128: [['自分のHPが半分以下の時', '威力2倍']],               // かじばのいちげき
+  169: [['自分のHPが半分以下の時', '威力2倍']],               // ソウルシェイプ
+  209: [['t:geomat', '優先度+1', '先に地脈を付与してから攻撃する']], // グランドアンカー（地脈の付与自体は常に行う）
+  285: [['w:snow', '優先度+1']],                             // ふゆのひざし
+  57:  [['w:starrysky', '優先度+1']],                        // 穿星波
+  503: [['', '天候によって技のタイプが変わり、変わると威力2倍']],   // ウェザーボール
+  504: [['', 'フィールドによって技のタイプが変わり、変わると威力2倍']], // だいちのはどう
+};
+
+function condLabelText(c) {
+  if (!c) return '';
+  if (c.startsWith('w:')) return `${WEATHER_JP[c.slice(2)]}の時`;
+  if (c.startsWith('t:')) return `${TERRAIN_JP[c.slice(2)]}の時`;
+  return c;
+}
+
+// チャージ（エナジースタック）が溜まる技の説明。例：「[チャージ画像]+1」
+function describeEnergyGain(m) {
+  if (!m) return null;
+  if (m.id === 505) return `${COND_ENERGY_ICON}+3`;
+  if (m.id === 220) return `${COND_ENERGY_ICON}+2`;
+  if (m.id === 209) return `${COND_ENERGY_ICON}が2未満なら2にする`;
+  if (typeof ENERGY_CHARGE_MOVE_IDS !== 'undefined' && ENERGY_CHARGE_MOVE_IDS.includes(m.id)) {
+    // ガイアキューブ／ジオ・バスターは、チャージが無い時だけ溜まる
+    return (m.id === 218 || m.id === 334)
+      ? `${COND_ENERGY_ICON}+1（チャージが0の時のみ）`
+      : `${COND_ENERGY_ICON}+1`;
+  }
+  return null;
+}
+
+// 条件つき効果の文（「あめの時：威力2倍、必ず命中する」など）の配列を返す
+function describeConditionalEffects(m) {
+  if (!m) return [];
+  const byCond = new Map(); // 条件ラベル -> 効果文の配列（追加順を保つ）
+  const add = (cond, text) => {
+    if (!byCond.has(cond)) byCond.set(cond, []);
+    byCond.get(cond).push(text);
+  };
+  (MOVE_COND_DEFS[m.id] || []).forEach(([cond, ...texts]) => texts.forEach((t) => add(condLabelText(cond), t)));
+  // engine.js の定数を参照（未定義でも落ちないように包む）
+  const g = (f) => { try { return f(); } catch (e) { return null; } };
+  const addIf = (list, cond, text) => { if (Array.isArray(list) && list.includes(m.id)) add(condLabelText(cond), text); };
+  addIf(g(() => RAIN_ALWAYS_HIT_MOVES), 'w:rain', '必ず命中する');
+  addIf(g(() => SNOW_ALWAYS_HIT_MOVES), 'w:snow', '必ず命中する');
+  addIf(g(() => STARRY_SKY_BOOST_MOVE_IDS), 'w:starrysky', 'ダメージ1.2倍');
+  addIf(g(() => GRASSY_HALVED_MOVE_IDS), 't:grassy', 'ダメージ半減');
+  const lines = [];
+  byCond.forEach((texts, cond) => lines.push(cond ? `${cond}：${texts.join('、')}` : texts.join('、')));
+  return lines;
+}
+
 // 技オブジェクト（buildMoveObjectの戻り値。selfRank/oppRank等を持つ）から、
 // 効果説明の文を自動生成して改行区切りで返す。何も無ければ「追加効果はない」。
 function describeMoveEffect(m) {
@@ -209,6 +280,9 @@ function describeMoveEffect(m) {
   if (m.selfDestruct) lines.push('自分はひんしになる');
   if (m.chargeTurn) lines.push('1ターン目に溜め、2ターン目に繰り出す');
   if (m.callRandomMove) lines.push('自分の技の中からランダムに1つが繰り出される');
+  const energyLine = describeEnergyGain(m);
+  if (energyLine) lines.push(energyLine);
+  describeConditionalEffects(m).forEach((s) => lines.push(s));
 
   if (lines.length === 0) return '追加効果はない';
   return lines.join('\n');
@@ -304,14 +378,19 @@ const PlayerProfile = (() => {
    localStorageに永続化する。ホーム画面の記録ボタンから確認できる。
    旧キー（メガ区別なし時代のデータ）は「メガなし」記録として引き継ぐ。
    ========================================================= */
-/* ---- NPCバトルの難易度（イージー／ノーマル／ハード） ----
-   ・相手トレーナーのポケモンだけレベルを補正する（イージー -10 / ハード +5）。
+/* ---- NPCバトルの難易度（イージー／ノーマル／ハード／ドレッド） ----
+   ・相手トレーナーのポケモンだけレベルを補正する（イージー -10 / ハード +5 / ドレッド +5）。
    ・イージーはディスク・実績・最大連勝記録・メガシンカ解放が対象外（ノーマル以上で有効）。
+   ・ドレッド（最高難易度）は相手ポケモンだけに以下の強化が掛かる：
+       - 性格の下降(×0.9)も×1.1になり、2つの能力が×1.1（engine.js applyDreadBuff）
+       - 全ての技の命中率+5（engine.js checkAccuracy）
+       - 3の倍数戦目（3・6・9戦目）は相手の1匹がランダムでレベルが+10（Lv110）
+       - ボス戦（11戦目）に勝つとエンドレスではなく「ドレッドクリア」で終了
    ・対人戦・ダンジョンには影響しない。設定はlocalStorageに保存。 */
 const NPC_DIFFICULTY_STORAGE_KEY = 'pokeriere_npc_difficulty_v1';
 const NpcDifficulty = (() => {
-  const LABELS = { easy: 'イージー', normal: 'ノーマル', hard: 'ハード' };
-  const LEVEL_OFFSET = { easy: -10, normal: 0, hard: 5 };
+  const LABELS = { easy: 'イージー', normal: 'ノーマル', hard: 'ハード', dread: 'ドレッド' };
+  const LEVEL_OFFSET = { easy: -10, normal: 0, hard: 5, dread: 5 };
   let cur = 'normal';
   try {
     const raw = localStorage.getItem(NPC_DIFFICULTY_STORAGE_KEY);
@@ -327,7 +406,8 @@ const NpcDifficulty = (() => {
   function levelOffset() { return LEVEL_OFFSET[cur]; }
   // ディスク・実績・記録・メガ解放が有効か（ノーマル以上）
   function rewardsEnabled() { return cur !== 'easy'; }
-  return { get, set, label, levelOffset, rewardsEnabled };
+  function isDread() { return cur === 'dread'; }
+  return { get, set, label, levelOffset, rewardsEnabled, isDread };
 })();
 
 const MAX_WIN_STREAK_STORAGE_KEY_LEGACY = 'pokeriere_max_win_streak_v1';
@@ -498,6 +578,7 @@ const state = {
   cpuActive: null,
   winStreak: 0,
   isBossBattle: false,
+  dreadBossId: null,          // ドレッド11戦目のボスID（1998/1999）。通常のボス戦・それ以外はnull
   battleBusy: false,
   screen: 'title',
   // ---- マルチプレイ用 ----
@@ -760,8 +841,9 @@ const AssetPreloader = (() => {
   }
 
   // マップ背景画像（map1〜map50.png）の事前ロード
+  // 【軽量化】50枚を一斉に要求せず、種族画像と同じ「少しずつ順番に」読み込むキューに載せる
   function preloadMapBackgrounds() {
-    for (let i = 1; i <= 50; i++) preloadImage(`./map${i}.png`);
+    for (let i = 1; i <= 50; i++) preloadImageQueued(`./map${i}.png`);
   }
 
   // iPhone/iPad(Safari)は1ページで使えるメモリの上限が厳しい。全種族・全マップ画像を
@@ -769,14 +851,17 @@ const AssetPreloader = (() => {
   // iOSでは重い事前ロードを行わず、必要になった時に読み込む。
   const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
     (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  // 【軽量化】iOSに加えて、低スペック端末・通信節約中（index.html が付ける html.lite）でも重い先読みは行わない
+  const SKIP_HEAVY_PRELOAD = IS_IOS || !!window.__LITE;
 
   function preloadAll() {
-    if (IS_IOS) { preloadTypeIcons(); preloadAudioAssets(); return; }
+    if (SKIP_HEAVY_PRELOAD) { preloadTypeIcons(); preloadAudioAssets(); return; }
     preloadTypeIcons();
     preloadAudioAssets();
-    preloadMapBackgrounds();
-    // 種族画像は数が多いので、他の初期化を邪魔しないよう少し遅延して開始
-    setTimeout(() => preloadAllSpeciesSprites(), 0);
+    // 【軽量化】マップ背景・全種族画像は、ホームが表示されて操作できる状態になってから（ブラウザの手が空いた時に）読み込み始める
+    const startHeavy = () => { preloadMapBackgrounds(); preloadAllSpeciesSprites(); };
+    if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(startHeavy, { timeout: 4000 });
+    else setTimeout(startHeavy, 1500);
   }
 
   return { preloadImage, preloadAudio, preloadAll, audioBuffers };
@@ -921,6 +1006,8 @@ const BATTLE_BGM_NAMES = {
 function battleBgmLogLabel(n) {
   if (n === 'BOSS') return 'ポケリエバトルファクトリー - 決闘!!';
   if (n === 'BOSS2') return 'ポケリエ-「亜空の侵略者」';
+  if (n === 'lastboss1') return 'ポケリエ-ウルノメルス戦';
+  if (n === 'lastboss2') return 'ポケリエ-アイズアイラ戦';
   const num = String(n).padStart(2, '0');
   const name = BATTLE_BGM_NAMES[n] || '';
   return `BGM${num}「${name}」`;
@@ -942,8 +1029,12 @@ const BattleBgm = (() => {
     MenuBgm.stop();
     stop();
     const isTeamBoss = isBoss === 'team';
-    const path = isTeamBoss ? './BOSS2.mp3' : (isBoss ? './BOSS.mp3' : pickTrackPath());
-    if (isTeamBoss) currentTrackNum = 'BOSS2';
+    // ドレッドのラストボス専用BGM（'lastboss1' / 'lastboss2'）は文字列がそのままファイル名になる
+    const isLastBoss = typeof isBoss === 'string' && /^lastboss\d+$/.test(isBoss);
+    const path = isLastBoss ? `./${isBoss}.mp3`
+      : (isTeamBoss ? './BOSS2.mp3' : (isBoss ? './BOSS.mp3' : pickTrackPath()));
+    if (isLastBoss) currentTrackNum = isBoss;
+    else if (isTeamBoss) currentTrackNum = 'BOSS2';
     else if (isBoss) currentTrackNum = 'BOSS';
     // BGM候補45曲は事前プリロードしていない（iOSのAudio要素数上限対策のため）。
     // 実際に再生する1曲だけをここでロードする。
@@ -1249,6 +1340,8 @@ function showScreen(name) {
     }, 450);
   }
   state.screen = name;
+  // バトル画面を離れたら、常時表示のフィールド演出（ジオ・マテリアライズ）も止める。
+  if (name !== 'battle') { try { clearWeatherFxLayer(); } catch (e) { /* 初期化前などは無視 */ } }
   // ボックス画面を離れる間は、ボックスの画像を手放してメモリを空ける（トレーニング画面などへ移る時にiPhoneが
   // メモリ不足でページごと再読み込みするのを防ぐ）。戻ってきたら読み込み直す。
   // 【軽量化】画像の解放は、画面が切り替わるフェード(.35s)が終わってからにする（タップ直後の処理を軽くする）
@@ -1406,6 +1499,7 @@ function queueMessage(text, after, netMeta) {
       mi: netMeta && netMeta.moveId !== undefined ? netMeta.moveId : null,
       turn: netMeta && netMeta.turn ? netMeta.turn : null,
       wfx: netMeta && netMeta.weatherFx ? netMeta.weatherFx : null,
+      wnb: netMeta && netMeta.weatherFxNoWait ? true : false,
       mp: netMeta && netMeta.movePower !== undefined ? netMeta.movePower : null,
       yf: netMeta && netMeta.yowashiForm ? netMeta.yowashiForm : null,
       ys: netMeta && netMeta.yowashiSide ? netMeta.yowashiSide : null,
@@ -1451,7 +1545,11 @@ function getFieldContinueMessages() {
 function queueTurnDivider(turnNumber) {
   // クレッシェンド等「ターン経過で威力が変わる技」用：エンジン側に現在のターン番号を伝える（1ターンに1回）
   battleField.turnCount = turnNumber;
-  getFieldContinueMessages().forEach(({ text: msg, weatherFx }) => {
+  // ターン1は、バトル開始時の発動メッセージ（あめがふりはじめた！等）で演出済みなので、
+  // 「あと〇ターン つづいている！」では演出を重ねない（文章だけ出す）。
+  const skipFx = turnNumber === 1;
+  getFieldContinueMessages().forEach(({ text: msg, weatherFx: fx }) => {
+    const weatherFx = skipFx ? null : fx;
     queueMessage(
       msg,
       weatherFx ? () => playWeatherEffect(weatherFx) : null,
@@ -2173,7 +2271,8 @@ function playAineechuFormChangeEffect(side, poke, withFx) {
 
 /* ---------------- 天候・フィールド演出（高品質Canvas版） ----------------
    天候：あめ / ひでり / すなあらし / ゆき / ほしぞら
-   フィールド：グラス / エレキ / サイコ / ミスト / メロディー（オリジナル）
+   フィールド：グラス / エレキ / サイコ / ミスト / メロディー / ジオ・マテリアライズ（オリジナル）
+   ※ジオ・マテリアライズだけは、効果が終わるまで常に再生し続ける（start の opts.persistent）
    をCanvas2Dで多層描画する。
    ・奥（バトル背景の上・ポケモンの後ろ）と手前（ポケモンの前）の2枚のcanvasで奥行きを出す
    ・手前側には mix-blend-mode のカラーグレーディング層を重ね、場全体の色味を天候に合わせる
@@ -3496,7 +3595,412 @@ const WeatherCanvasFX = (function () {
     },
   };
 
-  const SCENES = { rain, sun, sand, snow, starrysky: starry, grassy, electric, psychic, misty, melody };
+  /* =============================================================
+     ジオ・マテリアライズ（オリジナル）
+     地脈の力で大地が絶えず組み変わり続けるフィールド。他のフィールドと違い、
+     効果が終わるまで常に再生し続ける（start の opts.persistent）。
+     ・空　　：星座が光の線でなぞられて浮かび、しばらくして消え、別の形で描き直される
+     ・流れ星：赤い小さな流れ星が降り、足元の赤い円に落ちて弾ける
+     ・大地　：光で描かれた金色の山が隆起しては崩れ、別の場所に立ち上がる
+     ・足元　：水色と金色の二重の輪／地脈の光の筋／せり上がる金色の結晶
+     色は水色とオレンジ（金）が主体。
+     ============================================================= */
+  const gcol = (r, g, b, a) => `rgba(${r},${g},${b},${clamp(a, 0, 1).toFixed(3)})`;
+  const easeOut3 = (x) => { x = clamp(x, 0, 1); return 1 - Math.pow(1 - x, 3); };
+  const easeIn3 = (x) => { x = clamp(x, 0, 1); return x * x * x; };
+
+  const geomat = {
+    blend: { back: '', front: '', grade: 'multiply' },
+    grade: () => 'linear-gradient(180deg, rgb(206,240,252) 0%, rgb(222,244,250) 42%, rgb(255,230,196) 100%)',
+    gradeAlpha: 0.55,
+    maxDpr: 1.5,
+    HZ: 0.44,          // 地平線の高さ（画面に対する割合）
+    RING: { cx: 0.5, cy: 0.70, rx: 0.47, ry: 0.165 }, // 足元の輪（楕円）
+
+    /* ---------- 星座 ---------- */
+    makeConstellation(S, c, t, first) {
+      const { W, H } = S;
+      const n = 5 + ((rnd() * 4) | 0);
+      let ang = rr(0, TAU), px = 0, py = 0;
+      const pts = [{ x: 0, y: 0 }];
+      for (let i = 1; i < n; i++) {
+        ang += rr(-1.1, 1.1);
+        const step = rr(0.04, 0.085) * W;
+        px += Math.cos(ang) * step; py += Math.sin(ang) * step * 0.8;
+        pts.push({ x: px, y: py });
+      }
+      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+      pts.forEach((p) => { x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); });
+      const cx = (c.slot + 0.5) / 4 * W + rr(-0.03, 0.03) * W, cy = rr(0.09, 0.28) * H;
+      pts.forEach((p) => {
+        p.x = clamp(p.x - (x0 + x1) / 2 + cx, 0.04 * W, 0.96 * W);
+        p.y = clamp(p.y - (y0 + y1) / 2 + cy, 0.03 * H, 0.37 * H);
+        p.m = rnd(); p.ph = rr(0, TAU); p.om = rr(2, 5);
+      });
+      const edges = [];
+      for (let i = 0; i < n - 1; i++) edges.push([i, i + 1]);
+      for (let k = 0, extra = 1 + ((rnd() * 2) | 0); k < extra; k++) {
+        const a = (rnd() * n) | 0, b = (rnd() * n) | 0;
+        if (Math.abs(a - b) >= 2 && !edges.some((e) => (e[0] === a && e[1] === b) || (e[0] === b && e[1] === a))) edges.push([a, b]);
+      }
+      // 各点が最初に現れる辺の番号（線がなぞられるのに合わせて星が灯る）
+      const nodeK = pts.map((_, i) => { const k = edges.findIndex((e) => e[0] === i || e[1] === i); return k < 0 ? 0 : k; });
+      c.pts = pts; c.edges = edges; c.nodeK = nodeK;
+      c.t0 = t + (first ? rr(0, 1.0) : rr(0.2, 1.2));
+      c.draw = rr(1.4, 2.0); c.hold = rr(4, 7); c.fade = 1.2;
+    },
+
+    /* ---------- 光で描かれた山 ---------- */
+    makeMountain(S, m, t, first) {
+      const { W, H } = S;
+      const far = m.far, sc = far ? 0.8 : 1;
+      const w = rr(0.17, 0.3) * W * sc, h = rr(0.11, 0.2) * H * sc;
+      m.x = clamp(m.cx + rr(-0.05, 0.05), 0.07, 0.93) * W;
+      m.by = (far ? 0.435 : 0.5) * H + rr(-0.012, 0.03) * H;
+      m.w = w; m.h = h;
+      const pk = rr(-0.14, 0.14) * w;
+      const pts = [[-w / 2, 0]];
+      const nl = 2 + ((rnd() * 2) | 0), nr = 2 + ((rnd() * 2) | 0);
+      for (let i = 1; i <= nl; i++) { const k = i / (nl + 1); pts.push([-w / 2 + (pk + w / 2) * k + rr(-0.03, 0.03) * w, -h * Math.pow(k, 0.85) * rr(0.9, 1.06)]); }
+      pts.push([pk, -h]);
+      for (let i = 1; i <= nr; i++) { const k = i / (nr + 1); pts.push([pk + (w / 2 - pk) * k + rr(-0.03, 0.03) * w, -h * Math.pow(1 - k, 0.85) * rr(0.9, 1.06)]); }
+      pts.push([w / 2, 0]);
+      m.pts = pts; m.pk = pk;
+      m.ridges = [];
+      for (let i = 0; i < 3; i++) m.ridges.push({ a: [pk + rr(-0.03, 0.03) * w, -h * rr(0.9, 1)], b: [rr(-0.32, 0.32) * w, -h * rr(0.0, 0.25)], al: rr(0.35, 0.6) });
+      m.motes = [];
+      for (let i = 0; i < 9; i++) m.motes.push({ seg: (rnd() * (pts.length - 1)) | 0, u: rnd(), ph: rr(0, TAU), om: rr(2, 5) });
+      m.sand = []; // 山肌の金色の砂粒（三角形の内側）
+      for (let i = 0; i < 22; i++) {
+        let a = rnd(), b = rnd(); if (a + b > 1) { a = 1 - a; b = 1 - b; }
+        m.sand.push({ x: -w / 2 * (1 - a - b) + pk * a + w / 2 * b, y: -h * a, ph: rr(0, TAU), om: rr(1.5, 4.5) });
+      }
+      m.t0 = t + (first ? rr(0.2, 1.0) : 0);
+      m.rise = rr(1.1, 1.6); m.hold = rr(4.5, 8); m.sink = rr(1.0, 1.5); m.rest = rr(0.2, 1.2);
+    },
+
+    /* ---------- 地脈（足元を走る光の筋） ---------- */
+    makeVein(S, v, t, first) {
+      const { W, H } = S, R = this.RING;
+      const cx = (R.cx + rr(-0.1, 0.1)) * W, cy = (R.cy + rr(-0.05, 0.05)) * H;
+      const a = rr(0, TAU);
+      const ex = clamp(cx + Math.cos(a) * rr(0.25, 0.5) * W, 0.02 * W, 0.98 * W);
+      const ey = clamp(cy + Math.sin(a) * rr(0.08, 0.2) * H, 0.52 * H, 0.97 * H);
+      v.pts = jagged(cx, cy, ex, ey, 0.04 * W, 4);
+      v.cum = [0];
+      for (let i = 1; i < v.pts.length; i++) v.cum.push(v.cum[i - 1] + Math.hypot(v.pts[i][0] - v.pts[i - 1][0], v.pts[i][1] - v.pts[i - 1][1]));
+      v.len = v.cum[v.cum.length - 1] || 1;
+      v.pulses = [{ u: rnd(), sp: rr(0.4, 0.8) }, { u: rnd(), sp: rr(0.4, 0.8) }];
+      v.t0 = t + (first ? rr(0, 1.5) : rr(0, 0.6)); v.life = rr(3.5, 6);
+    },
+    veinAt(v, u) { // 経路上の位置（0〜1）→ 座標
+      const target = clamp(u, 0, 1) * v.len;
+      let i = 1;
+      while (i < v.cum.length - 1 && v.cum[i] < target) i++;
+      const seg = (v.cum[i] - v.cum[i - 1]) || 1, k = clamp((target - v.cum[i - 1]) / seg, 0, 1);
+      return [v.pts[i - 1][0] + (v.pts[i][0] - v.pts[i - 1][0]) * k, v.pts[i - 1][1] + (v.pts[i][1] - v.pts[i - 1][1]) * k];
+    },
+
+    init(S) {
+      const { W, H, U } = S;
+      const d = S.d = {};
+      d.cons = [];
+      for (let i = 0; i < 4; i++) { const c = { slot: i }; this.makeConstellation(S, c, 0, true); d.cons.push(c); }
+      d.stars = [];
+      for (let i = 0; i < 64; i++) d.stars.push({ x: rr(0, W), y: Math.pow(rnd(), 1.3) * H * 0.42, r: rr(0.5, 1.6) * U, ph: rr(0, TAU), om: rr(1.5, 5), a: rr(0.3, 0.9) });
+      d.mts = [{ cx: 0.1, far: true }, { cx: 0.3, far: false }, { cx: 0.5, far: true }, { cx: 0.72, far: false }, { cx: 0.9, far: true }];
+      d.mts.forEach((m) => this.makeMountain(S, m, 0, true));
+      d.met = []; for (let i = 0; i < 7; i++) d.met.push({ on: false });
+      d.nextMet = 0.5;
+      d.spk = []; for (let i = 0; i < 12; i++) d.spk.push({ on: false });
+      d.nextSpk = 0.3;
+      d.veins = [];
+      for (let i = 0; i < 6; i++) { const v = {}; this.makeVein(S, v, 0, true); d.veins.push(v); }
+      d.dust = [];
+      const dc = [[140, 240, 255], [255, 214, 120]];
+      for (let i = 0; i < 40; i++) d.dust.push({ x: rr(0, W), y: rr(0, H), vy: -rr(10, 30) * U, s: rr(5, 11) * U, ph: rr(0, TAU), om: rr(1.5, 4), c: dc[i % 2] });
+      d.glints = [];
+      for (let i = 0; i < 10; i++) d.glints.push({ x: rr(0.05, 0.95) * W, y: rr(0.08, 0.95) * H, s: rr(10, 22) * U, ph: rr(0, TAU), om: rr(1, 2.2), c: dc[i % 2] });
+    },
+
+    spawnMeteor(S, m, t) {
+      const { W, H, U } = S;
+      const tx = rr(0.1, 0.9) * W, ty = rr(0.58, 0.93) * H;
+      const A = rr(0.28, 0.5), side = rnd() < 0.5 ? -1 : 1;
+      const dx = Math.sin(A) * side, dy = Math.cos(A);
+      m.on = true; m.tx = tx; m.ty = ty; m.dx = dx; m.dy = dy;
+      m.L = (ty + 50 * U) / dy; m.sp = rr(1000, 1300) * U;
+      m.t0 = t; m.delay = rr(0.35, 0.6); m.fall = m.L / m.sp; m.rx = rr(24, 40) * U;
+      m.sparks = [];
+      for (let i = 0; i < 8; i++) { const a = rr(0, TAU); m.sparks.push({ vx: Math.cos(a) * rr(40, 110) * U, vy: -rr(60, 160) * U }); }
+    },
+
+    frame(S, B, F, t, dt) {
+      const { W, H, U, q } = S, d = S.d, R = this.RING, HZ = this.HZ * H;
+      let g;
+
+      // ---- 奥：空と大地の色（水色とオレンジ） ----
+      g = B.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, gcol(14, 52, 104, 0.55));
+      g.addColorStop(0.28, gcol(36, 128, 184, 0.38));
+      g.addColorStop(0.44, gcol(255, 170, 84, 0.34));
+      g.addColorStop(0.56, gcol(96, 214, 232, 0.30));
+      g.addColorStop(1, gcol(46, 160, 206, 0.38));
+      B.fillStyle = g; B.fillRect(0, 0, W, H);
+
+      B.globalCompositeOperation = 'lighter';
+      // 地平線のオレンジの光
+      pool(B, glowSprite(255, 160, 70), W * 0.5, HZ, W * 1.4, H * 0.16, 0.32);
+      // 導入：大地が目を覚ます光（最初の数秒だけ）
+      if (!S.quiet && t < 2.4) {
+        const k = t / 1.6;
+        pool(B, glowSprite(255, 230, 170), W * 0.5, H * 0.62, W * 1.5, H * 0.75, 0.55 * Math.exp(-t * 2.2));
+        B.globalAlpha = 1;
+        if (k < 1) {
+          const e = easeOut3(k), a = 1 - k;
+          B.lineWidth = 9 * U; B.strokeStyle = gcol(255, 190, 80, 0.16 * a);
+          B.beginPath(); B.ellipse(R.cx * W, R.cy * H, R.rx * W * 1.15 * e + 1, R.ry * H * 1.15 * e + 1, 0, 0, TAU); B.stroke();
+          B.lineWidth = 2.4 * U; B.strokeStyle = gcol(255, 244, 210, 0.85 * a);
+          B.beginPath(); B.ellipse(R.cx * W, R.cy * H, R.rx * W * 1.15 * e + 1, R.ry * H * 1.15 * e + 1, 0, 0, TAU); B.stroke();
+        }
+      }
+
+      // 空の星
+      const ns = (d.stars.length * q) | 0;
+      for (let i = 0; i < ns; i++) {
+        const s = d.stars[i];
+        const a = s.a * (0.55 + 0.45 * Math.sin(t * s.om + s.ph));
+        B.globalAlpha = clamp(a, 0, 1); B.fillStyle = 'rgb(225,245,255)';
+        B.fillRect(s.x, s.y, s.r, s.r);
+      }
+      B.globalAlpha = 1;
+
+      // 星座：光の線でなぞられ、保たれ、消え、別の形で描き直される
+      B.lineCap = 'round'; B.lineJoin = 'round';
+      for (let i = 0; i < d.cons.length; i++) {
+        const c = d.cons[i], age = t - c.t0;
+        if (age < 0) continue;
+        if (age > c.draw + c.hold + c.fade) { this.makeConstellation(S, c, t, false); continue; }
+        const p = clamp(age / c.draw, 0, 1), nE = c.edges.length;
+        const fa = age > c.draw + c.hold ? 1 - (age - c.draw - c.hold) / c.fade : 1;
+        for (let k = 0; k < nE; k++) {
+          const f = clamp(p * nE - k, 0, 1);
+          if (f <= 0) continue;
+          B.globalAlpha = 1;
+          const a = c.pts[c.edges[k][0]], b = c.pts[c.edges[k][1]];
+          const x2 = a.x + (b.x - a.x) * f, y2 = a.y + (b.y - a.y) * f;
+          B.lineWidth = 4 * U; B.strokeStyle = gcol(140, 232, 255, 0.16 * fa);
+          B.beginPath(); B.moveTo(a.x, a.y); B.lineTo(x2, y2); B.stroke();
+          B.lineWidth = 1.1 * U; B.strokeStyle = gcol(235, 252, 255, 0.8 * fa);
+          B.beginPath(); B.moveTo(a.x, a.y); B.lineTo(x2, y2); B.stroke();
+          if (f < 1) glow(B, glowSprite(255, 245, 210), x2, y2, 16 * U, fa);
+        }
+        for (let j = 0; j < c.pts.length; j++) {
+          const n = c.pts[j], vis = clamp(p * nE - c.nodeK[j] + 0.15, 0, 1);
+          if (vis <= 0) continue;
+          const tw = 0.7 + 0.3 * Math.sin(t * n.om + n.ph);
+          glow(B, starSprite(210, 240, 255), n.x, n.y, (16 + 14 * n.m) * U * (0.6 + 0.4 * vis), vis * fa * tw);
+        }
+      }
+      B.globalAlpha = 1;
+
+      // 足元の輪（水色と金色の二重の輪）
+      const pl = 0.5 + 0.5 * Math.sin(t * 2.2);
+      const rcx = R.cx * W, rcy = R.cy * H, rrx = R.rx * W, rry = R.ry * H;
+      B.lineWidth = 7 * U; B.strokeStyle = gcol(90, 230, 255, 0.10 + 0.05 * pl);
+      B.beginPath(); B.ellipse(rcx, rcy, rrx, rry, 0, 0, TAU); B.stroke();
+      B.lineWidth = 2 * U; B.strokeStyle = gcol(170, 245, 255, 0.55 + 0.2 * pl);
+      B.beginPath(); B.ellipse(rcx, rcy, rrx, rry, 0, 0, TAU); B.stroke();
+      B.lineWidth = 5 * U; B.strokeStyle = gcol(255, 190, 70, 0.10 + 0.04 * pl);
+      B.beginPath(); B.ellipse(rcx, rcy, rrx * 0.94, rry * 0.94, 0, 0, TAU); B.stroke();
+      B.lineWidth = 2 * U; B.strokeStyle = gcol(255, 214, 120, 0.7);
+      B.setLineDash([18 * U, 12 * U]); B.lineDashOffset = -t * 40 * U;
+      B.beginPath(); B.ellipse(rcx, rcy, rrx * 0.94, rry * 0.94, 0, 0, TAU); B.stroke();
+      B.setLineDash([]); B.lineDashOffset = 0;
+      // 地脈の脈動（中心から広がる波紋）
+      { const k = (t % 2.6) / 2.6, a = Math.pow(1 - k, 1.5);
+        B.lineWidth = 2.2 * U; B.strokeStyle = gcol(k < 0.5 ? 150 : 255, k < 0.5 ? 240 : 214, k < 0.5 ? 255 : 130, 0.5 * a);
+        B.beginPath(); B.ellipse(rcx, rcy, rrx * 0.9 * k + 1, rry * 0.9 * k + 1, 0, 0, TAU); B.stroke(); }
+
+      // 地脈の光の筋
+      for (let i = 0; i < d.veins.length; i++) {
+        const v = d.veins[i], age = t - v.t0;
+        if (age < 0) continue;
+        if (age > v.life) { this.makeVein(S, v, t, false); continue; }
+        const fa = Math.min(smooth(age / 0.8), 1 - smooth((age - (v.life - 0.8)) / 0.8));
+        B.globalAlpha = 1;
+        B.lineWidth = 5 * U; B.strokeStyle = gcol(255, 150, 40, 0.10 * fa);
+        strokePts(B, v.pts);
+        B.lineWidth = 1.4 * U; B.strokeStyle = gcol(255, 196, 90, 0.55 * fa);
+        strokePts(B, v.pts);
+        for (let k = 0; k < v.pulses.length; k++) {
+          const pu = v.pulses[k];
+          pu.u += pu.sp * dt / (v.len / (W * 0.4)); if (pu.u > 1) pu.u = 0;
+          const pos = this.veinAt(v, pu.u);
+          glow(B, glowSprite(255, 220, 140), pos[0], pos[1], 22 * U, 0.9 * fa);
+        }
+      }
+      B.globalAlpha = 1;
+
+      // 光で描かれた山
+      for (let i = 0; i < d.mts.length; i++) {
+        const m = d.mts[i], age = t - m.t0, total = m.rise + m.hold + m.sink;
+        if (age < 0) continue;
+        if (age > total + m.rest) { this.makeMountain(S, m, t, false); continue; }
+        if (age > total) continue;
+        let e;
+        if (age < m.rise) e = easeOut3(age / m.rise);
+        else if (age < m.rise + m.hold) e = 1;
+        else e = 1 - easeIn3((age - m.rise - m.hold) / m.sink);
+        if (e <= 0.01) continue;
+        const a = Math.min(1, e * 1.6), pts = m.pts;
+        B.save(); B.translate(m.x, m.by);
+        // 麓の光だまり
+        B.save(); B.scale(1, 0.22); glow(B, glowSprite(255, 190, 80), 0, 0, m.w * 1.3, 0.3 * a); B.restore();
+        // 山肌の面
+        g = B.createLinearGradient(0, -m.h * e, 0, 0);
+        g.addColorStop(0, gcol(255, 214, 120, 0.38)); g.addColorStop(1, gcol(255, 150, 50, 0.03));
+        B.fillStyle = g; B.globalAlpha = a;
+        B.beginPath(); B.moveTo(pts[0][0], 0);
+        for (let k = 1; k < pts.length; k++) B.lineTo(pts[k][0], pts[k][1] * e);
+        B.closePath(); B.fill();
+        // 稜線
+        B.lineWidth = 1.2 * U;
+        for (let k = 0; k < m.ridges.length; k++) {
+          const r = m.ridges[k];
+          B.strokeStyle = gcol(255, 215, 130, r.al);
+          B.beginPath(); B.moveTo(r.a[0], r.a[1] * e); B.lineTo(r.b[0], r.b[1] * e); B.stroke();
+        }
+        // 輪郭（光の線：外の光・中の線・芯の線）
+        const widths = [6, 2.4, 1.1], cols = [[255, 160, 50, 0.16], [255, 200, 100, 0.55], [255, 248, 220, 0.95]];
+        for (let pass = 0; pass < 3; pass++) {
+          B.lineWidth = widths[pass] * U; const c = cols[pass]; B.strokeStyle = gcol(c[0], c[1], c[2], c[3]);
+          B.beginPath(); B.moveTo(pts[0][0], 0);
+          for (let k = 1; k < pts.length; k++) B.lineTo(pts[k][0], pts[k][1] * e);
+          B.stroke();
+        }
+        // 山頂：せり上がる間は水色の光、ふだんは金色の星
+        if (age < m.rise) glow(B, glowSprite(120, 240, 255), m.pk, -m.h * e, 44 * U, 0.75 * (1 - e) + 0.1);
+        glow(B, starSprite(255, 240, 200), m.pk, -m.h * e, 26 * U, a * (0.7 + 0.3 * Math.sin(t * 3 + m.x)));
+        // 縁のきらめきと山肌の砂粒
+        const nm = (m.motes.length * q) | 0;
+        for (let k = 0; k < nm; k++) {
+          const o = m.motes[k], p0 = pts[o.seg], p1 = pts[o.seg + 1];
+          const x = p0[0] + (p1[0] - p0[0]) * o.u, y = (p0[1] + (p1[1] - p0[1]) * o.u) * e;
+          glow(B, glowSprite(255, 225, 150), x, y, 8 * U, a * (0.35 + 0.65 * Math.pow(0.5 + 0.5 * Math.sin(t * o.om + o.ph), 2)));
+        }
+        const nsd = (m.sand.length * q) | 0;
+        B.fillStyle = 'rgb(255,226,150)';
+        for (let k = 0; k < nsd; k++) {
+          const o = m.sand[k];
+          B.globalAlpha = clamp(a * 0.7 * (0.3 + 0.7 * Math.pow(0.5 + 0.5 * Math.sin(t * o.om + o.ph), 2)), 0, 1);
+          B.fillRect(o.x, o.y * e, 1.4 * U, 1.4 * U);
+        }
+        B.restore();
+        B.globalAlpha = 1;
+      }
+
+      // せり上がる金色の結晶
+      d.nextSpk -= dt;
+      if (d.nextSpk <= 0) {
+        d.nextSpk = rr(0.22, 0.5);
+        const sp = d.spk.find((o) => !o.on);
+        if (sp) { sp.on = true; sp.x = rr(0.06, 0.94) * W; sp.y = rr(0.56, 0.95) * H; sp.h = rr(0.05, 0.1) * H; sp.w = rr(7, 12) * U; sp.t0 = t; sp.life = rr(1.3, 2.0); }
+      }
+      for (let i = 0; i < d.spk.length; i++) {
+        const s = d.spk[i]; if (!s.on) continue;
+        const age = t - s.t0, k = age / s.life;
+        if (k >= 1) { s.on = false; continue; }
+        const grow = easeOut3(age / 0.45), fade = k > 0.65 ? 1 - (k - 0.65) / 0.35 : 1, hh = s.h * grow;
+        if (hh < 1) continue;
+        pool(B, glowSprite(255, 180, 70), s.x, s.y, 34 * U, 12 * U, 0.5 * fade);
+        B.globalAlpha = 1;
+        g = B.createLinearGradient(s.x, s.y - hh, s.x, s.y);
+        g.addColorStop(0, gcol(255, 240, 190, 0.95 * fade)); g.addColorStop(1, gcol(255, 170, 60, 0));
+        B.fillStyle = g;
+        B.beginPath(); B.moveTo(s.x, s.y - hh); B.lineTo(s.x + s.w / 2, s.y - hh * 0.25); B.lineTo(s.x, s.y); B.lineTo(s.x - s.w / 2, s.y - hh * 0.25); B.closePath(); B.fill();
+        B.lineWidth = 1 * U; B.strokeStyle = gcol(255, 230, 160, 0.9 * fade); B.stroke();
+        glow(B, starSprite(255, 230, 170), s.x, s.y - hh, 22 * U, fade * grow);
+      }
+      B.globalAlpha = 1;
+
+      // 赤い小さな流れ星：足元の赤い円 → 着弾の光・波紋・火花（奥側）／流れ星本体（手前側）
+      d.nextMet -= dt;
+      if (d.nextMet <= 0) {
+        d.nextMet = rr(0.35, 0.8);
+        const lim = Math.max(3, (d.met.length * q) | 0);
+        let busy = 0; d.met.forEach((o) => { if (o.on) busy++; });
+        const m = busy < lim ? d.met.find((o) => !o.on) : null;
+        if (m) this.spawnMeteor(S, m, t);
+      }
+      for (let i = 0; i < d.met.length; i++) {
+        const m = d.met[i]; if (!m.on) continue;
+        const age = t - m.t0, tHit = m.delay + m.fall, after = age - tHit;
+        if (after > 0.7) { m.on = false; continue; }
+        const ca = age < tHit ? smooth(age / 0.25) : 1 - smooth(after / 0.6);
+        const blink = 0.75 + 0.25 * Math.sin(t * 14 + m.t0 * 9);
+        // 赤い円（着弾地点の目印）
+        pool(B, glowSprite(255, 70, 60), m.tx, m.ty, m.rx * 3.2, m.rx * 3.2 * 0.38, 0.55 * ca * blink);
+        B.globalAlpha = 1;
+        B.fillStyle = gcol(255, 60, 50, 0.22 * ca);
+        B.beginPath(); B.ellipse(m.tx, m.ty, m.rx, m.rx * 0.38, 0, 0, TAU); B.fill();
+        B.lineWidth = 1.6 * U; B.strokeStyle = gcol(255, 110, 90, 0.85 * ca);
+        B.beginPath(); B.ellipse(m.tx, m.ty, m.rx, m.rx * 0.38, 0, 0, TAU); B.stroke();
+        if (age < tHit) { // 着弾に向けて縮む輪
+          const rg = m.rx * (1 + 1.2 * (1 - clamp(age / tHit, 0, 1)));
+          B.lineWidth = 1.2 * U; B.strokeStyle = gcol(255, 150, 120, 0.6 * ca);
+          B.beginPath(); B.ellipse(m.tx, m.ty, rg, rg * 0.38, 0, 0, TAU); B.stroke();
+        } else { // 着弾：閃光・衝撃波・金色の火花
+          const k = after;
+          pool(B, glowSprite(255, 200, 140), m.tx, m.ty, m.rx * 4 * (1 + k * 2), m.rx * 4 * (1 + k * 2) * 0.5, 0.9 * Math.exp(-k * 6));
+          B.globalAlpha = 1;
+          if (k < 0.5) {
+            const e = easeOut3(k / 0.5);
+            B.lineWidth = 2 * U; B.strokeStyle = gcol(255, 214, 120, 0.8 * (1 - k / 0.5));
+            B.beginPath(); B.ellipse(m.tx, m.ty, m.rx * (1 + 2.2 * e), m.rx * 0.38 * (1 + 2.2 * e), 0, 0, TAU); B.stroke();
+          }
+          const sa = 1 - k / 0.7;
+          for (let s = 0; s < m.sparks.length; s++) {
+            const o = m.sparks[s];
+            glow(B, glowSprite(255, 214, 120), m.tx + o.vx * k, m.ty + o.vy * k + 150 * U * k * k, 7 * U, sa);
+          }
+        }
+      }
+      B.globalAlpha = 1;
+      B.globalCompositeOperation = 'source-over';
+
+      // ---- 手前：流れ星の本体と、舞う光の粒 ----
+      F.globalCompositeOperation = 'lighter'; F.lineCap = 'round';
+      for (let i = 0; i < d.met.length; i++) {
+        const m = d.met[i]; if (!m.on) continue;
+        const mt = t - m.t0 - m.delay;
+        if (mt < 0 || mt >= m.fall) continue;
+        const dist = m.sp * mt, hx = m.tx - m.dx * m.L + m.dx * dist, hy = m.ty - m.dy * m.L + m.dy * dist;
+        const tl = 95 * U, qx = hx - m.dx * tl, qy = hy - m.dy * tl;
+        g = F.createLinearGradient(hx, hy, qx, qy);
+        g.addColorStop(0, gcol(255, 230, 220, 1)); g.addColorStop(0.2, gcol(255, 90, 70, 0.8)); g.addColorStop(1, gcol(255, 40, 40, 0));
+        F.lineWidth = 3 * U; F.strokeStyle = g;
+        F.beginPath(); F.moveTo(hx, hy); F.lineTo(qx, qy); F.stroke();
+        glow(F, glowSprite(255, 110, 90), hx, hy, 22 * U, 1);
+        glow(F, glowSprite(255, 240, 230), hx, hy, 9 * U, 1);
+      }
+      const nd = (d.dust.length * q) | 0;
+      for (let i = 0; i < nd; i++) {
+        const p = d.dust[i];
+        p.y += p.vy * dt; p.x += Math.sin(t * 0.9 + p.ph) * 10 * U * dt;
+        if (p.y < -10) { p.y = H + 10; p.x = rr(0, W); }
+        glow(F, glowSprite(p.c[0], p.c[1], p.c[2]), p.x, p.y, p.s * 3, 0.7 * (0.3 + 0.7 * Math.pow(0.5 + 0.5 * Math.sin(t * p.om + p.ph), 2)));
+      }
+      const ng = (d.glints.length * q) | 0;
+      for (let i = 0; i < ng; i++) {
+        const o = d.glints[i], a = Math.pow(Math.max(0, Math.sin(t * o.om + o.ph)), 6);
+        if (a > 0.02) glow(F, starSprite(o.c[0], o.c[1], o.c[2]), o.x, o.y, o.s * (0.6 + 0.6 * a) * 2.2, a * 0.9);
+      }
+      F.globalCompositeOperation = 'source-over'; F.globalAlpha = 1;
+    },
+  };
+
+  const SCENES = { rain, sun, sand, snow, starrysky: starry, grassy, electric, psychic, misty, melody, geomat };
 
   /* =============== 制御 =============== */
   function stop() {
@@ -3556,7 +4060,7 @@ const WeatherCanvasFX = (function () {
       s.acc += dt;
       if (++s.n >= 12) { const avg = s.acc / s.n; s.q = avg > 0.036 ? 0.45 : avg > 0.026 ? 0.65 : 1; s.qDone = true; }
     }
-    const fadeIn = smooth(t / 0.4), fadeOut = 1 - smooth((t - (s.T - 0.45)) / 0.45);
+    const fadeIn = smooth(t / 0.4), fadeOut = s.persistent ? 1 : 1 - smooth((t - (s.T - 0.45)) / 0.45);
     const f = fadeIn * fadeOut;
     const B = s.B, F = s.F;
     B.save(); F.save();
@@ -3566,7 +4070,7 @@ const WeatherCanvasFX = (function () {
     s.back.style.opacity = f.toFixed(3);
     s.front.style.opacity = f.toFixed(3);
     s.gradeEl.style.opacity = ((s.gradeBaked ? 1 : s.scene.gradeAlpha) * f).toFixed(3);
-    if (t >= s.T + 0.05) stop();
+    if (!s.persistent && t >= s.T + 0.05) stop();
   }
 
   function tick(now) {
@@ -3574,6 +4078,7 @@ const WeatherCanvasFX = (function () {
     if (S.t0 < 0) { S.t0 = now; S.last = now; }
     const t = (now - S.t0) / 1000, dt = Math.min(0.05, (now - S.last) / 1000);
     S.last = now;
+    if (S.persistent && !S.manual && !(S.back.offsetWidth > 0)) { S.raf = requestAnimationFrame(tick); return; }
     render(t, dt);
     if (S && !S.manual) S.raf = requestAnimationFrame(tick);
   }
@@ -3605,7 +4110,9 @@ const WeatherCanvasFX = (function () {
 
         S = {
           key, scene, W, H, dpr, U: clamp(Math.sqrt(W * H) / 520, 0.75, 1.7), q: 1, reduce,
-          T: (totalMs || 2000) / 1000, t: 0, t0: -1, last: 0, raf: 0, manual: !!(opts && opts.manual),
+          T: (opts && opts.persistent) ? Infinity : (totalMs || 2000) / 1000,
+          persistent: !!(opts && opts.persistent), quiet: !!(opts && opts.quiet),
+          t: 0, t0: -1, last: 0, raf: 0, manual: !!(opts && opts.manual),
           back: bk.c, B: bk.x, front: fr.c, F: fr.x, gradeEl, d: null, gradeBaked: !useBlend,
           frames: 0, acc: 0, n: 0, qDone: false,
         };
@@ -3627,6 +4134,16 @@ const WeatherCanvasFX = (function () {
     },
 
     stop,
+
+    // 常時再生中（persistent）のシーンがあるか。key を渡すとそのシーンかどうかも見る
+    isRunning(key) { return !!(S && S.persistent && (!key || S.key === key)); },
+
+    // 常時再生を終える：すぐ消さず、約0.5秒かけて溶けるように消える
+    release() {
+      if (!S || !S.persistent) return false;
+      S.persistent = false; S.T = S.t + 0.45;
+      return true;
+    },
 
     // 検証用：時間を手動で進める（start(..., {manual:true}) のときだけ有効）
     _advance(sec) {
@@ -3662,7 +4179,19 @@ function getWeatherFxFrontLayer() {
   return el;
 }
 
-function clearWeatherFxLayer() {
+// ---- 常時表示のフィールド演出（ジオ・マテリアライズ） ----
+// 他のフィールドは発動時に約2秒だけ演出するが、ジオ・マテリアライズは効果が終わるまで演出を出し続ける。
+// 終わりの合図は weatherFx:'fieldend'（フィールドが消えた／壊された時にエンジンが流す。対人戦のゲスト側にも同じ経路で届く）。
+// ・途中で天候の演出が入った時は、その2秒間だけ天候を見せ、終わったらジオ・マテリアライズに戻す
+// ・別のフィールドに上書きされた時は、新しいフィールドの演出に切り替わる
+// ※ var にしているのは、script読み込み中に showScreen 等から呼ばれても初期化前参照にならないようにするため。
+var PERSISTENT_TERRAIN_FX = ['geomat'];
+var TERRAIN_FX_KEYS = ['grassy', 'electric', 'psychic', 'misty', 'melody', 'geomat'];
+var persistentTerrainFx = null; // いま常時表示するべきフィールド演出のキー（なければ null）
+
+// keepPersistent を渡さない呼び出し（バトル開始・バトル画面を離れる時）は、常時表示の状態も解除する。
+function clearWeatherFxLayer(keepPersistent) {
+  if (!keepPersistent) persistentTerrainFx = null;
   try { WeatherCanvasFX.stop(); } catch (e) {}
   const layer = $('weather-fx-layer');
   if (layer) {
@@ -3756,17 +4285,74 @@ function buildStarrySkyFx(layer) {
   layer.appendChild(frag);
 }
 
-// key: 天候 'sun' | 'rain' | 'sand' | 'snow' | 'starrysky'、フィールド 'grassy' | 'electric' | 'psychic' | 'misty' | 'melody'
+// 常時表示の演出を（再）開始する。quiet=true は、天候の演出のあとに戻す時など、導入の演出を省く場合。
+function startPersistentTerrainFx(quiet) {
+  const key = persistentTerrainFx;
+  if (!key) return false;
+  const layer = $('weather-fx-layer');
+  const front = getWeatherFxFrontLayer();
+  if (!layer || !front) return false;
+  layer.style.transition = 'none';
+  layer.classList.add('show');
+  if (WeatherCanvasFX.start(key, layer, front, 0, { persistent: true, quiet: !!quiet })) return true;
+  layer.style.transition = '';
+  layer.classList.remove('show');
+  return false;
+}
+
+// 天候など「一時的な演出」が終わったあと：常時表示の演出が残っていれば戻し、なければ層を片付ける。
+function finishTransientWeatherFx() {
+  clearWeatherFxLayer(true);
+  if (persistentTerrainFx) startPersistentTerrainFx(true);
+}
+
+// フィールドが消えた／壊された：常時表示の演出を、溶けるように消して終える。
+function endPersistentTerrainFx() {
+  persistentTerrainFx = null;
+  if (!WeatherCanvasFX.isRunning()) return Promise.resolve();
+  WeatherCanvasFX.release();
+  const seq = ++weatherFxSeq;
+  return new Promise((res) => {
+    setTimeout(() => {
+      // 消えている間に別の演出が始まっていたら、そちらには触らない
+      if (seq === weatherFxSeq) { try { clearWeatherFxLayer(); } catch (e) {} }
+      res();
+    }, 550);
+  });
+}
+
+// key: 天候 'sun' | 'rain' | 'sand' | 'snow' | 'starrysky'、フィールド 'grassy' | 'electric' | 'psychic' | 'misty' | 'melody' | 'geomat'
+//      ほか 'fieldend'（フィールドが消えた合図。常時表示の演出を終える）
 // 万一DOM操作やタイマーで想定外のことが起きても、呼び出し元(drainMessages等)は
 // withTimeout()で保護されているため、ここで例外が出てもバトル進行自体は止まらない。
 function playWeatherEffect(key) {
   if (!key) return Promise.resolve();
 
   try {
+    // フィールドが消えた／壊された：常時表示の演出を終える
+    if (key === 'fieldend') return endPersistentTerrainFx();
+
     const layer = $('weather-fx-layer');
     if (!layer) return Promise.resolve();
 
-    clearWeatherFxLayer();
+    // ---- 常時表示のフィールド（ジオ・マテリアライズ）：発動から終了まで、ずっと演出を出し続ける ----
+    if (PERSISTENT_TERRAIN_FX.indexOf(key) !== -1 && WeatherCanvasFX.has(key)) {
+      // 「あと〇ターン つづいている！」の継続メッセージ：すでに表示中なら描き直さず、そのまま続ける
+      if (WeatherCanvasFX.isRunning(key)) return new Promise((res) => setTimeout(res, 400));
+      clearWeatherFxLayer(true);
+      ++weatherFxSeq;
+      persistentTerrainFx = key;
+      if (startPersistentTerrainFx(false)) {
+        // 導入の演出（大地が目を覚ます光）を見せる間だけ進行を待つ。演出そのものは消さずに続く
+        return new Promise((res) => setTimeout(res, WEATHER_FX_DURATION_MS + 60));
+      }
+      persistentTerrainFx = null; // 開始できなければ演出なし（バトル進行は止めない）
+      return Promise.resolve();
+    }
+    // 別のフィールドに上書きされた：常時表示は終わり、このあと新しいフィールドの演出を出す
+    if (TERRAIN_FX_KEYS.indexOf(key) !== -1) persistentTerrainFx = null;
+
+    clearWeatherFxLayer(true);
     const seq = ++weatherFxSeq;
 
     // ---- 高品質Canvas版（天候5種＋フィールド5種）。天候は、開始できなければ下の簡易演出に切り替える ----
@@ -3777,7 +4363,7 @@ function playWeatherEffect(key) {
       if (front && WeatherCanvasFX.start(key, layer, front, WEATHER_FX_DURATION_MS)) {
         return new Promise((res) => {
           setTimeout(() => {
-            if (seq === weatherFxSeq) { try { clearWeatherFxLayer(); } catch (e) {} }
+            if (seq === weatherFxSeq) { try { finishTransientWeatherFx(); } catch (e) {} }
             res();
           }, WEATHER_FX_DURATION_MS + 60);
         });
@@ -3806,7 +4392,7 @@ function playWeatherEffect(key) {
         try {
           if (seq === weatherFxSeq) {
             layer.classList.remove('show');
-            setTimeout(() => { try { if (seq === weatherFxSeq) clearWeatherFxLayer(); } catch (e) {} }, 400);
+            setTimeout(() => { try { if (seq === weatherFxSeq) finishTransientWeatherFx(); } catch (e) {} }, 400);
           }
         } catch (e) {}
         res();
@@ -4363,6 +4949,11 @@ function renderWatchField() {
   const tauntTurns = poke ? poke.tauntTurns || 0 : 0;
   if (tauntTurns > 0) chips.push(watchIconChip('taunt', `ちょうはつ ${tauntTurns}ターン`));
 
+  if (poke && poke.chimyaku > 0) {
+    const chimyakuMult = [1, 1.5, 2, 2.5][Math.min(3, poke.chimyaku)];
+    chips.push(watchIconChip('timy', `地脈 ${poke.chimyaku}段階（じめん・いわ・カリブレーションから${chimyakuMult}倍）`));
+  }
+
   if (poke && poke.critRank > 0) chips.push(`きあいだめ`);
 
   const reflectTurns = watchSelectedSide === 'self' ? battleField.playerReflect : battleField.cpuReflect;
@@ -4599,6 +5190,9 @@ const ABILITY_DESC_BY_ID = {
 156: '技4つ目のタイプが技1つ目と同じになる',
 157: '天候の効果を無効にする',
 158: 'こおりタイプのわざいりょくが あがる',
+159: '地脈を付与された相手に与えるダメージが 段階に応じて増える。',
+160: '登場時、5ターンのあいだ ジオ・マテリアライズを展開する',
+
 80: 'ノーマルの技がこおりになる（威力1.2倍）',
 81: 'ノーマルの技がでんきになる（威力1.2倍）',
 82: 'ノーマルの技がドラゴンになる（威力1.2倍）',
@@ -4760,7 +5354,7 @@ function partyListItemHtml(p, idx) {
         <div class="pli-hpbar-outer"><div class="pli-hpbar-inner" style="width:${ratio * 100}%; background:${hpBarColor(ratio)};"></div></div>
         <div class="pli-hp-text">${p.currentHp}/${p.maxHp}</div>
         ${isActive ? '<div class="pli-active-tag">たたかっている</div>' : statusTag}
-        <div class="pli-hp-text" style="font-size:8.5px;color:var(--accent-b);"><img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.energyStacks || 0}</div>
+        <div class="pli-hp-text" style="font-size:8.5px;color:var(--accent-b);"><img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.energyStacks || 0} <img src="./timy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.chimyaku || 0}</div>
       </div>
     </button>
   `;
@@ -5354,6 +5948,9 @@ function makeLogFn() {
     const moveType = meta && meta.moveType ? meta.moveType : null;
     const moveId = meta && meta.moveId !== undefined ? meta.moveId : null;
     const weatherFx = meta && meta.weatherFx ? meta.weatherFx : null;
+    // バトル開始時（ターン1より前）の天候・フィールド発動は、演出の終了を待たずにログを進める。
+    // （ここはエンジンがログを流す時点＝キューに積む時点で判定する。表示時にはturnCountが進んでいるため）
+    const weatherFxNoWait = !!weatherFx && (battleField.turnCount || 0) === 0;
     // 威力90超の技は、より豪華・派手な演出（big版）で再生する。
     const isBigMove = !!(meta && meta.movePower !== undefined && meta.movePower !== null && meta.movePower > BIG_MOVE_POWER_THRESHOLD);
     // インフェルノ／メイルストローム／イルミンスールは通常のbig版よりさらに特別な専用演出を使う。
@@ -5463,7 +6060,8 @@ const isStatusSpecialMove = isSpecialMove
       // 天候発動：このログ行が画面に表示されるタイミングで背景エフェクトを見せ、
       // エフェクトが終わるまで次のメッセージ（--ターンN--等）に進ませない。
       if (weatherFx) {
-        await playWeatherEffect(weatherFx);
+        if (weatherFxNoWait) { try { playWeatherEffect(weatherFx); } catch (e) {} } // 待たずに進める
+        else await playWeatherEffect(weatherFx);
       }
     }, {
       hit: meta && meta.hit ? meta.hit : null,
@@ -5478,6 +6076,7 @@ const isStatusSpecialMove = isSpecialMove
       moveType: moveType,
       moveId: moveId,
       weatherFx: weatherFx,
+      weatherFxNoWait: weatherFxNoWait,
       movePower: meta && meta.movePower !== undefined ? meta.movePower : null,
       yowashiForm: meta && meta.yowashiForm ? meta.yowashiForm : null,
       yowashiSide: meta && meta.side ? meta.side : null,
@@ -5669,7 +6268,9 @@ async function runBattleLoop() {
   state.battleBusy = true;
   battleLogHistory = [];
   clearWeatherFxLayer();
-  const bgmNum = BattleBgm.start(state.isBossBattle && npcTeamState.active ? 'team' : state.isBossBattle);
+  const bgmNum = BattleBgm.start(
+    (state.isBossBattle && state.dreadBossId && DREAD_BOSSES[state.dreadBossId]) ? DREAD_BOSSES[state.dreadBossId].bgm
+    : (state.isBossBattle && npcTeamState.active ? 'team' : state.isBossBattle));
   pushLogLine(battleBgmLogLabel(bgmNum));
   state.playerActive.side = 'player';
   state.cpuActive.side = 'cpu';
@@ -5899,6 +6500,8 @@ async function endBattle(playerWon) {
     state.pendingIntrusionId = null;
   }
   if (playerWon && !state.multiplayer) state.runBattleCount++;
+  // ドレッド：ボス戦（11戦目）に勝ったらエンドレスには進まず、ドレッドモードクリアで終了する。
+  const dreadClear = !!(playerWon && !state.multiplayer && NpcDifficulty.isDread() && state.isBossBattle);
   BattleHistory.add({
     mode: state.multiplayer ? 'pvp' : 'npc',
     mega: !!state.megaEvolutionEnabled,
@@ -5906,23 +6509,35 @@ async function endBattle(playerWon) {
     win: playerWon,
     streak: state.multiplayer ? null : state.winStreak,
     difficulty: state.multiplayer ? null : NpcDifficulty.get(),
+    dreadClear,
     playerTeam: snapshotTeamForHistory(state.playerTeam),
     oppTeam: snapshotTeamForHistory(state.cpuTeam),
   });
   const overlay = $('result-overlay');
-  $('result-title').textContent = playerWon ? 'WIN' : 'LOSE';
-  $('result-title').className = 'result-title ' + (playerWon ? 'win' : 'lose');
-  $('result-desc').textContent = playerWon
+  $('result-title').textContent = dreadClear ? 'DREAD CLEAR!' : (playerWon ? 'WIN' : 'LOSE');
+  $('result-title').className = 'result-title ' + (dreadClear ? 'win dread' : (playerWon ? 'win' : 'lose'));
+  $('result-desc').textContent = dreadClear
+    ? `ドレッドモード クリア！おめでとう！（${state.winStreak}連勝　ディスク+${earnedDisc}）`
+    : playerWon
     ? (state.multiplayer
         ? '勝利！'
         : (rewardsOn
             ? `${state.winStreak}連勝中！ディスク+${earnedDisc}　つぎの相手が待っている。`
             : `${state.winStreak}連勝中！（イージーはディスク・実績・記録なし）　つぎの相手が待っている。`))
     : `連勝は${state.winStreak}でストップ。またチャレンジしよう！`;
+  $('btn-result-next').textContent = dreadClear ? 'タイトルへ' : 'つぎへ';
   overlay.classList.add('show');
 
   $('btn-result-next').onclick = async () => {
     overlay.classList.remove('show');
+    $('btn-result-next').textContent = 'つぎへ';
+    if (dreadClear) {
+      // クリアしたらランを終了してタイトルへ（負けた時と同じ後始末。連勝は0に戻す）
+      state.winStreak = 0;
+      MenuBgm.start();
+      showScreen('title');
+      return;
+    }
     if (playerWon) {
       MenuBgm.start();
       // 次の戦いが乱入戦なら、ここ（つぎへを押した直後）で警告を出して乱入ボスを確定させる
@@ -6014,7 +6629,7 @@ function runTradeSequence() {
     const skipBtn = $('trade-skip-btn');
     // ボス戦の場合、ボス専用ポケモン（メガなし:BOSS_SPECIES_ID / メガあり:BOSS_SPECIES_ID_MEGA / チーム:BOSS_SPECIES_ID_TEAM）はもらえないようにする
     const offerable = (state.isBossBattle
-      ? state.cpuTeam.filter((p) => p.speciesId !== BOSS_SPECIES_ID && p.speciesId !== BOSS_SPECIES_ID_MEGA && p.speciesId !== BOSS_SPECIES_ID_TEAM)
+      ? state.cpuTeam.filter((p) => !BOSS_ONLY_SPECIES_IDS.includes(p.speciesId))
       : state.cpuTeam
     ).map(demegaForOffer).map(normalizeOfferLevel);
     offerRow.innerHTML = offerable.map((p, idx) => tradeCardHtml(p, idx, false)).join('');
@@ -6104,6 +6719,7 @@ function resetPokeForBattle(poke) {
   restoreOriginalMoves(poke);
   poke.moves.forEach((m) => { m.pp = m.maxPp; m.locked = false; });
   poke.energyStacks = 0;
+  poke.chimyaku = 0;
   poke.fundoTriggered = false;
   poke.moraibiActive = false;
   poke.lazyTurns = false;
@@ -6229,6 +6845,17 @@ const NPC_TEAM_OPP_LEVEL = 50;
 const NPC_RANDOM_OPP_LEVEL = 100;
 // 乱入ボスだけはチーム戦でもLv60（通常の相手のLv50より少し強い）。ランダム戦は従来どおりLv100。
 const NPC_TEAM_INTRUDER_LEVEL = 60;
+// ドレッドの3の倍数戦目に選ばれる1匹のレベル：もらう時の基準レベル+10（ランダム戦=Lv110 / チーム戦=Lv60）。
+const DREAD_SPECIAL_LEVEL_OFFSET = 10;
+// ドレッドの11戦目ボス（ランダム戦・チーム戦共通）。通常のボス(1011/1014/1031)の代わりに、
+// この2体のどちらかがランダムで最後に出てくる（どちらもボス専用ポケモン）。
+//   1998：物理技（威力90以上）をランダムに4つ　BGM lastboss1.mp3 / 背景 lastbossmap1.png
+//   1999：特殊技（威力90以上）をランダムに4つ　BGM lastboss2.mp3 / 背景 lastbossmap2.png
+// ※ 種族データ(gamedata.js)にまだ無いIDは出さず、通常のボスにフォールバックする。
+const DREAD_BOSSES = {
+  1998: { category: 'physical', bgm: 'lastboss1', bg: './lastbossmap1.png' },
+  1999: { category: 'special',  bgm: 'lastboss2', bg: './lastbossmap2.png' },
+};
 // 難易度補正（イージー-10 / ハード+5）は相手が使うポケモンにだけ掛ける。
 // プレイヤーが相手からもらう時は npcOfferBaseLevel（ランダム戦100／チーム戦50）に戻す。
 function npcOpponentLevel() {
@@ -6245,10 +6872,11 @@ function npcOfferBaseLevel() {
 // 相手からもらう候補を、難易度補正前のレベル（100/50）に戻したコピーにする（実数値・HPも再計算）。
 function normalizeOfferLevel(p) {
   const target = npcOfferBaseLevel();
-  if (!p || p.level === target) return p;
+  if (!p || (p.level === target && !p.dreadBuffed)) return p;
   const copy = Object.assign({}, p);
   copy.stats = Object.assign({}, p.stats);
   copy.moves = p.moves.map((m) => Object.assign({}, m));
+  clearDreadBuff(copy);   // ドレッドの強化（性格×1.1が2つ・命中+5）は相手専用。もらう時は元の性格に戻す
   copy.level = target;
   const base = copy.species.baseStats;
   recalcMegaStats(copy, base);
@@ -6314,6 +6942,29 @@ function startNextCpuBattle() {
       state.cpuTeam = drawRandomTeam(3, oppLv);
     }
   }
+  // ドレッド：相手の全ポケモンに強化（性格×1.1が2つ・命中+5）を付け、
+  // 3の倍数戦目（3・6・9戦目…）は相手の1匹をランダムでLv110（通常のドレッドLvより+5）にする。
+  // 「◯戦目」は今の連勝数+1（負けて連勝が0に戻ったら1戦目からやり直し）。
+  state.dreadBossId = null;
+  if (NpcDifficulty.isDread()) {
+    // 11戦目のボス：最後の1匹を、ID1998 or 1999（ランダム）のドレッド専用ボスに差し替える。
+    if (bossBattle && state.cpuTeam.length > 0) {
+      const ids = Object.keys(DREAD_BOSSES).map(Number).filter((id) => GAME_DATA.species[id]);
+      if (ids.length > 0) {
+        const bossId = ids[Math.floor(Math.random() * ids.length)];
+        const dreadBoss = createRandomPokemon(bossId, oppLv);
+        setBossMovesByCategory(dreadBoss, DREAD_BOSSES[bossId].category, 90, 4);
+        state.cpuTeam[state.cpuTeam.length - 1] = dreadBoss;   // 通常のボスは常に最後の枠
+        state.dreadBossId = bossId;
+      }
+    }
+    state.cpuTeam.forEach(applyDreadBuff);
+    const battleNo = state.winStreak + 1;
+    if (battleNo % 3 === 0 && state.cpuTeam.length > 0) {
+      const target = state.cpuTeam[Math.floor(Math.random() * state.cpuTeam.length)];
+      setPokeLevel(target, npcOfferBaseLevel() + DREAD_SPECIAL_LEVEL_OFFSET);
+    }
+  }
   state.cpuTeam.forEach(resetPokeForBattle);
   state.playerTeam.forEach(resetPokeForBattle);
   state.playerActive = state.playerTeam.find((p) => !p.fainted) || state.playerTeam[0];
@@ -6323,7 +6974,8 @@ function startNextCpuBattle() {
   Pokedex.registerTeam(state.playerTeam);
   if (bossBattle) {
     const el = $('battle-field-bg');
-    const bossBg = npcTeamState.active ? './mapboss2.png' : './mapboss.png';
+    const bossBg = state.dreadBossId ? DREAD_BOSSES[state.dreadBossId].bg
+      : (npcTeamState.active ? './mapboss2.png' : './mapboss.png');
     if (el) el.style.backgroundImage = `url("${bossBg}")`;
   } else {
     setRandomBattleBackground();
@@ -7962,7 +8614,8 @@ async function endMultiplayerBattleHost(hostWon, bySurrender) {
   closeAllBattleOverlays();
   $('cmd-dock').classList.remove('dock-wide');
   if (currentSurrenderUnsub) { currentSurrenderUnsub(); currentSurrenderUnsub = null; }
-  await Net.clearSurrenderFlags();
+  // 【不具合修正】通信が詰まって応答が返らなくても、結果表示とルーム復帰へ進めるよう待ち時間に上限を付ける
+  await withTimeout(Net.clearSurrenderFlags(), 3000);
   const noSurrenderWin = !bySurrender;
   if (noSurrenderWin) Shop.addDisc(PVP_DISC_REWARD);
   const overlay = $('result-overlay');
@@ -7997,7 +8650,39 @@ function closeAllBattleOverlays() {
    ========================================================= */
 const RESULT_DISPLAY_MS = 2200;
 
+// 【不具合修正】対人戦のあとルームへ戻る処理が途中で止まると、「ルームにもどっています」の覆いが
+// 戦闘画面に残ったまま、ホスト/ゲストのどちらかで全ボタンが反応しなくなる。
+// 原因は主に次の2つ：
+//  ①ホストが Firebase の削除完了（resetForNextBattle：最大6回の通信）を待ち続けて進めなくなる
+//  ②ホストがバトルのデータを消すのが早すぎて、回線の遅いゲストに「対戦終了」の通知が届く前に消えてしまう
+// そこで、通信待ちには必ず上限を付け、途中で例外が出ても最後は必ず待機部屋へ戻す。
 async function returnToReadyRoomAfterBattle() {
+  try {
+    await returnToReadyRoomAfterBattleCore();
+  } catch (e) {
+    try { console.warn('[ルーム復帰] 途中で例外が出ました。待機部屋へ強制的に戻します', e); } catch (_) {}
+  }
+  // まだ戦闘画面のままなら（＝途中で止まったなら）ここで確実に待機部屋へ戻す。
+  // 相手の退出などで既に別の画面へ移っている場合は何もしない。
+  if (state.screen === 'battle') {
+    try {
+      state.multiplayer = false;
+      readyBattleStarting = false;
+      readyRoomState = { mine: false, opponent: false };
+      renderReadyRoom();
+    } catch (e) {}
+    showScreen('host-waiting');
+    try { closeAllBattleOverlays(); } catch (e) {}
+    ['result-overlay', 'rematch-wait-overlay'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.classList.remove('show');
+    });
+    try { MenuBgm.start(); } catch (e) {}
+    try { wireReadyRoomListeners(); } catch (e) {}
+  }
+}
+
+async function returnToReadyRoomAfterBattleCore() {
   const overlay = $('result-overlay');
   const waitOverlay = $('rematch-wait-overlay');
 
@@ -8027,7 +8712,11 @@ async function returnToReadyRoomAfterBattle() {
   // ルームのバトル/選出/交換データをクリアしてから、
   // ホスト・ゲストの両方が確実に同じタイミングで待機部屋に戻れるようにする。
   if (state.isHost) {
-    await Net.resetForNextBattle();
+    // ゲストが「対戦終了」を受け取った合図（rematch/guestAck）を待ってからデータを消す（最大5秒）。
+    // 受信が早いゲストなら待ち時間はほぼ0。来なくても5秒で先へ進む。
+    await withTimeout(Net.waitOpponentAck(), 5000);
+    // 通信が詰まっても先へ進めるよう、削除の完了待ちにも上限を付ける（削除自体は裏で続く）
+    await withTimeout(Net.resetForNextBattle(), 5000);
   }
 
   // screen-battle自体をここで確実に非表示（active解除）にしてから
@@ -8267,7 +8956,8 @@ async function handleGuestEvent(ev) {
         }
         // 天候発動エフェクト
         if (ev.wfx) {
-          await playWeatherEffect(ev.wfx);
+          if (ev.wnb) { try { playWeatherEffect(ev.wfx); } catch (e) {} } // バトル開始時：待たずに進める
+          else await playWeatherEffect(ev.wfx);
         }
         // HUDの最新化（状態異常付与メッセージ等の表示漏れ防止）
         if (state.playerActive) updateHud(state.playerActive, 'self');
@@ -8509,32 +9199,37 @@ async function handleGuestEvent(ev) {
   if (ev.k === 'end') {
     state.battleBusy = false;
     guestBattleEnded = true;
-    clearTurnTimer();
-    hideOpponentWaitingBadge();
-    BattleBgm.stop();
-    // まだ技/交代の選択待ち（waitForPlayerAction）が残っていた場合、そのPromiseを
-    // 解決しないまま画面を切り替えてしまうと、古いバトルループが待ち続けたまま
-    // 裏に残ってしまう（次の操作と衝突してフリーズする原因になる）。
-    // ダミーの行動で強制的に解決し、ループ側のguestBattleEndedチェックで
-    // 何もせず抜けるようにする。
-    if (turnResolve) { const r = turnResolve; turnResolve = null; r({ type: 'none' }); }
-    if (guestTurnEndResolve) { const r = guestTurnEndResolve; guestTurnEndResolve = null; r(); }
-    if (forcedSwitchResolve) { const r = forcedSwitchResolve; forcedSwitchResolve = null; try { closePartyOverlay(); } catch (e) {} r(0); }
-    // 結果オーバーレイの裏に技メニュー等が残ったままタップできてしまわないよう、
-    // ゲスト側でも確実にコマンドパネルを空にしておく。
-    clearCmdPanel();
-    closeAllBattleOverlays();
-    $('cmd-dock').classList.remove('dock-wide');
-    const guestWon = !ev.win;
-    const noSurrenderWin = !ev.bySurrender;
-    if (noSurrenderWin) Shop.addDisc(PVP_DISC_REWARD);
-    const overlay = $('result-overlay');
-    $('result-title').textContent = guestWon ? 'WIN' : 'LOSE';
-    $('result-title').className = 'result-title ' + (guestWon ? 'win' : 'lose');
-    $('result-desc').textContent = guestWon
-      ? (noSurrenderWin ? `勝利！ディスク+${PVP_DISC_REWARD}` : '勝利！')
-      : (noSurrenderWin ? `敗北…ディスク+${PVP_DISC_REWARD}` : '敗北…');
-    overlay.classList.add('show');
+    // 【不具合修正】「対戦終了を受け取った」合図をホストへ返す（ホストはこれを待ってからバトルのデータを消す）
+    try { const ap = Net.ackRematchChoice(); if (ap && ap.catch) ap.catch(() => {}); } catch (e) {}
+    // 【不具合修正】ここで例外が出ても、必ずルーム復帰まで進める（止まると全ボタンが反応しなくなる）
+    try {
+      clearTurnTimer();
+      hideOpponentWaitingBadge();
+      BattleBgm.stop();
+      // まだ技/交代の選択待ち（waitForPlayerAction）が残っていた場合、そのPromiseを
+      // 解決しないまま画面を切り替えてしまうと、古いバトルループが待ち続けたまま
+      // 裏に残ってしまう（次の操作と衝突してフリーズする原因になる）。
+      // ダミーの行動で強制的に解決し、ループ側のguestBattleEndedチェックで
+      // 何もせず抜けるようにする。
+      if (turnResolve) { const r = turnResolve; turnResolve = null; r({ type: 'none' }); }
+      if (guestTurnEndResolve) { const r = guestTurnEndResolve; guestTurnEndResolve = null; r(); }
+      if (forcedSwitchResolve) { const r = forcedSwitchResolve; forcedSwitchResolve = null; try { closePartyOverlay(); } catch (e) {} r(0); }
+      // 結果オーバーレイの裏に技メニュー等が残ったままタップできてしまわないよう、
+      // ゲスト側でも確実にコマンドパネルを空にしておく。
+      clearCmdPanel();
+      closeAllBattleOverlays();
+      $('cmd-dock').classList.remove('dock-wide');
+      const guestWon = !ev.win;
+      const noSurrenderWin = !ev.bySurrender;
+      if (noSurrenderWin) Shop.addDisc(PVP_DISC_REWARD);
+      const overlay = $('result-overlay');
+      $('result-title').textContent = guestWon ? 'WIN' : 'LOSE';
+      $('result-title').className = 'result-title ' + (guestWon ? 'win' : 'lose');
+      $('result-desc').textContent = guestWon
+        ? (noSurrenderWin ? `勝利！ディスク+${PVP_DISC_REWARD}` : '勝利！')
+        : (noSurrenderWin ? `敗北…ディスク+${PVP_DISC_REWARD}` : '敗北…');
+      overlay.classList.add('show');
+    } catch (e) { try { console.warn('[ゲスト対戦終了処理] 例外', e); } catch (_) {} }
     await runMultiplayerRematchFlow();
     return;
   }
@@ -8744,7 +9439,9 @@ function renderBattleHistoryList() {
     // NPC戦かつ難易度ハードのときだけ「HARD」タグを表示
     const hardTagHtml = (entry.mode === 'npc' && entry.difficulty === 'hard')
       ? '<span class="record-tag hard">HARD</span>'
-      : '';
+      : (entry.mode === 'npc' && entry.difficulty === 'dread')
+        ? `<span class="record-tag dread">DREAD${entry.dreadClear ? ' CLEAR' : ''}</span>`
+        : '';
     const streakHtml = (entry.streak !== null && entry.streak !== undefined)
       ? `<span class="record-streak-badge"><b>${entry.streak}</b>連勝</span>`
       : '';
@@ -9700,6 +10397,31 @@ function sbSaveTypeFilter(k) {
     else localStorage.removeItem(SB_TYPE_FILTER_STORAGE_KEY);
   } catch (e) { /* 保存できなくても動作は続ける */ }
 }
+// 特性絞り込み（表示専用）。タイプ絞り込みと同じ仕組み：選んだ特性に該当するポケモンだけをボックスの上に出し、
+// それ以外はグレーにして下へ寄せる。「解除」するまでずっと固定（保存される）。null=絞り込みなし。
+// タイプ絞り込みと同時に使うと「両方に該当」するポケモンだけが上に来る。
+// strict=false：その種族が持てる特性（species.abilities）に含まれる、または今その特性をセットしている個体
+// strict=true ：今その特性をセットしている個体だけ
+const SB_ABILITY_FILTER_STORAGE_KEY = 'pokeriere_serious_box_ability_filter_v1';
+function sbLoadAbilityFilter() {
+  const def = { id: null, strict: false };
+  try {
+    const raw = localStorage.getItem(SB_ABILITY_FILTER_STORAGE_KEY);
+    if (!raw) return def;
+    const o = JSON.parse(raw);
+    const id = o && o.id != null ? Number(o.id) : null;
+    // 未知の特性（データ変更後の古い値）は無視して解除扱い
+    if (id != null && Number.isFinite(id) && abilityNameById(id) != null) return { id, strict: !!o.strict };
+    return { id: null, strict: !!(o && o.strict) };
+  } catch (e) { /* プライベートモード等は無視 */ }
+  return def;
+}
+function sbSaveAbilityFilter(id, strict) {
+  try {
+    if (id != null || strict) localStorage.setItem(SB_ABILITY_FILTER_STORAGE_KEY, JSON.stringify({ id: id == null ? null : id, strict: !!strict }));
+    else localStorage.removeItem(SB_ABILITY_FILTER_STORAGE_KEY);
+  } catch (e) { /* 保存できなくても動作は続ける */ }
+}
 const SB_PARTY_COUNT = 20;   // 保存できるパーティ数（パーティ1〜20）
 const sbDefaultPartyName = (n) => `パーティ${n}`;   // n は 1 始まりの番号
 const SB_DEFAULT_PARTY_NAME = sbDefaultPartyName(1);
@@ -9716,6 +10438,8 @@ const sbState = {
   sortKey: sbLoadSortKey(),   // 【表示専用】ボックスの並び方（no/type/hp/atk/def/spa/spd/spe）。保存される
   sortOpt: sbLoadSortOpt(),   // 【表示専用】並び替えのオプション { noEv: 努力値なし, mega: メガを考慮する }。保存される
   typeFilter: sbLoadTypeFilter(),   // 【表示専用】タイプ絞り込み（タイプ名 'fire' 等 / null=なし）。解除するまで保存される
+  abilityFilter: sbLoadAbilityFilter().id,   // 【表示専用】特性絞り込み（特性ID / null=なし）。解除するまで保存される
+  abilityFilterStrict: sbLoadAbilityFilter().strict,   // 【表示専用】true=「いまセット中の特性」だけを対象にする
   megaView: false,  // 【表示専用】trueならメガシンカ可能なポケモンのステータスをメガ後の種族値で表示する（画像やデータそのものは変えない）
   // 以下は「今の手持ち」への窓口。既存の描画・並び替え・追加/外すの処理はこれまで通り
   // sbState.party / sbState.partyName を読み書きするだけでよい（実体は常に working 側）。
@@ -10261,6 +10985,26 @@ function sbTypeMatches(p) {
   if (!p || !p.species) return false;
   return p.species.type1 === f || p.species.type2 === f;
 }
+// 個体が今セットしている特性ID（保存データの形ゆれ＝数値/オブジェクトを吸収する）
+function sbPokeAbilityId(p) {
+  const a = p && p.ability;
+  return (a && typeof a === 'object') ? a.id : a;
+}
+// 絞り込み中の特性に該当するか。絞り込みなしなら全員 true。
+// 通常時の特性だけを見る（メガ後の特性は見ない＝タイプ絞り込みと同じ考え方）。
+function sbAbilityMatches(p) {
+  const f = sbState.abilityFilter;
+  if (f == null) return true;
+  if (!p || !p.species) return false;
+  if (sbPokeAbilityId(p) === f) return true;
+  if (sbState.abilityFilterStrict) return false;
+  const list = p.species.abilities;
+  return Array.isArray(list) && list.includes(f);
+}
+// タイプ・特性の絞り込みをまとめた判定（どちらも設定中なら両方に該当するものだけ true）
+function sbFilterMatches(p) {
+  return sbTypeMatches(p) && sbAbilityMatches(p);
+}
 function sbBoxOrder() {
   const box = sbState.box;
   const order = box.map((_, i) => i);
@@ -10269,16 +11013,16 @@ function sbBoxOrder() {
   if (key === 'no') {
     sorted = order;   // 番号順（sbState.box そのものの並び）
   } else {
-    const val = (i) => {
-      const p = box[i];
+    // 【軽量化】並び替えの比較のたびに実数値を計算し直さず、300匹ぶんを最初に1回だけ計算しておく（結果は同じ）
+    const vals = box.map((p) => {
       if (key === 'type') {
         const id = TYPE_ID[p.species.type1];
         return id === undefined ? 999 : id;
       }
       return sbSortStatValue(p, key);
-    };
+    });
     sorted = order.sort((a, b) => {
-      const va = val(a), vb = val(b);
+      const va = vals[a], vb = vals[b];
       if (va !== vb) return key === 'type' ? va - vb : vb - va;   // タイプ=小さい順／能力=大きい順
       return a - b;
     });
@@ -10290,7 +11034,7 @@ function sbBoxOrder() {
   sorted.forEach((i) => {
     const p = box[i];
     if (sbIsLocked(p)) locked.push(i);
-    else if (sbTypeMatches(p)) hit.push(i);
+    else if (sbFilterMatches(p)) hit.push(i);
     else dim.push(i);
   });
   return hit.concat(dim, locked);
@@ -10309,7 +11053,7 @@ function sbRenderBox() {
   // 並びが前回と同じなら何もしない（努力値を変えた直後などは stats が変わるので、並びの署名で判定する）。
   {
     const order = sbBoxOrder();
-    const sig = sbState.sortKey + ':' + (sbState.sortOpt.noEv ? 1 : 0) + (sbState.sortOpt.mega ? 1 : 0) + ':' + (sbState.typeFilter || '-') + ':' + order.join(',');
+    const sig = sbState.sortKey + ':' + (sbState.sortOpt.noEv ? 1 : 0) + (sbState.sortOpt.mega ? 1 : 0) + ':' + (sbState.typeFilter || '-') + ':' + (sbState.abilityFilter == null ? '-' : sbState.abilityFilter + (sbState.abilityFilterStrict ? 's' : '')) + ':' + order.join(',');
     if (grid.dataset.orderSig !== sig) {
       const byIdx = new Map();
       Array.from(grid.children).forEach((c) => byIdx.set(parseInt(c.dataset.boxIdx, 10), c));
@@ -10326,11 +11070,21 @@ function sbRenderBox() {
   for (let ci = 0; ci < cells.length; ci++) {
     const i = parseInt(cells[ci].dataset.boxIdx, 10);
     const p = sbState.box[i];
-    cells[ci].classList.toggle('selected', sbState.selected === p);
-    cells[ci].classList.toggle('in-party', sbState.party.includes(p));
-    cells[ci].classList.toggle('locked', sbIsLocked(p));
+    // 【軽量化】タップで変わるのは選択中・パーティ入りの数マスだけ。状態の組み合わせをマスに覚えさせ、
+    // 前回と同じマスは class の付け替え自体を行わない（スタイルの再計算を避ける）。
+    const isSel = sbState.selected === p;
+    const isIn = sbState.party.includes(p);
+    const isLocked = sbIsLocked(p);
     // 絞り込みに該当しない購入済みのマスはグレーにする（鍵付きは従来の黒いシルエット表示のままで、二重に灰色にしない）
-    cells[ci].classList.toggle('tf-dim', !sbIsLocked(p) && !sbTypeMatches(p));
+    const isDim = !isLocked && !sbFilterMatches(p);
+    const cellFlags = (isSel ? 1 : 0) | (isIn ? 2 : 0) | (isLocked ? 4 : 0) | (isDim ? 8 : 0);
+    if (cells[ci]._sbFlags !== cellFlags) {
+      cells[ci].classList.toggle('selected', isSel);
+      cells[ci].classList.toggle('in-party', isIn);
+      cells[ci].classList.toggle('locked', isLocked);
+      cells[ci].classList.toggle('tf-dim', isDim);
+      cells[ci]._sbFlags = cellFlags;
+    }
     // 色違いが切り替わったマスだけ画像を差し替える（300匹ぶんを作り直さない）。
     // 画像パスはマスに覚えさせておき、現在の姿と違うときだけ更新する。
     const want = spritePath(p);
@@ -10351,6 +11105,7 @@ function sbRenderBox() {
   if (sel && sel.value !== sbState.sortKey) sel.value = sbState.sortKey;
   sbRenderSortOpts();
   sbRenderTypeFilterBtn();
+  sbRenderAbilityFilterBtn();
   // 見えている付近の画像を読み込み、少し後に読み込み漏れも拾い直す
   sbBoxLoadImages();
   // 【軽量化】タップのたびに溜まらないよう、前回の予約は取り消して最新の1組だけ残す
@@ -10373,6 +11128,16 @@ function sbRenderTypeFilterBtn() {
     ico.innerHTML = '';
     label.textContent = 'タイプ絞込';
   }
+}
+// 特性絞り込みボタンの見た目を現在の状態に合わせる（設定中は特性名で強調、未設定は「特性絞込」）
+function sbRenderAbilityFilterBtn() {
+  const btn = $('sb-ability-filter-btn');
+  if (!btn) return;
+  const f = sbState.abilityFilter;
+  const label = $('sb-ability-filter-label');
+  btn.classList.toggle('active', f != null);
+  label.textContent = f != null ? abilityJp(f) : '特性絞込';
+  btn.title = f != null ? (abilityJp(f) + (sbState.abilityFilterStrict ? '（いまセット中のみ）' : '（持てる特性を含む）')) : '';
 }
 // 並び替えオプション（努力値なし／メガを考慮する）のチェック状態を反映する。
 // 番号順・タイプ順では意味がないので、そのときは薄くして押せなくする（チェックの状態自体は保持する）。
@@ -10471,6 +11236,105 @@ function sbRefreshLockState() {
   sbRenderTypeFilterBtn();
 })();
 
+// 特性絞り込みポップアップ：ボックスのポケモンが持つ特性を五十音順に並べ、選択／解除／とじる を処理する。
+// 選んだら即座に反映して保存（ポップアップは開いたまま。タイプ絞り込みと同じ）。同じ特性をもう一度押すと解除。
+// 一覧には「購入済み（鍵なし）のポケモン」が持てる特性だけを出す（未購入の特性がネタバレにならないように）。
+(function sbSetupAbilityFilter() {
+  const btn = $('sb-ability-filter-btn');
+  const overlay = $('sb-af-overlay');
+  const list = $('sb-af-list');
+  const search = $('sb-af-search');
+  const strictCb = $('sb-af-strict');
+  const clearBtn = $('sb-af-clear');
+  const closeBtn = $('sb-af-close');
+  const countEl = $('sb-af-count');
+  if (!btn || !overlay || !list) return;
+
+  // ひらがな/カタカナ・大文字小文字の違いを無視して探せるようにする
+  const norm = (str) => String(str || '').replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60)).toLowerCase();
+  const collator = new Intl.Collator('ja');
+
+  // 一覧の元データ：[{ id, name, key, count }]（開くたび・チェックを変えるたびに作り直す）
+  let items = [];
+  const buildItems = () => {
+    const counts = new Map();
+    sbState.box.forEach((p) => {
+      if (!p || !p.species || sbIsLocked(p)) return;
+      const ids = new Set();
+      if (!sbState.abilityFilterStrict && Array.isArray(p.species.abilities)) p.species.abilities.forEach((a) => ids.add(a));
+      const cur = sbPokeAbilityId(p);
+      if (cur != null) ids.add(cur);
+      ids.forEach((id) => {
+        if (id === undefined || id === null || id === 0) return;
+        counts.set(id, (counts.get(id) || 0) + 1);
+      });
+    });
+    items = [];
+    counts.forEach((count, id) => {
+      const name = abilityNameById(id);
+      if (name == null) return;   // 名前の無い特性は一覧に出さない
+      items.push({ id, name, key: norm(name), count });
+    });
+    // 選択中の特性が一覧に無い場合（条件を変えた直後など）も、解除できるよう先頭に出しておく
+    if (sbState.abilityFilter != null && !items.some((it) => it.id === sbState.abilityFilter)) {
+      const nm = abilityNameById(sbState.abilityFilter);
+      if (nm != null) items.push({ id: sbState.abilityFilter, name: nm, key: norm(nm), count: 0 });
+    }
+    items.sort((a, b) => collator.compare(a.key, b.key) || a.id - b.id);
+  };
+  const escHtml = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const renderList = () => {
+    const q = norm(search.value.trim());
+    const shown = q ? items.filter((it) => it.key.includes(q)) : items;
+    list.innerHTML = shown.length
+      ? shown.map((it) => {
+          const desc = abilityDescById(it.id);
+          return `<button type="button" class="sb-af-item${it.id === sbState.abilityFilter ? ' selected' : ''}" data-af="${it.id}">` +
+            `<span class="sb-af-name">${escHtml(it.name)}</span><span class="sb-af-num">${it.count}</span>` +
+            (desc ? `<span class="sb-af-desc">${escHtml(desc)}</span>` : '') + `</button>`;
+        }).join('')
+      : '<div class="sb-af-empty">該当する特性がありません</div>';
+    if (countEl) countEl.textContent = `${shown.length}種類`;
+  };
+  const refresh = () => {
+    strictCb.checked = !!sbState.abilityFilterStrict;
+    clearBtn.disabled = sbState.abilityFilter == null;
+    buildItems();
+    renderList();
+  };
+  const apply = (id) => {
+    sbState.abilityFilter = id == null ? null : id;
+    sbSaveAbilityFilter(sbState.abilityFilter, sbState.abilityFilterStrict);
+    // いま見ている個体が該当外になっても詳細は残す（パーティ編成の確認を邪魔しない）。
+    // ボックスだけ並べ直して先頭へ戻す（sbRenderBox が署名の変化を検知してスクロールを先頭に戻す）。
+    sbRenderBox();
+    clearBtn.disabled = sbState.abilityFilter == null;
+    Array.from(list.children).forEach((c) => c.classList && c.classList.toggle('selected', Number(c.dataset.af) === sbState.abilityFilter));
+  };
+  const open = () => { search.value = ''; refresh(); overlay.classList.add('show'); list.scrollTop = 0; };
+  const close = () => { overlay.classList.remove('show'); search.blur(); };
+
+  btn.addEventListener('click', open);
+  closeBtn.addEventListener('click', close);
+  clearBtn.addEventListener('click', () => apply(null));
+  search.addEventListener('input', () => { renderList(); list.scrollTop = 0; });
+  strictCb.addEventListener('change', () => {
+    sbState.abilityFilterStrict = strictCb.checked;
+    sbSaveAbilityFilter(sbState.abilityFilter, sbState.abilityFilterStrict);
+    sbRenderBox();
+    refresh();
+  });
+  list.addEventListener('click', (e) => {
+    const it = e.target.closest('[data-af]');
+    if (!it) return;
+    const id = Number(it.dataset.af);
+    apply(sbState.abilityFilter === id ? null : id);   // 同じ特性をもう一度＝解除
+  });
+  // 枠の外（暗い背景）をタップしても閉じる
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  sbRenderAbilityFilterBtn();
+})();
+
 // タップはグリッドに1つだけ付ける（イベント委譲）
 // ボックスをスクロールして止まったら、画面から遠く離れた画像を手放し、近づいた分を読み込む。
 $('sb-box-grid').addEventListener('scroll', () => {
@@ -10483,7 +11347,7 @@ $('sb-box-grid').addEventListener('click', (e) => {
   const p = sbState.box[parseInt(cell.dataset.boxIdx, 10)];
   if (sbIsLocked(p)) return; // 未購入：触れても何も起きない
   // タイプ絞り込みに該当しないマスも触れても何も起きない（ただし既にパーティにいる個体は、外せなくならないよう操作を許す）
-  if (!sbTypeMatches(p) && !sbState.party.includes(p)) return;
+  if (!sbFilterMatches(p) && !sbState.party.includes(p)) return;
   sbOnBoxTap(p);
 });
 

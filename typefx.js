@@ -25616,6 +25616,1410 @@ SPECIAL_IMPACT_FX[338] = SPECIAL_IMPACT_FX[333];
     shakes: [{ ampPx: 15, durationMs: 260, freq: 36, delay: FANG_BITE_MS }],
   };
 
+  // ============================================================
+  // ファセットグロース（attack310・オリジナル／いわ・物理・威力60・命中100・ひるみ10%）専用演出
+  // 参考：黄金の閃光が弾ける「斬撃ヒット」系の演出（縦の光柱＋横に伸びる光条＋金の光輪）
+  // 構成：①攻撃側の前に、紅金の多面体カット（ダート型の結晶刃）が生まれ、金の粒子が集まる
+  //       ②結晶刃が金の光跡を引いて相手へ突き刺さる
+  //       ③着弾点を貫く縦の白金の光柱／横に伸びる放射状の光条／金の光輪／黄白の芯の閃光
+  //       ④着弾点から多面体の金結晶が放射状に「育って」(growth) 突き出し、砕け散る
+  //       ⑤ダイヤ形のきらめきと金の破片が舞う余韻
+  // 「ファセット＝宝石のカット面」「グロース＝結晶が成長する」を、
+  // 紅金の結晶刃の刺突 → 着弾点から結晶が伸びる、という流れで表現している。
+  //
+  // info = { from:{x,y}, to:{x,y}, scale } は spawnPowerGemSpecial と同じ（playSpecialTypeEffect が実測）。
+  // ============================================================
+  const FACET_CHARGE_MS = 400;                              // ①結晶刃の生成＋粒子の収束
+  const FACET_DASH_MS = 190;                                // ②刺突の飛翔
+  const FACET_HIT_MS = FACET_CHARGE_MS + FACET_DASH_MS;     // 着弾（＝ダメージの瞬間）
+  const FACET_END_MS = FACET_HIT_MS + 900;                  // 余韻の粒子が消えるまで
+
+  function spawnFacetGrowthSpecial(particles, w, h, info) {
+    const TAU = Math.PI * 2;
+    // 座標情報が渡されなかった場合の保険（左下→右上の想定配置）
+    const from = (info && info.from) || { x: w * 0.28, y: h * 0.68 };
+    const to = (info && info.to) || { x: w * 0.72, y: h * 0.32 };
+    const S = (info && info.scale) || 1;
+    const R = Math.max(w, h);
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const ux = dx / dist, uy = dy / dist;
+
+    const GOLD = '#ffd35a', PALE = '#fff6cc', WHITE = '#ffffff';
+    const ROSE = '#ff8296';
+    const easeOutBack = (t) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+
+    // ---- 共通ヘルパー ----
+    function polyFill(ctx, pts, fill) {
+      ctx.fillStyle = fill;
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // 4方向のダイヤ形きらめき（宝石の「キラッ」）。rot で回転。
+    function sparkle(ctx, x, y, size, alpha, color, rot) {
+      if (alpha <= 0.01 || size <= 0.3) return;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rot || 0);
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, size * 0.95);
+      g.addColorStop(0, rgba(color, alpha * 0.55));
+      g.addColorStop(1, rgba(color, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, size * 0.95, 0, TAU); ctx.fill();
+      ctx.fillStyle = rgba(color, alpha);
+      ctx.beginPath();
+      ctx.moveTo(0, -size);
+      ctx.quadraticCurveTo(size * 0.1, -size * 0.1, size, 0);
+      ctx.quadraticCurveTo(size * 0.1, size * 0.1, 0, size);
+      ctx.quadraticCurveTo(-size * 0.1, size * 0.1, -size, 0);
+      ctx.quadraticCurveTo(-size * 0.1, -size * 0.1, 0, -size);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = rgba(WHITE, alpha);
+      ctx.beginPath(); ctx.arc(0, 0, Math.max(0.6, size * 0.13), 0, TAU); ctx.fill();
+      ctx.restore();
+    }
+
+    // 紅金のダート型結晶刃（先端が +x 方向）。4つのカット面を明暗で塗り分ける。
+    function drawDart(ctx, x, y, ang, len, alpha, glowK) {
+      if (alpha <= 0.01 || len <= 0.5) return;
+      const Wd = len * 0.46;
+      const T = [len * 0.62, 0], A = [-len * 0.34, -Wd], B = [-len * 0.34, Wd];
+      const Tl = [-len * 0.66, 0], N = [-len * 0.06, 0];
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(ang);
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, len * 1.35);
+      g.addColorStop(0, rgba(GOLD, alpha * 0.55 * glowK));
+      g.addColorStop(1, rgba(GOLD, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, len * 1.35, 0, TAU); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      polyFill(ctx, [T, A, N], rgba('#ff8aa0', alpha));   // 上前（最も明るい面）
+      polyFill(ctx, [A, Tl, N], rgba('#d83450', alpha));  // 上後
+      polyFill(ctx, [Tl, B, N], rgba('#8c1030', alpha));  // 下後（最も暗い面）
+      polyFill(ctx, [B, T, N], rgba('#c0243f', alpha));   // 下前
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = rgba(PALE, alpha * 0.95);
+      ctx.lineWidth = Math.max(1, len * 0.06);
+      ctx.beginPath();
+      ctx.moveTo(T[0], T[1]); ctx.lineTo(A[0], A[1]); ctx.lineTo(Tl[0], Tl[1]); ctx.lineTo(B[0], B[1]);
+      ctx.closePath(); ctx.stroke();
+      ctx.strokeStyle = rgba(WHITE, alpha * 0.7);
+      ctx.lineWidth = Math.max(0.8, len * 0.035);
+      ctx.beginPath();
+      ctx.moveTo(T[0], T[1]); ctx.lineTo(N[0], N[1]);
+      ctx.moveTo(A[0], A[1]); ctx.lineTo(N[0], N[1]); ctx.lineTo(B[0], B[1]);
+      ctx.stroke();
+      ctx.restore();
+      sparkle(ctx, x + Math.cos(ang) * len * 0.58, y + Math.sin(ang) * len * 0.58, len * 0.32, alpha * 0.85, WHITE, ang);
+    }
+
+    // 成長する結晶（根元が原点、先端が +x 方向）。3つのカット面＋稜線。
+    function drawCrystal(ctx, x, y, ang, L, alpha, pal) {
+      if (alpha <= 0.01 || L <= 0.5) return;
+      const W = L * 0.2;
+      const P0 = [L, 0], sU = [L * 0.66, -W], sD = [L * 0.66, W];
+      const bU = [0, -W * 0.72], bD = [0, W * 0.72], bM = [0, 0];
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(ang);
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(L * 0.5, 0, 0, L * 0.5, 0, L * 0.95);
+      g.addColorStop(0, rgba(pal.mid, alpha * 0.26));
+      g.addColorStop(1, rgba(pal.mid, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(L * 0.5, 0, L * 0.95, 0, TAU); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      polyFill(ctx, [P0, sU, bU, bM], rgba(pal.hi, alpha));
+      polyFill(ctx, [P0, sD, bD, bM], rgba(pal.lo, alpha));
+      polyFill(ctx, [P0, [L * 0.66, -W * 0.35], [L * 0.3, 0]], rgba(pal.mid, alpha));
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = rgba(PALE, alpha * 0.9);
+      ctx.lineWidth = Math.max(0.9, L * 0.03);
+      ctx.beginPath();
+      ctx.moveTo(P0[0], P0[1]); ctx.lineTo(sU[0], sU[1]); ctx.lineTo(bU[0], bU[1]);
+      ctx.lineTo(bD[0], bD[1]); ctx.lineTo(sD[0], sD[1]); ctx.closePath(); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(P0[0], P0[1]); ctx.lineTo(bM[0], bM[1]); ctx.stroke();
+      ctx.restore();
+    }
+
+    // 先細りの光条（根元が白、先端へ向けて金→透明）
+    function drawRay(ctx, x, y, ang, len, bw, alpha) {
+      if (alpha <= 0.01 || len <= 1) return;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(ang);
+      const g = ctx.createLinearGradient(0, 0, len, 0);
+      g.addColorStop(0, rgba(WHITE, alpha));
+      g.addColorStop(0.35, rgba(GOLD, alpha * 0.75));
+      g.addColorStop(1, rgba(GOLD, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(0, -bw); ctx.lineTo(len, 0); ctx.lineTo(0, bw);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+
+    // ============================================================
+    // ①②  結晶刃（ダート）：生成 → 構え → 刺突
+    // ============================================================
+    // 攻撃側の少し前（やや上）に浮かべる。
+    const p0 = { x: from.x + ux * 34 * S, y: from.y + uy * 34 * S - 14 * S };
+    const aimD = Math.atan2(to.y - p0.y, to.x - p0.x);
+    const DART_LEN = 52 * S;
+    const dartPos = (ms) => {
+      if (ms < FACET_CHARGE_MS) {
+        const u = ms / FACET_CHARGE_MS;
+        return {
+          x: p0.x + Math.sin(ms * 0.05) * 1.4 * S * u,
+          y: p0.y - 6 * S * u + Math.cos(ms * 0.06) * 1.4 * S * u,
+          // 構えの間は少し傾けておき、刺突の直前に相手へ向ける
+          ang: aimD + (1 - easeOutBack(Math.min(1, u * 1.3))) * -0.9,
+          sc: 0.15 + 0.85 * Math.max(0, easeOutBack(Math.min(1, u * 1.6))),
+          dash: 0,
+        };
+      }
+      const u2 = clamp01((ms - FACET_CHARGE_MS) / FACET_DASH_MS);
+      const e = easeInCubic(u2);
+      return { x: lerp(p0.x, to.x, e), y: lerp(p0.y, to.y, e), ang: aimD, sc: 1, dash: u2 };
+    };
+    particles.push({
+      delay: 0, maxLife: FACET_HIT_MS + 20,
+      draw(ctx, t) {
+        const ms = t * (FACET_HIT_MS + 20);
+        const P = dartPos(ms);
+        const fadeIn = Math.min(1, ms / 120);
+        const fadeOut = ms > FACET_HIT_MS ? Math.max(0, 1 - (ms - FACET_HIT_MS) / 20) : 1;
+        const alpha = fadeIn * fadeOut;
+        if (P.dash > 0) {
+          // 金の光跡（刺突の軌道に沿って後ろへ伸びる）＋残像
+          const back = dartPos(Math.max(0, ms - 70));
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.lineCap = 'round';
+          const g1 = ctx.createLinearGradient(P.x, P.y, back.x, back.y);
+          g1.addColorStop(0, rgba(PALE, 0.9 * alpha));
+          g1.addColorStop(0.5, rgba(GOLD, 0.55 * alpha));
+          g1.addColorStop(1, rgba(GOLD, 0));
+          ctx.strokeStyle = g1;
+          ctx.lineWidth = 9 * S;
+          ctx.beginPath(); ctx.moveTo(P.x, P.y); ctx.lineTo(back.x, back.y); ctx.stroke();
+          ctx.lineWidth = 3 * S;
+          ctx.strokeStyle = rgba(WHITE, 0.85 * alpha);
+          ctx.beginPath(); ctx.moveTo(P.x, P.y); ctx.lineTo(back.x, back.y); ctx.stroke();
+          ctx.restore();
+          for (let k = 1; k <= 3; k++) {
+            const q = dartPos(Math.max(0, ms - k * 22));
+            drawDart(ctx, q.x, q.y, q.ang, DART_LEN * q.sc, 0.3 * alpha / k, 0.3);
+          }
+        }
+        drawDart(ctx, P.x, P.y, P.ang, DART_LEN * P.sc, alpha, 1 + P.dash * 0.6);
+      },
+    });
+
+    // 攻撃側で金の粒子が結晶刃へ収束する（チャージ）
+    for (let i = 0; i < 14; i++) {
+      const a0 = rand(0, TAU), r0 = rand(46, 92) * S;
+      particles.push({
+        delay: rand(0, FACET_CHARGE_MS - 170), maxLife: 300, rot: rand(0, TAU),
+        draw(ctx, t) {
+          const e = easeInCubic(t);
+          const x = p0.x + Math.cos(a0) * r0 * (1 - e), y = p0.y + Math.sin(a0) * r0 * (1 - e);
+          const a = (t < 0.8 ? 1 : (1 - t) / 0.2) * 0.9;
+          sparkle(ctx, x, y, (3 + 4 * t) * S, a, i % 3 === 0 ? ROSE : GOLD, this.rot + t * 4);
+        },
+      });
+    }
+    // 結晶刃のまわりで収縮する金の輪
+    particles.push({
+      delay: 40, maxLife: FACET_CHARGE_MS - 40, blend: 'lighter',
+      draw(ctx, t) {
+        const e = easeOutCubic(t);
+        ctx.strokeStyle = rgba(GOLD, Math.min(1, t * 2.2) * (t > 0.85 ? (1 - t) / 0.15 : 1) * 0.8);
+        ctx.lineWidth = Math.max(1, 2 * S);
+        ctx.beginPath(); ctx.arc(p0.x, p0.y, Math.max(2, (58 - 42 * e) * S), 0, TAU); ctx.stroke();
+      },
+    });
+
+    // ============================================================
+    // ③  着弾：芯の閃光・縦の光柱・横の光条・金の光輪
+    // ============================================================
+    // 黄白の芯の閃光
+    particles.push({
+      delay: FACET_HIT_MS, maxLife: 400, blend: 'lighter',
+      draw(ctx, t) {
+        const e = easeOutCubic(t);
+        const r = Math.max(2, (26 + 96 * e) * S);
+        const a = Math.pow(1 - t, 1.5);
+        const g = ctx.createRadialGradient(to.x, to.y, 0, to.x, to.y, r);
+        g.addColorStop(0, rgba(WHITE, a));
+        g.addColorStop(0.3, rgba(PALE, a * 0.85));
+        g.addColorStop(0.65, rgba(GOLD, a * 0.4));
+        g.addColorStop(1, rgba(GOLD, 0));
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(to.x, to.y, r, 0, TAU); ctx.fill();
+      },
+    });
+    // 着弾点を貫く縦の光柱（紡錘形）
+    particles.push({
+      delay: FACET_HIT_MS, maxLife: 440, blend: 'lighter',
+      draw(ctx, t) {
+        const e = easeOutCubic(t);
+        const Hp = Math.min(h * 0.5, 170 * S) * (0.55 + 0.45 * Math.min(1, t * 4));
+        const wd = (3 + 20 * (1 - e)) * S;
+        const a = Math.pow(1 - t, 1.3);
+        const g = ctx.createLinearGradient(to.x - wd * 2, 0, to.x + wd * 2, 0);
+        g.addColorStop(0, rgba(GOLD, 0));
+        g.addColorStop(0.5, rgba(WHITE, a));
+        g.addColorStop(1, rgba(GOLD, 0));
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(to.x, to.y - Hp);
+        ctx.quadraticCurveTo(to.x + wd * 2, to.y, to.x, to.y + Hp);
+        ctx.quadraticCurveTo(to.x - wd * 2, to.y, to.x, to.y - Hp);
+        ctx.closePath(); ctx.fill();
+      },
+    });
+    // 横に長く伸びる閃光（レンズフレア風）
+    particles.push({
+      delay: FACET_HIT_MS, maxLife: 420, blend: 'lighter',
+      draw(ctx, t) {
+        const e = easeOutQuint(Math.min(1, t / 0.5));
+        const Lh = R * 0.42 * e;
+        const a = Math.pow(1 - t, 1.2);
+        const th = Math.max(0.8, (5 * (1 - t) + 1.5) * S);
+        const g = ctx.createLinearGradient(to.x - Lh, 0, to.x + Lh, 0);
+        g.addColorStop(0, rgba(GOLD, 0));
+        g.addColorStop(0.5, rgba(WHITE, a));
+        g.addColorStop(1, rgba(GOLD, 0));
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(to.x - Lh, to.y);
+        ctx.quadraticCurveTo(to.x, to.y - th * 2, to.x + Lh, to.y);
+        ctx.quadraticCurveTo(to.x, to.y + th * 2, to.x - Lh, to.y);
+        ctx.closePath(); ctx.fill();
+      },
+    });
+    // 放射状の光条：横向きを長く、斜めを短く
+    const rayDefs = [
+      { a: 0, len: R * 0.34, bw: 7 }, { a: Math.PI, len: R * 0.34, bw: 7 },
+      { a: 0.14, len: R * 0.24, bw: 5 }, { a: Math.PI - 0.14, len: R * 0.24, bw: 5 },
+      { a: -0.14, len: R * 0.24, bw: 5 }, { a: Math.PI + 0.14, len: R * 0.24, bw: 5 },
+    ];
+    for (let i = 0; i < 9; i++) rayDefs.push({ a: rand(0, TAU), len: rand(70, 130) * S, bw: rand(2.5, 4.5) });
+    rayDefs.forEach((rd, i) => {
+      particles.push({
+        delay: FACET_HIT_MS + rand(0, 40), maxLife: rand(360, 480), blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutQuint(Math.min(1, t / 0.4));
+          drawRay(ctx, to.x, to.y, rd.a, rd.len * e, rd.bw * S * (1 - t * 0.6), Math.pow(1 - t, 1.4) * (i < 6 ? 1 : 0.85));
+        },
+      });
+    });
+    // 着弾点の大きな十字きらめき（横長）
+    particles.push({
+      delay: FACET_HIT_MS, maxLife: 320, blend: 'lighter',
+      draw(ctx, t) {
+        const a = Math.sin(Math.PI * Math.min(1, t * 1.1));
+        ctx.save();
+        ctx.translate(to.x, to.y);
+        ctx.scale(2.2, 1);
+        sparkle(ctx, 0, 0, (30 + 26 * t) * S, a, WHITE, 0);
+        ctx.restore();
+      },
+    });
+    // 金の光輪 2 重
+    [{ d: 0, r: 100, lw: 3.2, c: GOLD, life: 420 }, { d: 80, r: 150, lw: 2, c: PALE, life: 480 }].forEach((rg) => {
+      particles.push({
+        delay: FACET_HIT_MS + rg.d, maxLife: rg.life, blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          ctx.strokeStyle = rgba(rg.c, (1 - t) * 0.95);
+          ctx.lineWidth = Math.max(0.8, rg.lw * S * (1 - t * 0.7));
+          ctx.beginPath(); ctx.arc(to.x, to.y, (12 + rg.r * e) * S, 0, TAU); ctx.stroke();
+        },
+      });
+    });
+    // 回転しながら広がる光輪の円弧
+    for (let i = 0; i < 3; i++) {
+      const a0 = rand(0, TAU), span = rand(0.9, 1.6);
+      particles.push({
+        delay: FACET_HIT_MS + 30 + i * 40, maxLife: 460, blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          ctx.strokeStyle = rgba(i % 2 ? PALE : GOLD, (1 - t) * 0.85);
+          ctx.lineWidth = Math.max(0.8, 2.4 * S * (1 - t * 0.6));
+          ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.arc(to.x, to.y, (46 + 36 * i + 40 * e) * S, a0 + t * 1.6, a0 + t * 1.6 + span); ctx.stroke();
+        },
+      });
+    }
+    // 弾ける火花の筋（金に紅が混ざる）
+    for (let i = 0; i < 18; i++) {
+      const a0 = rand(0, TAU), d0 = rand(40, 110) * S, ln = rand(14, 40) * S;
+      const col = i % 4 === 0 ? ROSE : GOLD;
+      particles.push({
+        delay: FACET_HIT_MS + rand(0, 50), maxLife: rand(260, 400), blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutQuint(t);
+          const r1 = d0 * e, r0 = Math.max(0, r1 - ln * (1 - t * 0.5));
+          ctx.strokeStyle = rgba(col, (1 - t) * 0.95);
+          ctx.lineWidth = Math.max(1, 2 * S * (1 - t * 0.5));
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(to.x + Math.cos(a0) * r0, to.y + Math.sin(a0) * r0);
+          ctx.lineTo(to.x + Math.cos(a0) * r1, to.y + Math.sin(a0) * r1);
+          ctx.stroke();
+        },
+      });
+    }
+    // 着弾の瞬間に画面を揺らす（SPECIAL_IMPACT_FX 側の shakes は delay を解釈しないため、演出内で発火）
+    let shaken = false;
+    particles.push({
+      delay: FACET_HIT_MS, maxLife: 10,
+      update() {
+        if (shaken) return;
+        shaken = true;
+        const layer = document.getElementById('special-fx-layer');
+        const target = (layer && layer.parentElement) || layer;
+        if (target) screenShake(target, { ampPx: 10, durationMs: 260, freq: 34 });
+      },
+      draw() {},
+    });
+
+    // ============================================================
+    // ④  着弾点から多面体の金結晶が放射状に「育つ」→ 砕ける
+    // ============================================================
+    const PAL_GOLD = { hi: '#fff2b0', mid: '#ffd24a', lo: '#d08a14' };
+    const PAL_ROSE = { hi: '#ffc0ca', mid: '#ff5a78', lo: '#a01c3c' };
+    const CRYSTAL_N = 9, CRYSTAL_LIFE = 760;
+    const crystals = [];
+    for (let j = 0; j < CRYSTAL_N; j++) {
+      crystals.push({
+        ang: (j / CRYSTAL_N) * TAU - Math.PI / 2 + rand(-0.15, 0.15),
+        L: (j % 2 ? 32 : 54) * S * rand(0.9, 1.15),
+        pal: (j % 3 === 2) ? PAL_ROSE : PAL_GOLD,
+        d: FACET_HIT_MS + 20 + (j % 3) * 35,
+      });
+    }
+    const R0 = 8 * S;
+    crystals.forEach((c) => {
+      particles.push({
+        delay: c.d, maxLife: CRYSTAL_LIFE,
+        draw(ctx, t) {
+          const ms = t * CRYSTAL_LIFE;
+          const gp = clamp01(ms / 300);
+          const fp = clamp01((ms - 470) / 290);
+          const Lc = c.L * Math.max(0.01, easeOutBack(gp)) * (1 - 0.3 * fp);
+          drawCrystal(ctx, to.x + Math.cos(c.ang) * R0, to.y + Math.sin(c.ang) * R0, c.ang, Lc, (1 - fp) * 0.93, c.pal);
+        },
+      });
+    });
+
+    // 結晶が砕けて飛び散る破片（ダイヤ形の小片）
+    function addShard(delay, ox, oy, a0, speed, col) {
+      const life = rand(420, 640), spin = rand(-8, 8), sz = rand(3.5, 6.5) * S, rot0 = rand(0, TAU);
+      particles.push({
+        delay, maxLife: life,
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const x = ox + Math.cos(a0) * speed * e, y = oy + Math.sin(a0) * speed * e + t * t * 38 * S;
+          const a = t < 0.6 ? 1 : (1 - t) / 0.4;
+          ctx.save();
+          ctx.translate(x, y); ctx.rotate(rot0 + t * spin);
+          polyFill(ctx, [[sz * 1.5, 0], [0, -sz * 0.8], [-sz, 0], [0, sz * 0.8]], rgba(col, a * 0.95));
+          ctx.strokeStyle = rgba(WHITE, a * 0.7); ctx.lineWidth = Math.max(0.6, S * 0.8);
+          ctx.beginPath(); ctx.moveTo(sz * 1.5, 0); ctx.lineTo(-sz, 0); ctx.stroke();
+          ctx.restore();
+        },
+      });
+    }
+    for (let i = 0; i < 14; i++) {
+      addShard(FACET_HIT_MS + rand(20, 120), to.x, to.y, rand(0, TAU), rand(40, 110) * S, pick(['#ffd35a', '#fff2b0', '#ff5a78']));
+    }
+    for (let i = 0; i < 12; i++) {
+      const c = pick(crystals);
+      const tipR = R0 + c.L * 0.8;
+      addShard(FACET_HIT_MS + 470 + rand(0, 90), to.x + Math.cos(c.ang) * tipR, to.y + Math.sin(c.ang) * tipR,
+        c.ang + rand(-0.9, 0.9), rand(18, 56) * S, pick(['#ffd35a', '#fff2b0', '#ffffff', '#ff8296']));
+    }
+
+    // ============================================================
+    // ⑤  余韻：ダイヤ形のきらめきが瞬きながら消える
+    // ============================================================
+    for (let i = 0; i < 16; i++) {
+      const a0 = rand(0, TAU), rr = rand(18, 98) * S, sz = rand(6, 13) * S, rot0 = rand(0, TAU);
+      const col = i % 5 === 0 ? ROSE : (i % 2 ? GOLD : WHITE);
+      particles.push({
+        delay: FACET_HIT_MS + rand(80, 760), maxLife: rand(300, 460),
+        draw(ctx, t) {
+          sparkle(ctx, to.x + Math.cos(a0) * rr, to.y + Math.sin(a0) * rr - t * 10 * S, sz * (0.6 + 0.4 * Math.sin(Math.PI * t)), Math.sin(Math.PI * t), col, rot0 + t * 2);
+        },
+      });
+    }
+  }
+
+  SPECIAL_SCENES[310] = spawnFacetGrowthSpecial;
+  SPECIAL_DURATION_MS[310] = FACET_END_MS;
+  FLIGHT_MOVE_IDS.push(310);
+  // 着弾の瞬間に白金の閃光→余韻の琥珀色。画面の揺れは演出内（spawnFacetGrowthSpecial）で着弾時に発火する。
+  SPECIAL_IMPACT_FX[310] = {
+    flashes: [
+      { color: '#fffbe6', peakAlpha: 0.7, durationMs: 200, delay: FACET_HIT_MS },
+      { color: '#ffd35a', peakAlpha: 0.3, durationMs: 460, delay: FACET_HIT_MS + 30 },
+    ],
+  };
+
+  // ============================================================
+  // アリダードサイト（attack220・オリジナル／じめん・特殊・威力90・命中100）専用演出
+  // 参考：金色の測量線（目盛り付き）が相手を囲む三角形を描き、頂点にレンズフレアが灯る演出
+  // 「アリダード＝測量用の照準器」を、測量 → 照準を絞る → 地面ごと撃ち抜く、で表現している。
+  // 構成：①攻撃側の手元に金の輪が開き、金のランタン結晶が周囲に浮かぶ
+  //       ②金の測量線が相手を囲む三角形を描く（目盛りの刻み・頂点のレンズフレア・照準の十字）
+  //       ③三角形が相手へ向けて一気に収束（ロックオン）
+  //       ④着弾：閃光＋足元から金の光が噴き上がり、地面が割れ、黒い岩片と土煙が飛び散る
+  //       ⑤金の亀裂とダイヤ形のきらめきが消える余韻
+  //
+  // info = { from:{x,y}, to:{x,y}, scale } は spawnPowerGemSpecial と同じ（playSpecialTypeEffect が実測）。
+  // ============================================================
+  const ALI_CHARGE_MS = 320;                         // ①輪とランタンの生成
+  const ALI_LOCK_MS = 760;                           // ③三角形が収束し始める時刻
+  const ALI_HIT_MS = 900;                            // 着弾（＝ダメージの瞬間）
+  const ALI_END_MS = ALI_HIT_MS + 760;               // 余韻が消えるまで
+
+  function spawnAlidadeSightSpecial(particles, w, h, info) {
+    const TAU = Math.PI * 2;
+    const from = (info && info.from) || { x: w * 0.28, y: h * 0.68 };
+    const to = (info && info.to) || { x: w * 0.72, y: h * 0.32 };
+    const S = (info && info.scale) || 1;
+    const R = Math.max(w, h);
+
+    const GOLD = '#ffd35a', PALE = '#fff6cc', WHITE = '#ffffff';
+    const DUST = '#c9a874';
+    const easeOutBack = (t) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+
+    function polyFill(ctx, pts, fill) {
+      ctx.fillStyle = fill;
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // 4方向のダイヤ形きらめき
+    function sparkle(ctx, x, y, size, alpha, color, rot) {
+      if (alpha <= 0.01 || size <= 0.3) return;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rot || 0);
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, size * 0.95);
+      g.addColorStop(0, rgba(color, alpha * 0.55));
+      g.addColorStop(1, rgba(color, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, size * 0.95, 0, TAU); ctx.fill();
+      ctx.fillStyle = rgba(color, alpha);
+      ctx.beginPath();
+      ctx.moveTo(0, -size);
+      ctx.quadraticCurveTo(size * 0.1, -size * 0.1, size, 0);
+      ctx.quadraticCurveTo(size * 0.1, size * 0.1, 0, size);
+      ctx.quadraticCurveTo(-size * 0.1, size * 0.1, -size, 0);
+      ctx.quadraticCurveTo(-size * 0.1, -size * 0.1, 0, -size);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = rgba(WHITE, alpha);
+      ctx.beginPath(); ctx.arc(0, 0, Math.max(0.6, size * 0.13), 0, TAU); ctx.fill();
+      ctx.restore();
+    }
+
+    // ---- 幾何：攻撃側の手元 p0、相手を囲む三角形の頂点 V1 / V2 ----
+    const p0 = { x: from.x + Math.sign(to.x - from.x || 1) * 30 * S, y: from.y - 10 * S };
+    const dAT = Math.hypot(to.x - p0.x, to.y - p0.y) || 1;
+    const dux = (to.x - p0.x) / dAT, duy = (to.y - p0.y) / dAT;   // p0 → 相手 の単位ベクトル
+    const dnx = -duy, dny = dux;                                   // その法線
+    const aimAng = Math.atan2(duy, dux);
+    const spread = Math.max(80 * S, Math.min(170 * S, dAT * 0.42 + 30 * S));
+    const farD = dAT + 70 * S;
+    const cx = (v) => Math.max(12, Math.min(w - 12, v));
+    const cy = (v) => Math.max(12, Math.min(h - 12, v));
+    const V1 = { x: cx(p0.x + dux * farD + dnx * spread), y: cy(p0.y + duy * farD + dny * spread) };
+    const V2 = { x: cx(p0.x + dux * farD - dnx * spread), y: cy(p0.y + duy * farD - dny * spread) };
+    const groundY = to.y + 40 * S;                                 // 相手の足元（地面）
+
+    // 目盛り付きの金の測量線。prog=描画済みの割合、glowK=太さ・輝きの倍率
+    function drawBeam(ctx, x0, y0, x1, y1, prog, alpha, glowK) {
+      if (prog <= 0 || alpha <= 0.01) return;
+      const len = Math.hypot(x1 - x0, y1 - y0);
+      if (len < 1) return;
+      const ex = (x1 - x0) / len, ey = (y1 - y0) / len;
+      const hx = x0 + (x1 - x0) * prog, hy = y0 + (y1 - y0) * prog;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = rgba(GOLD, alpha * 0.3); ctx.lineWidth = 8 * glowK * S;
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(hx, hy); ctx.stroke();
+      ctx.strokeStyle = rgba('#ffe27a', alpha * 0.85); ctx.lineWidth = 3 * glowK * S;
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(hx, hy); ctx.stroke();
+      ctx.strokeStyle = rgba(WHITE, alpha); ctx.lineWidth = Math.max(1, 1.3 * S);
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(hx, hy); ctx.stroke();
+      // 目盛り（定規の刻み）：4本ごとに長い
+      const step = 15 * S, cnt = Math.floor((len * prog) / step);
+      ctx.strokeStyle = rgba(PALE, alpha * 0.9); ctx.lineWidth = Math.max(1, 1.4 * S);
+      ctx.beginPath();
+      for (let i = 1; i <= cnt; i++) {
+        const px = x0 + ex * step * i, py = y0 + ey * step * i, tl = (i % 4 === 0 ? 8 : 4) * S;
+        ctx.moveTo(px + ey * tl, py - ex * tl);
+        ctx.lineTo(px - ey * tl, py + ex * tl);
+      }
+      ctx.stroke();
+      ctx.restore();
+      if (prog < 1) sparkle(ctx, hx, hy, 11 * S, alpha, WHITE, 0.4);
+    }
+
+    // 金のランタン結晶（宙に浮かぶ小さな六角柱の灯り）
+    function drawLantern(ctx, x, y, sz, alpha) {
+      if (alpha <= 0.01 || sz <= 0.5) return;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.globalCompositeOperation = 'lighter';
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sz * 2.2);
+      g.addColorStop(0, rgba(GOLD, alpha * 0.5));
+      g.addColorStop(1, rgba(GOLD, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(0, 0, sz * 2.2, 0, TAU); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      const T = [0, -sz * 1.1], UL = [-sz * 0.55, -sz * 0.5], UR = [sz * 0.55, -sz * 0.5];
+      const LL = [-sz * 0.55, sz * 0.6], LR = [sz * 0.55, sz * 0.6], Bm = [0, sz * 0.9];
+      polyFill(ctx, [T, UL, LL, Bm], rgba('#ffeaa6', alpha));
+      polyFill(ctx, [T, UR, LR, Bm], rgba('#e6a424', alpha));
+      polyFill(ctx, [[0, -sz * 0.6], [sz * 0.22, 0], [0, sz * 0.5], [-sz * 0.22, 0]], rgba(WHITE, alpha * 0.9));
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = rgba(PALE, alpha * 0.9); ctx.lineWidth = Math.max(0.9, sz * 0.08);
+      ctx.beginPath();
+      ctx.moveTo(T[0], T[1]); ctx.lineTo(UR[0], UR[1]); ctx.lineTo(LR[0], LR[1]); ctx.lineTo(Bm[0], Bm[1]);
+      ctx.lineTo(LL[0], LL[1]); ctx.lineTo(UL[0], UL[1]); ctx.closePath(); ctx.stroke();
+      ctx.restore();
+    }
+
+    const fadeOutAtLock = (ms) => (ms > ALI_LOCK_MS ? 1 - clamp01((ms - ALI_LOCK_MS) / 140) : 1);
+
+    // ============================================================
+    // ①  攻撃側：金の輪（照準の絞り）とランタン結晶
+    // ============================================================
+    [0, 18].forEach((off, ri) => {
+      particles.push({
+        delay: 0, maxLife: ALI_HIT_MS, blend: 'lighter',
+        draw(ctx, t) {
+          const ms = t * ALI_HIT_MS;
+          const sc = Math.max(0.01, easeOutBack(clamp01((ms - ri * 60) / 260)));
+          const a = clamp01(ms / 150) * fadeOutAtLock(ms);
+          if (a <= 0.01) return;
+          const rx = 34 * S * sc, ry = 12 * S * sc;
+          const x = p0.x + dux * off * S, y = p0.y + duy * off * S;
+          ctx.lineCap = 'round';
+          ctx.strokeStyle = rgba(GOLD, a * 0.9); ctx.lineWidth = Math.max(1.2, 2.6 * S);
+          ctx.beginPath(); ctx.ellipse(x, y, rx, ry, aimAng + Math.PI / 2, 0, TAU); ctx.stroke();
+          ctx.strokeStyle = rgba(WHITE, a * 0.7); ctx.lineWidth = Math.max(0.8, 1 * S);
+          ctx.beginPath(); ctx.ellipse(x, y, rx, ry, aimAng + Math.PI / 2, 0, TAU); ctx.stroke();
+          if (ri === 0) sparkle(ctx, x + dnx * rx, y + dny * rx, 8 * S * sc, a, WHITE, ms * 0.004);
+        },
+      });
+    });
+    const lanternSpots = [
+      { x: from.x + dnx * -56 * S - dux * 8 * S, y: from.y - 30 * S, ph: 0.0, d: 40 },
+      { x: from.x + dnx * 52 * S + dux * 10 * S, y: from.y - 40 * S, ph: 2.1, d: 110 },
+      { x: from.x - dux * 36 * S + dnx * 8 * S, y: from.y + 26 * S, ph: 4.0, d: 180 },
+    ];
+    lanternSpots.forEach((ls) => {
+      particles.push({
+        delay: 0, maxLife: ALI_HIT_MS,
+        draw(ctx, t) {
+          const ms = t * ALI_HIT_MS;
+          const sc = Math.max(0.01, easeOutBack(clamp01((ms - ls.d) / 240)));
+          const a = clamp01((ms - ls.d) / 160) * fadeOutAtLock(ms);
+          const bob = Math.sin(ms * 0.006 + ls.ph) * 4 * S;
+          drawLantern(ctx, ls.x, ls.y + bob, 14 * S * sc, a);
+          if (a > 0.3 && ((ms * 0.05 + ls.ph * 10) | 0) % 5 === 0) sparkle(ctx, ls.x + 10 * S, ls.y + bob - 12 * S, 4 * S, a * 0.8, GOLD, ms * 0.01);
+        },
+      });
+    });
+    // 金の粒子が手元へ集まる
+    for (let i = 0; i < 12; i++) {
+      const a0 = rand(0, TAU), r0 = rand(44, 88) * S;
+      particles.push({
+        delay: rand(0, ALI_CHARGE_MS - 120), maxLife: 280, rot: rand(0, TAU),
+        draw(ctx, t) {
+          const e = easeInCubic(t);
+          sparkle(ctx, p0.x + Math.cos(a0) * r0 * (1 - e), p0.y + Math.sin(a0) * r0 * (1 - e), (2.5 + 3.5 * t) * S,
+            (t < 0.8 ? 1 : (1 - t) / 0.2) * 0.9, i % 3 === 0 ? PALE : GOLD, this.rot + t * 4);
+        },
+      });
+    }
+
+    // ============================================================
+    // ②③  測量線の三角形（描画 → 目盛り → 収束）＋照準の十字
+    // ============================================================
+    const TRI_LIFE = ALI_HIT_MS + 60;
+    particles.push({
+      delay: 0, maxLife: TRI_LIFE,
+      draw(ctx, t) {
+        const ms = t * TRI_LIFE;
+        const fa = ms > ALI_HIT_MS ? clamp01(1 - (ms - ALI_HIT_MS) / 60) : 1;
+        if (fa <= 0.01 || ms < ALI_CHARGE_MS) return;
+        const kC = ms < ALI_LOCK_MS ? 0 : easeInCubic(clamp01((ms - ALI_LOCK_MS) / (ALI_HIT_MS - ALI_LOCK_MS)));
+        const c1 = { x: lerp(V1.x, to.x, kC), y: lerp(V1.y, to.y, kC) };
+        const c2 = { x: lerp(V2.x, to.x, kC), y: lerp(V2.y, to.y, kC) };
+        const glowK = 1 + kC * 1.1;
+        const pg = (s, d) => easeOutCubic(clamp01((ms - s) / d));
+        const p1 = pg(ALI_CHARGE_MS, 220), p2 = pg(ALI_CHARGE_MS + 50, 220), p3 = pg(ALI_CHARGE_MS + 220, 220);
+        // 相手へ向かう点線の照準線
+        const ps = pg(ALI_CHARGE_MS + 100, 200);
+        if (ps > 0) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.setLineDash([5 * S, 6 * S]);
+          ctx.strokeStyle = rgba(WHITE, 0.55 * fa); ctx.lineWidth = Math.max(1, 1.2 * S);
+          ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(lerp(p0.x, to.x, ps), lerp(p0.y, to.y, ps)); ctx.stroke();
+          ctx.restore();
+        }
+        drawBeam(ctx, p0.x, p0.y, c1.x, c1.y, p1, fa, glowK);
+        drawBeam(ctx, p0.x, p0.y, c2.x, c2.y, p2, fa, glowK);
+        drawBeam(ctx, c1.x, c1.y, c2.x, c2.y, p3, fa, glowK);
+        // 頂点のレンズフレア（線が到達したら灯る）
+        const tw = 1 + 0.18 * Math.sin(ms * 0.02);
+        if (p1 >= 1) sparkle(ctx, c1.x, c1.y, 15 * S * tw, fa, WHITE, 0.3);
+        if (p2 >= 1) sparkle(ctx, c2.x, c2.y, 15 * S * tw, fa, WHITE, -0.3);
+      },
+    });
+    // 相手の上に現れる照準（リング＋十字の刻み）。ロックで一気に縮む
+    particles.push({
+      delay: ALI_CHARGE_MS + 160, maxLife: ALI_HIT_MS - (ALI_CHARGE_MS + 160) + 20, blend: 'lighter',
+      draw(ctx, t) {
+        const ms = ALI_CHARGE_MS + 160 + t * (ALI_HIT_MS - (ALI_CHARGE_MS + 160) + 20);
+        const fa = ms > ALI_HIT_MS ? clamp01(1 - (ms - ALI_HIT_MS) / 20) : 1;
+        const appear = clamp01((ms - (ALI_CHARGE_MS + 160)) / 140);
+        const kC = ms < ALI_LOCK_MS ? 0 : easeInCubic(clamp01((ms - ALI_LOCK_MS) / (ALI_HIT_MS - ALI_LOCK_MS)));
+        const r = (40 - 26 * kC) * S * (0.6 + 0.4 * easeOutCubic(appear));
+        const a = appear * fa;
+        if (a <= 0.01) return;
+        const rot = ms * 0.003;
+        ctx.save();
+        ctx.translate(to.x, to.y);
+        ctx.rotate(rot);
+        ctx.strokeStyle = rgba(GOLD, a * 0.95); ctx.lineWidth = Math.max(1.2, 2.2 * S); ctx.lineCap = 'round';
+        for (let k = 0; k < 4; k++) {
+          ctx.beginPath(); ctx.arc(0, 0, r, k * Math.PI / 2 + 0.22, k * Math.PI / 2 + Math.PI / 2 - 0.22); ctx.stroke();
+        }
+        ctx.strokeStyle = rgba(WHITE, a); ctx.lineWidth = Math.max(1, 1.4 * S);
+        ctx.beginPath();
+        for (let k = 0; k < 4; k++) {
+          const ca = k * Math.PI / 2;
+          ctx.moveTo(Math.cos(ca) * (r - 9 * S), Math.sin(ca) * (r - 9 * S));
+          ctx.lineTo(Math.cos(ca) * (r + 7 * S), Math.sin(ca) * (r + 7 * S));
+        }
+        ctx.stroke();
+        ctx.fillStyle = rgba(WHITE, a);
+        ctx.beginPath(); ctx.arc(0, 0, Math.max(1.2, 2.4 * S), 0, TAU); ctx.fill();
+        ctx.restore();
+      },
+    });
+
+    // ============================================================
+    // ④  着弾：閃光・噴き上がる金の光・地面の衝撃波と亀裂・岩片と土煙
+    // ============================================================
+    // 芯の閃光
+    particles.push({
+      delay: ALI_HIT_MS, maxLife: 400, blend: 'lighter',
+      draw(ctx, t) {
+        const e = easeOutCubic(t);
+        const r = Math.max(2, (24 + 90 * e) * S);
+        const a = Math.pow(1 - t, 1.5);
+        const g = ctx.createRadialGradient(to.x, to.y, 0, to.x, to.y, r);
+        g.addColorStop(0, rgba(WHITE, a));
+        g.addColorStop(0.3, rgba(PALE, a * 0.85));
+        g.addColorStop(0.65, rgba(GOLD, a * 0.4));
+        g.addColorStop(1, rgba(GOLD, 0));
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(to.x, to.y, r, 0, TAU); ctx.fill();
+      },
+    });
+    // 足元から噴き上がる金の光柱（地面のエネルギーが抜ける）
+    particles.push({
+      delay: ALI_HIT_MS, maxLife: 420, blend: 'lighter',
+      draw(ctx, t) {
+        const e = easeOutCubic(t);
+        const wb = (28 * (1 - e * 0.65) + 4) * S, Hc = (110 + 60 * e) * S;
+        const a = Math.pow(1 - t, 1.2);
+        const g = ctx.createLinearGradient(0, groundY, 0, groundY - Hc);
+        g.addColorStop(0, rgba(WHITE, a));
+        g.addColorStop(0.5, rgba(GOLD, a * 0.7));
+        g.addColorStop(1, rgba(GOLD, 0));
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.moveTo(to.x - wb, groundY);
+        ctx.quadraticCurveTo(to.x - wb * 0.5, groundY - Hc * 0.6, to.x, groundY - Hc);
+        ctx.quadraticCurveTo(to.x + wb * 0.5, groundY - Hc * 0.6, to.x + wb, groundY);
+        ctx.closePath(); ctx.fill();
+      },
+    });
+    // 地面を走る衝撃波（楕円の輪）2 重
+    [{ d: 0, r: 130, lw: 3.4, c: GOLD, life: 480 }, { d: 90, r: 190, lw: 2.2, c: '#e6c080', life: 540 }].forEach((rg) => {
+      particles.push({
+        delay: ALI_HIT_MS + rg.d, maxLife: rg.life, blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(t), rx = (10 + rg.r * e) * S;
+          ctx.strokeStyle = rgba(rg.c, (1 - t) * 0.95);
+          ctx.lineWidth = Math.max(0.8, rg.lw * S * (1 - t * 0.7));
+          ctx.beginPath(); ctx.ellipse(to.x, groundY, rx, rx * 0.36, 0, 0, TAU); ctx.stroke();
+        },
+      });
+    });
+    // 地面の亀裂（金色に光る）
+    for (let i = 0; i < 7; i++) {
+      const a0 = (i / 7) * TAU + rand(-0.25, 0.25), L = rand(70, 130) * S;
+      const jit = [rand(-9, 9) * S, rand(-12, 12) * S, rand(-12, 12) * S];
+      particles.push({
+        delay: ALI_HIT_MS + rand(0, 40), maxLife: 760, blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutQuint(Math.min(1, t / 0.35)), a = Math.pow(1 - t, 1.3);
+          const pts = [[0, 0]];
+          for (let k = 1; k <= 3; k++) {
+            const rr = L * e * (k / 3);
+            const px = Math.cos(a0) * rr - Math.sin(a0) * jit[k - 1], py = Math.sin(a0) * rr + Math.cos(a0) * jit[k - 1];
+            pts.push([px, py]);
+          }
+          ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+          [[5 * S, 0.28, GOLD], [Math.max(1, 2 * S), 0.95, WHITE]].forEach(([lw, k, col]) => {
+            ctx.strokeStyle = rgba(col, a * k); ctx.lineWidth = lw;
+            ctx.beginPath();
+            pts.forEach(([px, py], n) => { const X = to.x + px, Y = groundY + py * 0.4; n ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+            ctx.stroke();
+          });
+        },
+      });
+    }
+    // 土煙
+    for (let i = 0; i < 8; i++) {
+      const gx = to.x + rand(-38, 38) * S, gy = groundY + rand(-6, 8) * S, r1 = rand(34, 56) * S, dl = rand(0, 90);
+      particles.push({
+        delay: ALI_HIT_MS + dl, maxLife: rand(560, 760),
+        draw(ctx, t) {
+          const e = easeOutCubic(t), r = Math.max(2, (12 * S) + (r1 - 12 * S) * e), a = 0.62 * Math.pow(1 - t, 1.2);
+          const y = gy - t * 26 * S;
+          const g = ctx.createRadialGradient(gx, y, 0, gx, y, r);
+          g.addColorStop(0, rgba('#ead7a8', a)); g.addColorStop(0.6, rgba(DUST, a * 0.7)); g.addColorStop(1, rgba(DUST, 0));
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(gx, y, r, 0, TAU); ctx.fill();
+        },
+      });
+    }
+    // 黒い岩片（参考画像の飛び散る欠片）
+    const CHIP_COLS = ['#2e1f12', '#4a3320', '#6b4a2a', '#2e1f12', '#8a6236'];
+    for (let i = 0; i < 20; i++) {
+      const a0 = rand(-Math.PI * 0.95, -Math.PI * 0.05), sp = rand(50, 140) * S, life = rand(620, 950);
+      const sz = rand(3.5, 8) * S, rot0 = rand(0, TAU), spin = rand(-9, 9);
+      const poly = [];
+      for (let k = 0; k < 5; k++) { const aa = (k / 5) * TAU + rand(-0.3, 0.3), rr = sz * rand(0.6, 1.2); poly.push([Math.cos(aa) * rr, Math.sin(aa) * rr]); }
+      const col = i % 7 === 0 ? '#ffd35a' : pick(CHIP_COLS);
+      particles.push({
+        delay: ALI_HIT_MS + rand(0, 70), maxLife: life,
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const x = to.x + Math.cos(a0) * sp * e, y = groundY - 6 * S + Math.sin(a0) * sp * e + t * t * 90 * S;
+          const a = t < 0.7 ? 1 : (1 - t) / 0.3;
+          ctx.save();
+          ctx.translate(x, y); ctx.rotate(rot0 + t * spin);
+          polyFill(ctx, poly, rgba(col, a));
+          ctx.strokeStyle = rgba(PALE, a * 0.35); ctx.lineWidth = Math.max(0.6, S * 0.7);
+          ctx.beginPath(); poly.forEach(([px, py], n) => n ? ctx.lineTo(px, py) : ctx.moveTo(px, py)); ctx.closePath(); ctx.stroke();
+          ctx.restore();
+        },
+      });
+    }
+    // 弾ける金の火花
+    for (let i = 0; i < 14; i++) {
+      const a0 = rand(0, TAU), d0 = rand(40, 110) * S, ln = rand(14, 38) * S;
+      particles.push({
+        delay: ALI_HIT_MS + rand(0, 50), maxLife: rand(260, 400), blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutQuint(t), r1 = d0 * e, r0 = Math.max(0, r1 - ln * (1 - t * 0.5));
+          ctx.strokeStyle = rgba(i % 3 ? GOLD : WHITE, (1 - t) * 0.95);
+          ctx.lineWidth = Math.max(1, 2 * S * (1 - t * 0.5)); ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(to.x + Math.cos(a0) * r0, to.y + Math.sin(a0) * r0);
+          ctx.lineTo(to.x + Math.cos(a0) * r1, to.y + Math.sin(a0) * r1);
+          ctx.stroke();
+        },
+      });
+    }
+    // 着弾の瞬間に画面を揺らす（SPECIAL_IMPACT_FX の shakes は delay を解釈しないため演出内で発火）
+    let shaken = false;
+    particles.push({
+      delay: ALI_HIT_MS, maxLife: 10,
+      update() {
+        if (shaken) return;
+        shaken = true;
+        const layer = document.getElementById('special-fx-layer');
+        const target = (layer && layer.parentElement) || layer;
+        if (target) screenShake(target, { ampPx: 12, durationMs: 300, freq: 32 });
+      },
+      draw() {},
+    });
+
+    // ============================================================
+    // ⑤  余韻：ダイヤ形のきらめき
+    // ============================================================
+    for (let i = 0; i < 12; i++) {
+      const a0 = rand(0, TAU), rr = rand(18, 100) * S, sz = rand(6, 12) * S, rot0 = rand(0, TAU);
+      particles.push({
+        delay: ALI_HIT_MS + rand(80, 520), maxLife: rand(300, 460),
+        draw(ctx, t) {
+          sparkle(ctx, to.x + Math.cos(a0) * rr, to.y + Math.sin(a0) * rr * 0.7 - t * 10 * S,
+            sz * (0.6 + 0.4 * Math.sin(Math.PI * t)), Math.sin(Math.PI * t), i % 2 ? GOLD : WHITE, rot0 + t * 2);
+        },
+      });
+    }
+  }
+
+  SPECIAL_SCENES[220] = spawnAlidadeSightSpecial;
+  SPECIAL_DURATION_MS[220] = ALI_END_MS;
+  if (FLIGHT_MOVE_IDS.indexOf(220) === -1) FLIGHT_MOVE_IDS.push(220);
+  // 着弾の瞬間に白金の閃光→余韻の土色がかった琥珀色。画面の揺れは演出内で着弾時に発火する。
+  SPECIAL_IMPACT_FX[220] = {
+    flashes: [
+      { color: '#fff6d8', peakAlpha: 0.6, durationMs: 200, delay: ALI_HIT_MS },
+      { color: '#e8b060', peakAlpha: 0.28, durationMs: 440, delay: ALI_HIT_MS + 30 },
+    ],
+  };
+
+  // ============================================================
+  // グランドアンカー（attack209／じめん・物理・威力60・命中100）専用演出
+  // 参考：足元の魔法陣に金の球体が灯る（始まり）→ 球体を中心に橙の衝撃リングが
+  //       金の格子線・三角の目印を伴って地面を駆け抜ける（中盤）→ リングは途切れながら
+  //       巨大に広がって薄れ、三角の破片と黒い飛沫だけが残る（終わり）。
+  // 構成：①攻撃側の足元に魔法陣が開き、金の球体と格子の柱が灯って光の粒を集める
+  //       ②球体が閃光を放ち、橙の衝撃リングが地面（斜め見下ろしの楕円）を広がる
+  //       ③リングが相手の足元を通過する瞬間にヒット（閃光・画面揺れ・黒い破片と飛沫）
+  //       ④リングは途切れながら巨大化して薄れ、三角の破片がきらめきながら散る
+  //
+  // info = { from:{x,y}, to:{x,y}, scale } は spawnAlidadeSightSpecial と同じ（playSpecialTypeEffect が実測）。
+  // ============================================================
+  const GANCH_BURST_MS = 380;                              // 球体が閃光を放ち、リングが解き放たれる
+  const GANCH_RING_MS = 1250;                              // リングが広がり切って消えるまで
+  const GANCH_HIT_MS = 905;                                // リングが相手に届く（＝ダメージの瞬間）
+  const GANCH_END_MS = GANCH_BURST_MS + GANCH_RING_MS + 160;
+
+  function spawnGrandAnchorSpecial(particles, w, h, info) {
+    const TAU = Math.PI * 2;
+    const from = (info && info.from) || { x: w * 0.28, y: h * 0.68 };
+    const to = (info && info.to) || { x: w * 0.72, y: h * 0.32 };
+    const S = (info && info.scale) || 1;
+
+    const GOLD = '#ffd35a', PALE = '#fff3b8', WHITE = '#ffffff';
+    const ORANGE = '#ff8a1f', AMBER = '#ffb040';
+    const INK = ['#15101c', '#241a2e', '#34283f', '#0e0a14'];
+
+    // ---- 地面（斜め見下ろしの楕円）の幾何 ----
+    const KV = 0.58;                 // 地面の基本の潰れ具合（小さいほど寝かせて見る）
+    let K = KV;                      // リング用：相手が縦に遠いときは少し起こして（最大で真円）、リングが巨大になり過ぎないようにする
+    const TILT = -0.08;              // 参考画像のように、わずかに傾ける
+    const cosT = Math.cos(TILT), sinT = Math.sin(TILT);
+    const C = { x: from.x, y: from.y + 42 * S };   // 攻撃側の足元（リングの中心）
+    const P = { x: to.x, y: to.y + 42 * S };       // 相手の足元
+    // 地面座標 (半径r, 角度a) → 画面座標
+    const gp = (r, a) => {
+      const lx = r * Math.cos(a), ly = r * Math.sin(a) * K;
+      return { x: C.x + lx * cosT - ly * sinT, y: C.y + lx * sinT + ly * cosT };
+    };
+    // 中心Cに平行移動し、傾けて縦に潰した座標系で fn を実行（この中では普通の円を描けばよい）
+    const ground = (ctx, fn) => {
+      ctx.save();
+      ctx.translate(C.x, C.y);
+      ctx.rotate(TILT);
+      ctx.scale(1, K);
+      fn();
+      ctx.restore();
+    };
+    // 相手の足元までの「地面上の距離」→ ちょうどその時刻にリングが届くよう最大半径を決める
+    const dx = P.x - C.x, dy = P.y - C.y;
+    const ux = dx * cosT + dy * sinT, uy = -dx * sinT + dy * cosT;
+    const D_CAP = 520 * S;
+    if (Math.hypot(ux, uy / KV) > D_CAP) {
+      const need = Math.abs(uy) / Math.sqrt(Math.max(1, D_CAP * D_CAP - ux * ux));
+      K = Math.max(KV, Math.min(1, need));
+    }
+    const D = Math.max(120 * S, Math.hypot(ux, uy / K));
+    const g = (u) => 1 - Math.pow(1 - clamp01(u), 2.2);      // リング半径の進み方（最初が速く、だんだん緩む）
+    const U_HIT = (GANCH_HIT_MS - GANCH_BURST_MS) / GANCH_RING_MS;
+    const RMAX = Math.max(D / g(U_HIT), 280 * S);
+
+    // ---- 描画ヘルパー ----
+    // 三角形（リングの目印・飛び散る破片）。ang の向きに頂点が向く
+    function tri(ctx, x, y, size, ang, fill) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(ang);
+      ctx.fillStyle = fill;
+      ctx.beginPath();
+      ctx.moveTo(size, 0);
+      ctx.lineTo(-size * 0.7, size * 0.72);
+      ctx.lineTo(-size * 0.7, -size * 0.72);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+    // 4方向のダイヤ形きらめき
+    function sparkle(ctx, x, y, size, alpha, color, rot) {
+      if (alpha <= 0.01 || size <= 0.3) return;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rot || 0);
+      const gr = ctx.createRadialGradient(0, 0, 0, 0, 0, size * 0.95);
+      gr.addColorStop(0, rgba(color, alpha * 0.55));
+      gr.addColorStop(1, rgba(color, 0));
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.arc(0, 0, size * 0.95, 0, TAU); ctx.fill();
+      ctx.fillStyle = rgba(color, alpha);
+      ctx.beginPath();
+      ctx.moveTo(0, -size);
+      ctx.quadraticCurveTo(size * 0.1, -size * 0.1, size, 0);
+      ctx.quadraticCurveTo(size * 0.1, size * 0.1, 0, size);
+      ctx.quadraticCurveTo(-size * 0.1, size * 0.1, -size, 0);
+      ctx.quadraticCurveTo(-size * 0.1, -size * 0.1, 0, -size);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    // 金の球体（ハイライト付きのガラス玉のような光球）
+    function drawSphere(ctx, x, y, r, a) {
+      if (a <= 0.01 || r <= 0.5) return;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.globalCompositeOperation = 'lighter';
+      let gr = ctx.createRadialGradient(0, 0, r * 0.2, 0, 0, r * 2.6);
+      gr.addColorStop(0, rgba(GOLD, 0.55 * a));
+      gr.addColorStop(1, rgba(ORANGE, 0));
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.arc(0, 0, r * 2.6, 0, TAU); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      gr = ctx.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.05, 0, 0, r);
+      gr.addColorStop(0, rgba(WHITE, a));
+      gr.addColorStop(0.45, rgba('#fff0a0', a));
+      gr.addColorStop(0.85, rgba('#ffc43a', a * 0.95));
+      gr.addColorStop(1, rgba(ORANGE, a * 0.9));
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
+    // 金の格子の円柱（縦線＋輪切りの線。ゆっくり回る）
+    function drawLattice(ctx, x, yTop, yBot, rx, a, rot) {
+      if (a <= 0.01) return;
+      const ry = rx * KV;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      const gr = ctx.createLinearGradient(0, yTop, 0, yBot);
+      gr.addColorStop(0, rgba(GOLD, 0.30 * a));
+      gr.addColorStop(1, rgba(ORANGE, 0.12 * a));
+      ctx.fillStyle = gr;
+      ctx.fillRect(x - rx, yTop, rx * 2, yBot - yTop);
+      ctx.beginPath(); ctx.ellipse(x, yBot, rx, ry, 0, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(x, yTop, rx, ry, 0, 0, TAU); ctx.fill();
+      ctx.lineWidth = Math.max(1, 1.1 * S);
+      const N = 12;
+      for (let k = 0; k < N; k++) {
+        const ang = (k / N) * TAU + rot;
+        const front = Math.sin(ang) > 0 ? 1 : 0.4;   // 手前側を濃く、奥側を薄く
+        const xx = x + rx * Math.cos(ang);
+        const sy = ry * Math.sin(ang);
+        ctx.strokeStyle = rgba(PALE, 0.7 * a * front);
+        ctx.beginPath(); ctx.moveTo(xx, yTop + sy); ctx.lineTo(xx, yBot + sy); ctx.stroke();
+      }
+      for (let k = 0; k <= 4; k++) {
+        const yy = yTop + (yBot - yTop) * (k / 4);
+        ctx.strokeStyle = rgba(k === 0 ? WHITE : GOLD, (k === 0 ? 0.9 : 0.6) * a);
+        ctx.beginPath(); ctx.ellipse(x, yy, rx, ry, 0, 0, Math.PI); ctx.stroke();    // 手前の半周
+        ctx.strokeStyle = rgba(GOLD, 0.2 * a);
+        ctx.beginPath(); ctx.ellipse(x, yy, rx, ry, 0, Math.PI, TAU); ctx.stroke();  // 奥の半周
+      }
+      ctx.restore();
+    }
+
+    // ============================================================
+    // ①  足元の魔法陣（時計の目盛りのような輪＋一本の光の刃）
+    // ============================================================
+    particles.push({
+      delay: 0, maxLife: GANCH_END_MS,
+      draw(ctx, t) {
+        const ms = t * GANCH_END_MS;
+        const a = clamp01(ms / 220) * (1 - clamp01((ms - 1150) / 420));
+        if (a <= 0.01) return;
+        const open = easeOutCubic(clamp01(ms / 260));
+        // 解き放つ瞬間に陣が一瞬ふくらむ
+        const kick = ms >= GANCH_BURST_MS ? 1 + 0.28 * Math.exp(-(ms - GANCH_BURST_MS) / 150) : 1;
+        const R0 = 50 * S * (0.7 + 0.3 * open) * kick;
+        ground(ctx, () => {
+          ctx.fillStyle = rgba('#1a1422', 0.5 * a);
+          ctx.beginPath(); ctx.arc(0, 0, R0 * 1.05, 0, TAU); ctx.fill();
+          ctx.globalCompositeOperation = 'lighter';
+          ctx.strokeStyle = rgba(ORANGE, 0.55 * a); ctx.lineWidth = 7 * S;
+          ctx.beginPath(); ctx.arc(0, 0, R0 * 1.08, 0, TAU); ctx.stroke();
+          ctx.strokeStyle = rgba(PALE, 0.95 * a); ctx.lineWidth = 2.2 * S;
+          ctx.beginPath(); ctx.arc(0, 0, R0, 0, TAU); ctx.stroke();
+          ctx.strokeStyle = rgba(GOLD, 0.8 * a); ctx.lineWidth = 1.5 * S;
+          ctx.beginPath(); ctx.arc(0, 0, R0 * 0.7, 0, TAU); ctx.stroke();
+          // 回る目盛り
+          ctx.save();
+          ctx.rotate(ms * 0.0016);
+          ctx.strokeStyle = rgba(WHITE, 0.8 * a); ctx.lineWidth = 1.4 * S;
+          ctx.beginPath();
+          for (let k = 0; k < 36; k++) {
+            const aa = (k / 36) * TAU, r1 = R0 * 0.8, r2 = R0 * (k % 3 === 0 ? 0.95 : 0.88);
+            ctx.moveTo(Math.cos(aa) * r1, Math.sin(aa) * r1);
+            ctx.lineTo(Math.cos(aa) * r2, Math.sin(aa) * r2);
+          }
+          ctx.stroke();
+          ctx.restore();
+          // 陣を横切る光の刃
+          ctx.lineCap = 'round';
+          ctx.strokeStyle = rgba(GOLD, 0.45 * a); ctx.lineWidth = 6 * S;
+          ctx.beginPath(); ctx.moveTo(-R0 * 0.8, 0); ctx.lineTo(R0 * 0.8, 0); ctx.stroke();
+          ctx.strokeStyle = rgba(WHITE, 0.9 * a); ctx.lineWidth = 2 * S;
+          ctx.beginPath(); ctx.moveTo(-R0 * 0.8, 0); ctx.lineTo(R0 * 0.8, 0); ctx.stroke();
+        });
+      },
+    });
+
+    // ============================================================
+    // ②  光の柱・格子の円柱・金の球体（始まり）
+    // ============================================================
+    particles.push({
+      delay: 0, maxLife: GANCH_END_MS,
+      draw(ctx, t) {
+        const ms = t * GANCH_END_MS;
+        const grow = easeOutCubic(clamp01(ms / 300));
+        const out = clamp01((ms - 1000) / 450);
+        const a = grow * (1 - out);
+        if (a <= 0.01) return;
+        const burst = ms >= GANCH_BURST_MS ? Math.exp(-(ms - GANCH_BURST_MS) / 150) : 0;
+        const pulse = ms < GANCH_BURST_MS ? 1 + 0.06 * Math.sin(ms * 0.03) : 1;
+        const sx = C.x, sy = C.y - 78 * S;
+        // 光の柱
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        const colG = ctx.createLinearGradient(0, C.y, 0, C.y - 170 * S);
+        colG.addColorStop(0, rgba(GOLD, (0.38 + 0.3 * burst) * a));
+        colG.addColorStop(1, rgba(GOLD, 0));
+        ctx.fillStyle = colG;
+        const cw = (22 + 10 * burst) * S;
+        ctx.fillRect(C.x - cw, C.y - 170 * S, cw * 2, 170 * S);
+        ctx.restore();
+        // 格子の円柱
+        drawLattice(ctx, C.x, C.y - 52 * S, C.y - 4 * S, 25 * S * (1 + 0.15 * burst), a, ms * 0.0022);
+        // 球体
+        const r = 24 * S * grow * (1 - 0.3 * out) * pulse * (1 + 0.55 * burst);
+        drawSphere(ctx, sx, sy, r, a);
+        if (burst > 0.02) {
+          ctx.save();
+          ctx.globalCompositeOperation = 'lighter';
+          const fg = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 3.4);
+          fg.addColorStop(0, rgba(WHITE, 0.9 * burst));
+          fg.addColorStop(1, rgba(WHITE, 0));
+          ctx.fillStyle = fg;
+          ctx.beginPath(); ctx.arc(sx, sy, r * 3.4, 0, TAU); ctx.fill();
+          ctx.restore();
+        }
+      },
+    });
+    // 光の粒が球体へ集まる
+    for (let i = 0; i < 22; i++) {
+      const a0 = rand(0, TAU), d0 = rand(70, 150) * S, sz = rand(1.6, 3.4) * S;
+      particles.push({
+        delay: rand(0, 190), maxLife: rand(220, 190 + 190), blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeInCubic(t);
+          const x = C.x + Math.cos(a0) * d0 * (1 - e);
+          const y = C.y - 78 * S + Math.sin(a0) * d0 * 0.7 * (1 - e);
+          ctx.fillStyle = rgba(i % 2 ? GOLD : PALE, (0.35 + 0.65 * t) * (1 - Math.max(0, (t - 0.85) / 0.15)));
+          ctx.beginPath(); ctx.arc(x, y, sz, 0, TAU); ctx.fill();
+        },
+      });
+    }
+    // 解き放つ瞬間、足元で金色の衝撃が一瞬走る
+    particles.push({
+      delay: GANCH_BURST_MS, maxLife: 300, blend: 'lighter',
+      draw(ctx, t) {
+        const e = easeOutQuint(t);
+        ground(ctx, () => {
+          ctx.strokeStyle = rgba(WHITE, (1 - t) * 0.9); ctx.lineWidth = 7 * S * (1 - t * 0.7);
+          ctx.beginPath(); ctx.arc(0, 0, (30 + 100 * e) * S, 0, TAU); ctx.stroke();
+          ctx.strokeStyle = rgba(GOLD, (1 - t) * 0.7); ctx.lineWidth = 14 * S * (1 - t * 0.7);
+          ctx.beginPath(); ctx.arc(0, 0, (26 + 86 * e) * S, 0, TAU); ctx.stroke();
+        });
+      },
+    });
+
+    // ============================================================
+    // ③  橙の衝撃リング（面・本体・残像・格子線）
+    // ============================================================
+    const SEG = 44;
+    const segRnd = [], segGap = [];
+    for (let i = 0; i < SEG; i++) { segRnd.push(rand(0.55, 1)); segGap.push(rand(0.3, 1)); }
+    const A_RIM = Math.PI * 0.28;   // 手前（右下）側のリムライト
+    const ECHOES = [[0.09, '#ffb82e', 3.6], [0.19, '#ffd35a', 2.4], [0.30, '#fff0a0', 1.6]];
+    particles.push({
+      delay: GANCH_BURST_MS, maxLife: GANCH_RING_MS,
+      draw(ctx, u) {
+        const r = RMAX * g(u);
+        if (r < 2) return;
+        const fade = 1 - Math.pow(u, 2.2);
+        if (fade <= 0.01) return;
+        ground(ctx, () => {
+          // 内側の金色の面（縁に向かって濃くなる）
+          const fg = ctx.createRadialGradient(0, 0, r * 0.35, 0, 0, r);
+          fg.addColorStop(0, rgba(GOLD, 0));
+          fg.addColorStop(0.75, rgba('#ffc43a', 0.12 * fade));
+          fg.addColorStop(1, rgba(ORANGE, 0.42 * fade));
+          ctx.fillStyle = fg;
+          ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+
+          // 薄い格子線：放射状の線＋同心円
+          ctx.lineWidth = Math.max(0.8, 1 * S);
+          ctx.strokeStyle = rgba('#e0a020', 0.30 * fade);
+          ctx.beginPath();
+          for (let k = 0; k < 28; k++) {
+            const aa = (k / 28) * TAU + 0.1 + u * 0.15;
+            ctx.moveTo(Math.cos(aa) * r * 0.5, Math.sin(aa) * r * 0.5);
+            ctx.lineTo(Math.cos(aa) * r * 0.99, Math.sin(aa) * r * 0.99);
+          }
+          ctx.stroke();
+          ctx.strokeStyle = rgba('#e8a82a', 0.34 * fade);
+          ctx.beginPath(); ctx.arc(0, 0, r * 0.68, 0, TAU); ctx.stroke();
+          ctx.beginPath(); ctx.arc(0, 0, r * 0.84, 0, TAU); ctx.stroke();
+          // リングの外側にうっすら広がるレーダー状の目盛り輪
+          ctx.strokeStyle = rgba('#d98a1a', 0.30 * fade);
+          ctx.beginPath(); ctx.arc(0, 0, r * 1.1, 0, TAU); ctx.stroke();
+          ctx.beginPath();
+          for (let k = 0; k < 72; k++) {
+            const aa = (k / 72) * TAU;
+            const r1 = r * 1.1, r2 = r1 + (k % 6 === 0 ? 9 : 5) * S;
+            ctx.moveTo(Math.cos(aa) * r1, Math.sin(aa) * r1);
+            ctx.lineTo(Math.cos(aa) * r2, Math.sin(aa) * r2);
+          }
+          ctx.stroke();
+
+          // 残像リング（本体より遅れて広がる細い輪）
+          for (let n = 0; n < ECHOES.length; n++) {
+            const ue = u - ECHOES[n][0];
+            if (ue <= 0) continue;
+            ctx.strokeStyle = rgba(ECHOES[n][1], fade * 0.7);
+            ctx.lineWidth = ECHOES[n][2] * S;
+            ctx.beginPath(); ctx.arc(0, 0, RMAX * g(ue), 0, TAU); ctx.stroke();
+          }
+
+          // 本体：途切れながら（時間とともに隙間が広がる）、手前側ほど明るい橙のリング
+          ctx.lineCap = 'butt';
+          const step = TAU / SEG, spin = u * 0.5;
+          for (let i = 0; i < SEG; i++) {
+            const am = i * step + spin + step / 2;
+            const rim = 0.5 + 0.5 * Math.cos(am - A_RIM);
+            const al = fade * (0.45 + 0.55 * rim) * segRnd[i];
+            const gap = step * (0.03 + 0.55 * Math.pow(u, 1.6) * segGap[i]);
+            const a0 = am - step / 2 + gap / 2, a1 = am + step / 2 - gap / 2;
+            if (a1 <= a0 || al <= 0.02) continue;
+            ctx.strokeStyle = rgba(ORANGE, al * 0.28); ctx.lineWidth = 15 * S * (1 - 0.5 * u);
+            ctx.beginPath(); ctx.arc(0, 0, r, a0, a1); ctx.stroke();
+            ctx.strokeStyle = rgba(ORANGE, al * 0.98); ctx.lineWidth = 8 * S * (1 - 0.55 * u);
+            ctx.beginPath(); ctx.arc(0, 0, r, a0, a1); ctx.stroke();
+            ctx.strokeStyle = rgba(PALE, al * 0.9); ctx.lineWidth = Math.max(1, 2.4 * S * (1 - 0.5 * u));
+            ctx.beginPath(); ctx.arc(0, 0, r, a0, a1); ctx.stroke();
+          }
+        });
+        // 少し浮いた上側のリング（厚みを出す）
+        ctx.save();
+        ctx.translate(0, -9 * S * (1 - u));
+        ground(ctx, () => {
+          ctx.strokeStyle = rgba('#ffc43a', fade * 0.42); ctx.lineWidth = 3 * S;
+          ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+        });
+        ctx.restore();
+      },
+    });
+
+    // リングに乗って進む三角の目印
+    const MARK = 12;
+    particles.push({
+      delay: GANCH_BURST_MS, maxLife: GANCH_RING_MS,
+      draw(ctx, u) {
+        const r = RMAX * g(u);
+        const fade = 1 - Math.pow(u, 1.8);
+        if (fade <= 0.02) return;
+        for (let i = 0; i < MARK; i++) {
+          const a = (i / MARK) * TAU + 0.15 + u * 0.35;
+          const p = gp(r, a), q = gp(r + 6, a);
+          tri(ctx, p.x, p.y, (7 + 5 * u) * S, Math.atan2(q.y - p.y, q.x - p.x), rgba(i % 2 ? '#ffe27a' : '#ffb82e', fade * 0.98));
+        }
+      },
+    });
+
+    // ============================================================
+    // ④  リングから剥がれて飛び散る三角の破片
+    // ============================================================
+    for (let i = 0; i < 30; i++) {
+      const born = rand(0, 0.55), a = rand(0, TAU);
+      const dist = rand(50, 240) * S, lift = rand(8, 46) * S, sz = rand(6, 15) * S;
+      const spin = rand(-4, 4), rot0 = rand(0, TAU);
+      const col = pick(['#ffe27a', '#ffc43a', '#ff9a2a', '#fff3b8']);
+      particles.push({
+        delay: GANCH_BURST_MS + born * GANCH_RING_MS, maxLife: rand(620, 1000),
+        draw(ctx, t) {
+          const p = gp(RMAX * g(born) + dist * easeOutCubic(t), a);
+          const y = p.y - Math.sin(Math.PI * Math.min(1, t * 1.15)) * lift;
+          const al = (t < 0.12 ? t / 0.12 : 1 - Math.max(0, (t - 0.55) / 0.45)) * 0.95;
+          tri(ctx, p.x, y, sz * (0.8 + 0.5 * t), rot0 + t * spin * 2, rgba(col, al));
+        },
+      });
+    }
+
+    // ============================================================
+    // ⑤  ヒット：リングが相手の足元を通過する瞬間
+    // ============================================================
+    const hitAng = Math.atan2(P.y - C.y, P.x - C.x);
+    // 衝撃の楕円リング
+    for (let n = 0; n < 2; n++) {
+      particles.push({
+        delay: GANCH_HIT_MS + n * 70, maxLife: 400,
+        draw(ctx, t) {
+          const e = easeOutQuint(t), r = (10 + (n ? 70 : 96) * e) * S;
+          ctx.strokeStyle = rgba(n ? '#ffc43a' : ORANGE, (1 - t) * 0.95);
+          ctx.lineWidth = Math.max(1, (n ? 3 : 6) * S * (1 - t * 0.7));
+          ctx.beginPath(); ctx.ellipse(P.x, P.y, r, r * KV, 0, 0, TAU); ctx.stroke();
+        },
+      });
+    }
+    // 黒い破片（進行方向へ弾け、放物線を描いて落ちる）
+    for (let i = 0; i < 18; i++) {
+      const ang = hitAng + rand(-1.05, 1.05), sp = rand(110, 330) * S, up = rand(60, 170) * S;
+      const sz = rand(4, 11) * S, rot0 = rand(0, TAU), spin = rand(-8, 8), life = rand(520, 820);
+      const col = pick(INK);
+      const verts = [];
+      for (let k = 0; k < 5; k++) verts.push([(k / 5) * TAU + rand(-0.3, 0.3), sz * rand(0.55, 1.1)]);
+      particles.push({
+        delay: GANCH_HIT_MS + rand(0, 40), maxLife: life,
+        draw(ctx, t) {
+          const e = easeOutCubic(t);
+          const x = P.x + Math.cos(ang) * sp * e;
+          const y = P.y - 10 * S + Math.sin(ang) * sp * 0.45 * e - up * 4 * t * (1 - t) + 44 * S * t * t;
+          ctx.save();
+          ctx.translate(x, y); ctx.rotate(rot0 + t * spin);
+          ctx.globalAlpha = 1 - Math.max(0, (t - 0.65) / 0.35);
+          ctx.fillStyle = col;
+          ctx.beginPath();
+          verts.forEach(([va, vr], k) => { const px = Math.cos(va) * vr, py = Math.sin(va) * vr; k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+          ctx.closePath(); ctx.fill();
+          ctx.restore();
+        },
+      });
+    }
+    // 黒い飛沫（インクのしぶき）
+    for (let i = 0; i < 8; i++) {
+      const ox = rand(-34, 34) * S, oy = rand(-20, 20) * S, rb = rand(10, 26) * S;
+      const sats = [];
+      for (let k = 0; k < 3; k++) sats.push([rand(0, TAU), rand(1.1, 1.8), rand(0.2, 0.4)]);
+      const col = pick(INK);
+      particles.push({
+        delay: GANCH_HIT_MS + rand(0, 60), maxLife: 560,
+        draw(ctx, t) {
+          const e = easeOutCubic(clamp01(t / 0.32));
+          const al = 0.8 * (1 - Math.pow(t, 2));
+          ctx.fillStyle = rgba(col, al);
+          ctx.beginPath(); ctx.ellipse(P.x + ox, P.y + oy, rb * e, rb * e * 0.72, 0, 0, TAU); ctx.fill();
+          for (let k = 0; k < sats.length; k++) {
+            const sd = rb * sats[k][1] * e, sr = rb * sats[k][2] * e;
+            ctx.beginPath();
+            ctx.ellipse(P.x + ox + Math.cos(sats[k][0]) * sd, P.y + oy + Math.sin(sats[k][0]) * sd * 0.72, sr, sr * 0.72, 0, 0, TAU);
+            ctx.fill();
+          }
+        },
+      });
+    }
+    // 土埃
+    for (let i = 0; i < 7; i++) {
+      const ox = rand(-40, 40) * S, rb = rand(16, 30) * S, rise = rand(18, 40) * S;
+      particles.push({
+        delay: GANCH_HIT_MS + rand(0, 90), maxLife: rand(700, 900),
+        draw(ctx, t) {
+          const e = easeOutCubic(t), r = rb * (0.6 + 0.9 * e);
+          const x = P.x + ox * (0.6 + 0.6 * e), y = P.y - rise * e;
+          const gr = ctx.createRadialGradient(x, y, 0, x, y, r);
+          gr.addColorStop(0, rgba('#d8c49a', 0.3 * (1 - t)));
+          gr.addColorStop(1, rgba('#d8c49a', 0));
+          ctx.fillStyle = gr;
+          ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+        },
+      });
+    }
+    // 弾ける金の火花
+    for (let i = 0; i < 14; i++) {
+      const a0 = rand(0, TAU), d0 = rand(40, 110) * S, ln = rand(14, 38) * S;
+      particles.push({
+        delay: GANCH_HIT_MS + rand(0, 50), maxLife: rand(260, 400),
+        draw(ctx, t) {
+          const e = easeOutQuint(t), r1 = d0 * e, r0 = Math.max(0, r1 - ln * (1 - t * 0.5));
+          ctx.strokeStyle = rgba(i % 3 ? '#ffb82e' : ORANGE, (1 - t) * 0.95);
+          ctx.lineWidth = Math.max(1, 2.4 * S * (1 - t * 0.5)); ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(P.x + Math.cos(a0) * r0, P.y + Math.sin(a0) * r0 * 0.7);
+          ctx.lineTo(P.x + Math.cos(a0) * r1, P.y + Math.sin(a0) * r1 * 0.7);
+          ctx.stroke();
+        },
+      });
+    }
+    // ヒットの瞬間に画面を揺らす（SPECIAL_IMPACT_FX の shakes は delay を解釈しないため演出内で発火）
+    let shaken = false;
+    particles.push({
+      delay: GANCH_HIT_MS, maxLife: 10,
+      update() {
+        if (shaken) return;
+        shaken = true;
+        const layer = document.getElementById('special-fx-layer');
+        const target = (layer && layer.parentElement) || layer;
+        if (target) screenShake(target, { ampPx: 12, durationMs: 340, freq: 30 });
+      },
+      draw() {},
+    });
+
+    // ============================================================
+    // ⑥  余韻：ダイヤ形のきらめき
+    // ============================================================
+    for (let i = 0; i < 12; i++) {
+      const a0 = rand(0, TAU), rr = rand(18, 110) * S, sz = rand(6, 12) * S, rot0 = rand(0, TAU);
+      particles.push({
+        delay: GANCH_HIT_MS + rand(80, 640), maxLife: rand(300, 460),
+        draw(ctx, t) {
+          sparkle(ctx, P.x + Math.cos(a0) * rr, P.y + Math.sin(a0) * rr * 0.6 - t * 10 * S,
+            sz * (0.6 + 0.4 * Math.sin(Math.PI * t)), Math.sin(Math.PI * t), i % 2 ? '#ffc43a' : '#ff9a2a', rot0 + t * 2);
+        },
+      });
+    }
+  }
+
+  SPECIAL_SCENES[209] = spawnGrandAnchorSpecial;
+  SPECIAL_DURATION_MS[209] = GANCH_END_MS;
+  if (FLIGHT_MOVE_IDS.indexOf(209) === -1) FLIGHT_MOVE_IDS.push(209);
+  // 球体が閃光を放つ瞬間と、リングが相手に届く瞬間に閃光。画面の揺れは演出内でヒット時に発火する。
+  SPECIAL_IMPACT_FX[209] = {
+    flashes: [
+      { color: '#fff4c0', peakAlpha: 0.4, durationMs: 180, delay: GANCH_BURST_MS },
+      { color: '#ffe9a0', peakAlpha: 0.5, durationMs: 240, delay: GANCH_HIT_MS },
+      { color: '#ffb040', peakAlpha: 0.12, durationMs: 420, delay: GANCH_HIT_MS + 30 },
+    ],
+  };
+
   function playSpecialTypeEffect(wrapEl, moveId, defSide) {
   // フレアドライブは「ポケモンの画像そのものが移動する」専用演出を使う
   if (moveId === 123) {
