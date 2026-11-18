@@ -911,6 +911,39 @@ function restoreOriginalMoves(poke) {
   poke.originalMoveIds = null;
 }
 
+// ---- フォーマルハウト(518)：攻撃したあとに、技スロットが別の技へ変化する ----
+// 攻撃そのものは「フォーマルハウト」（優先度+7・ひるみ100%・PP1）として行い、使い終わった直後に
+// ・場に出て最初の行動（であいがしらが使える間＝deaigashiraLocked が false）で使った → アビサルランス(519)
+// ・場に出て2回目以降の行動で使った → マリンスキュアー(520)
+// へ、その技スロットが入れ替わる。変化した技は居座り（交代して引っ込めても戻らない）、
+// 元の技IDは originalMoveIds に保存。バトル開始時の resetPokeForBattle／restoreOriginalMoves で
+// フォーマルハウトに戻る（ランダムアクトと同じ仕組み）。
+const FORMALHAUT_MOVE_ID = 518;
+const ABYSSAL_LANCE_MOVE_ID = 519;
+const MARINE_SQUEAR_MOVE_ID = 520;
+
+// 使う前（executeMove がロックを立てる前）の状態から、変化先の技IDを決める。フォーマルハウト以外は null。
+function getFormalhautTransformId(poke, move) {
+  if (!poke || !move || move.id !== FORMALHAUT_MOVE_ID) return null;
+  return poke.deaigashiraLocked ? MARINE_SQUEAR_MOVE_ID : ABYSSAL_LANCE_MOVE_ID;
+}
+
+// 変化を技スロットに確定する（攻撃のあとに呼ぶ）。
+function commitFormalhautTransform(poke, fromMove, toId, logFn) {
+  if (!poke || !Array.isArray(poke.moves) || !toId) return;
+  const toMove = buildMoveObject(toId);
+  if (!toMove) return;
+  let idx = poke.moves.indexOf(fromMove);
+  if (idx < 0) idx = poke.moves.findIndex((m) => m && m.id === FORMALHAUT_MOVE_ID);
+  if (idx >= 0) {
+    if (!poke.originalMoveIds) poke.originalMoveIds = poke.moves.map((m) => (m ? m.id : null));
+    poke.moves[idx] = toMove;
+  }
+  // 技IDに紐づく一時状態（アンコール等）が元の技を指していたら、変化後の技に付け替える
+  if (poke.encoreMoveId === FORMALHAUT_MOVE_ID) poke.encoreMoveId = toMove.id;
+  if (logFn) logFn(`${poke.species.name}の${fromMove.name}は　${toMove.name}に　変化した！`);
+}
+
 // 威力59以下でも例外的にダメージ技候補として採用するID
 const LOW_POWER_EXCEPTION_MOVE_IDS = [129,110,379,1,271,503,504,111,107,155,221,162,295,324,77,341,405,461,472,498,494,48,189,309,367,388,229,109,179,169,128];
 
@@ -2726,11 +2759,11 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "psychic",
     "ability": 65,
     "baseStats": {
-      "hp": 110,
-      "atk": 112,
-      "def": 115,
-      "spa": 118,
-      "spd": 95,
+      "hp": 135,
+      "atk": 132,
+      "def": 75,
+      "spa": 138,
+      "spd": 75,
       "spe": 100
     }
   },
@@ -3524,6 +3557,7 @@ const ABILITY = {
   JINGLE_BELL: 158,   // ジングルベール（オリジナル）：手持ちの「こおりタイプorジングルベール持ち」が1匹で1.4倍、以降1匹ごとに+0.4（3匹で2.2倍）。手持ち全員の攻撃・特攻に乗る（瀕死でも有効）
   CALIBRATION: 159,   // カリブレーション（オリジナル）：地脈を付与された相手に与えるダメージが、地脈の段階に応じて1.5/2/2.5倍になる（このポケモン自身が地脈ダメージ増加の発動源になる）。場に出た時、フィールドがジオ・マテリアライズなら5ターン延長する
   ZERO_POINT_PILLAR: 160, // ゼロポイントピラー（オリジナル）：場に出たとき、5ターンのあいだジオ・マテリアライズを展開する
+  TSUKISASHI: 161,    // つきさし（オリジナル）：4分の1（いまひとつ×2）の相手に与えるダメージが5倍になる
 };
 
 const KIKENYOCHI_ABILITIES = [ABILITY.KIKIKAIHI, ABILITY.KIKENYOCHI_2];
@@ -4420,6 +4454,13 @@ function calcDamage(attacker, defender, move, logFn) {
       const soulBoost = 1 + (attacker.energyStacks * 0.2);
       dmg = Math.floor(dmg * soulBoost);
       if (logFn) logFn(`${attacker.species.name}の${abilityJp(attacker.ability)}が発動！威力が${Math.floor(move.power * soulBoost)}相当になった！`);
+    }
+  }
+  // つきさし：タイプ相性が4分の1（いまひとつ×2）の相手に与えるダメージが5倍
+  if (attacker.ability === ABILITY.TSUKISASHI && typeMult === 0.25) {
+    if (!gasActive || gasImmune(attacker)) {
+      dmg = Math.floor(dmg * 5);
+      if (logFn) logFn(`${attacker.species.name}の${abilityJp(attacker.ability)}が発動！`);
     }
   }
 
@@ -6531,7 +6572,11 @@ async function runTurn(playerAction, cpuAction, playerPoke, cpuPoke, logFn, onIm
     const oppAction = actions.find((o, idx) => o !== action && o.poke === action.target);
     const oppIdx = oppAction ? actions.indexOf(oppAction) : -1;
     const opponentWillAttack = !!(oppAction && oppIdx > i && oppAction.move && oppAction.move.category !== 'status');
+    // フォーマルハウト：変化先は「使う前」の状態で決め、攻撃のあと（相手が倒れて break する前）に確定する
+    const formalhautToId = getFormalhautTransformId(action.poke, action.move);
+    const formalhautFromMove = action.move;
     executeMove(action.poke, action.target, action.move, logFn, { opponentWillAttack, kimarite: !!action.kimarite });
+    if (formalhautToId) commitFormalhautTransform(action.poke, formalhautFromMove, formalhautToId, logFn);
     if (action.target.fainted || action.poke.fainted) break;
 
     // きまりて：相手の交代技（とんぼがえり等）の「交代する部分」だけをキャンセルする（攻撃自体は行われる）。

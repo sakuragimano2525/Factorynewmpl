@@ -5192,6 +5192,7 @@ const ABILITY_DESC_BY_ID = {
 158: 'こおりタイプのわざいりょくが あがる',
 159: '地脈を付与された相手に与えるダメージが 段階に応じて増える。',
 160: '登場時、5ターンのあいだ ジオ・マテリアライズを展開する',
+161: 'かなり いまひとつの あいてに あたえる ダメージが あがる',
 
 80: 'ノーマルの技がこおりになる（威力1.2倍）',
 81: 'ノーマルの技がでんきになる（威力1.2倍）',
@@ -13397,8 +13398,9 @@ wpPick();
 
 function wpApply(deferBgm) {
   if (wpSel !== WP_RANDOM) wpEff = wpSel;
-  // ホーム＋対戦方法／NPCバトル方法／手持ちポケモン（勝利後の入れ替え含む）画面に壁紙を反映
-  ['screen-title', 'screen-multiplayer', 'screen-npc-mode', 'screen-team'].forEach((id) => {
+  // ホーム＋対戦方法／NPCバトル方法／手持ちポケモン（勝利後の入れ替え含む）／バトル画面のUIに壁紙を反映
+  // （バトルは配色のみ。マップ背景・BGMは従来どおり。ランダム壁紙の再抽選はホームへ戻る時だけなので、バトル中に変わることはない）
+  ['screen-title', 'screen-multiplayer', 'screen-npc-mode', 'screen-team', 'screen-battle'].forEach((id) => {
     const t = $(id);
     if (!t) return;
     // 【軽量化】同じテーマなら何もしない（無駄なスタイル再計算を避ける）

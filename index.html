@@ -6870,6 +6870,124 @@ linear-gradient(165deg,#f2fbff,#c9ecfa 50%,#94d3f0);
 #screen-multiplayer[data-theme="18"] .multi-menu-title,#screen-npc-mode[data-theme="18"] .npc-mode-title,#screen-team[data-theme="18"] .team-title{text-shadow:0 0 2px rgba(240,250,255,.96),0 0 2px rgba(240,250,255,.96),0 0 6px rgba(240,250,255,.96),0 0 10px rgba(240,250,255,.96),0 0 16px rgba(240,250,255,.96),0 3px 0 var(--t-shad)}
 </style>
 
+<style id="wp-battle-theme">
+/* =====================================================================
+   壁紙テーマをバトル画面にも反映（#screen-battle の data-theme は ui.js の wpApply が付け外し）
+   ・変えるのは「UIの配色」だけ。バトル背景のマップ画像・BGM・演出（天候など）は変えない。
+   ・デフォルト壁紙(0)は属性なし＝このブロックは一切効かず、従来どおりの見た目。
+   ===================================================================== */
+#screen-battle[data-theme]{
+  color:var(--t-ink);   /* 文字色を明示していない部分（交代画面のわざ一覧・ログの見出し等）は継承なので、ここで壁紙の文字色にする */
+  /* 共通変数を壁紙の配色へ差し替え：交代／ログ／様子見／技詳細／結果などのパネル・文字・ボタンがまとめて追従する */
+  --ink:var(--t-ink); --ink-soft:var(--t-ink2); --muted:var(--t-ink2);
+  --surface:var(--t-card); --surface-deep:var(--t-ic);
+  --accent-a:var(--t-pa); --accent-b:var(--t-pb);
+  --u-ink:var(--t-ink); --u-ink-2:var(--t-ink2); --u-red:var(--t-sub); --u-blue:var(--t-pa); --u-blue-deep:var(--t-pd);
+  --shadow-light:0 5px 0 var(--t-edge), 0 14px 26px rgba(14,20,38,.22);
+  --shadow-light-sm:0 3px 0 var(--t-edge), 0 6px 12px rgba(14,20,38,.14);
+  --shadow-inset:inset 0 3px 6px var(--t-edge);
+  --shadow-inset-sm:inset 0 2px 4px var(--t-edge);
+  --wpb-ring:inset 0 0 0 var(--t-bw,0px) var(--t-bd,transparent);   /* 縁取りのあるテーマ用 */
+}
+#screen-battle[data-theme] .battle-field{ background:var(--t-bg); }   /* マップ画像の下地（画像が読めるまで／無い時だけ見える） */
+
+/* ---- HUD / タイマー ---- */
+#screen-battle[data-theme] .hud{
+  background:var(--t-card);
+  box-shadow:0 4px 0 var(--t-edge), 0 12px 24px rgba(14,20,38,.20), var(--wpb-ring);
+}
+#screen-battle[data-theme] .hud-lv{ background:var(--t-ink); color:var(--t-top); }
+#screen-battle[data-theme] .hud-hpbar-outer::before{ background:var(--t-ink); color:var(--t-top); }
+#screen-battle[data-theme][data-theme="4"] .hud-hpbar-outer,
+#screen-battle[data-theme][data-theme="7"] .hud-hpbar-outer{ box-shadow:0 0 0 1px rgba(255,255,255,.24); }   /* 暗い壁紙ではHPバーの枠を見えるように */
+#screen-battle[data-theme] .turn-timer-badge,
+#screen-battle[data-theme] .opponent-waiting-badge{
+  background:var(--t-card); color:var(--t-ink);
+  box-shadow:0 3px 0 var(--t-edge), 0 8px 16px rgba(14,20,38,.18), var(--wpb-ring);
+}
+#screen-battle[data-theme] .turn-timer-badge.warn{ background:var(--t-sub); color:#fff; }
+
+/* ---- メッセージ窓 / ログ短冊 ---- */
+#screen-battle[data-theme] .msg-toast{
+  background:var(--t-card); color:var(--t-ink);
+  border-color:var(--t-pa);
+  box-shadow:0 0 0 3px var(--t-pd), 0 16px 32px rgba(0,0,0,.30);
+}
+#screen-battle[data-theme] .msg-toast.show::after{ color:var(--t-pa); }
+#screen-battle[data-theme] .battle-log-line{
+  background:var(--t-card); color:var(--t-ink); border-left-color:var(--t-ink2);
+  box-shadow:0 2px 0 var(--t-edge), 0 6px 12px rgba(14,20,38,.14);
+}
+/* ログの「自分＝青／相手＝赤」は壁紙に関係なく元の色のまま（見分けやすさ優先）。それ以外（中立の行）だけ壁紙の配色 */
+#screen-battle[data-theme] .battle-log-line.log-side-player{ border-left-color:#2f6bff; background:#eef3ff; color:#1b2238; }
+#screen-battle[data-theme] .battle-log-line.log-side-cpu{ border-left-color:#e8404f; background:#fff0f1; color:#1b2238; }
+
+/* ---- コマンドドック（降参／ログ／様子見／たたかう／ポケモン／技リスト） ---- */
+#screen-battle[data-theme] .dock-surrender-btn,
+#screen-battle[data-theme] .dock-log-btn,
+#screen-battle[data-theme] .dock-watch-btn{
+  background:var(--t-card); color:var(--t-ink);
+  box-shadow:0 3px 0 var(--t-edge), 0 6px 12px rgba(14,20,38,.16), var(--wpb-ring);
+}
+#screen-battle[data-theme] .dock-surrender-btn{ color:var(--t-sub); }
+#screen-battle[data-theme] .dock-surrender-btn:active,
+#screen-battle[data-theme] .dock-log-btn:active,
+#screen-battle[data-theme] .dock-watch-btn:active{ box-shadow:0 1px 0 var(--t-edge), var(--wpb-ring); }
+#screen-battle[data-theme] #act-fight{
+  background:linear-gradient(180deg,var(--t-pa),var(--t-pb)); color:var(--t-pi);
+  box-shadow:0 4px 0 var(--t-pd), 0 8px 14px rgba(14,20,38,.16), var(--wpb-ring);
+}
+#screen-battle[data-theme] #act-switch{
+  background:var(--t-card); color:var(--t-ink);
+  box-shadow:0 4px 0 var(--t-edge), 0 8px 14px rgba(14,20,38,.14), var(--wpb-ring);
+}
+#screen-battle[data-theme] #act-fight:active{ box-shadow:0 1px 0 var(--t-pd), var(--wpb-ring); }
+#screen-battle[data-theme] #act-switch:active{ box-shadow:0 1px 0 var(--t-edge), var(--wpb-ring); }
+#screen-battle[data-theme] .move-row{
+  background:var(--t-card); color:var(--t-ink);
+  box-shadow:0 3px 0 var(--t-edge), 0 8px 14px rgba(14,20,38,.12);
+}
+#screen-battle[data-theme] .move-row:active{ box-shadow:0 1px 0 var(--t-edge); }
+#screen-battle[data-theme] .move-row-info-btn{ background:var(--t-ic); color:var(--t-ink2); }
+#screen-battle[data-theme] .move-list .move-row-back{
+  background:var(--t-card); color:var(--t-ink);
+  box-shadow:0 3px 0 var(--t-edge), 0 8px 14px rgba(14,20,38,.12);
+}
+
+/* ---- ダイアログ／パネル（降参確認・交代・ログ・様子見・技詳細・結果・交換） ---- */
+#screen-battle[data-theme] .surrender-panel,
+#screen-battle[data-theme] .trade-card,
+#screen-battle[data-theme] .result-card{
+  background:var(--t-card);
+  box-shadow:0 6px 0 var(--t-edge), 0 26px 50px rgba(14,20,38,.38);
+}
+#screen-battle[data-theme] .watch-panel,
+#screen-battle[data-theme] .log-panel,
+#screen-battle[data-theme] .party-panel{
+  box-shadow:0 0 0 3px var(--t-pa), 0 26px 50px rgba(14,20,38,.40);
+}
+#screen-battle[data-theme] .battle-move-info-panel{
+  box-shadow:0 0 0 3px var(--t-pa), 0 16px 36px rgba(14,20,38,.34);
+}
+#screen-battle[data-theme] .party-close-btn,
+#screen-battle[data-theme] .watch-close-btn{
+  background:var(--t-ink); color:var(--t-top); box-shadow:0 4px 0 var(--t-edge);
+}
+#screen-battle[data-theme] .surrender-panel-btns button,
+#screen-battle[data-theme] .trade-card > .neu-btn{
+  background:var(--t-ic); color:var(--t-ink); box-shadow:0 4px 0 var(--t-edge);
+}
+#screen-battle[data-theme] .surrender-panel-btns .surrender-confirm-btn{
+  background:linear-gradient(180deg,#ff5a68,#e23144); color:#fff; box-shadow:0 4px 0 var(--u-red-deep,#a8232d);   /* 「こうさんする」は危険操作なので赤のまま */
+}
+#screen-battle[data-theme] .result-card .neu-btn.primary,
+#screen-battle[data-theme] .result-mp-actions .start-btn.primary{
+  background:linear-gradient(180deg,var(--t-pa),var(--t-pb)); color:var(--t-pi); box-shadow:0 4px 0 var(--t-pd);
+}
+#screen-battle[data-theme] .host-wait-spinner{ border-color:var(--t-edge); border-top-color:var(--t-pa); }
+
+</style>
+
 <!-- ===== 不具合修正：非表示の画面の中身が、見えないままタップを奪うのを防ぐ =====
      .battle-bottom > * や .mp-pick-ok.ready は pointer-events:auto のため、画面が非表示(opacity:0)でも
      タップを受け取り続けていた（対人戦のあと待機部屋の「準備完了」「チームを選ぶ」等が反応しなくなる原因）。 -->
