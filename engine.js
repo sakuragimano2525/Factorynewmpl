@@ -2523,13 +2523,13 @@ const MEGA_EVOLUTION_DATA = {
   "1016": {
     "type1": "grass",
     "type2": "dragon",
-    "ability": 9,
+    "ability": 116,
     "baseStats": {
       "hp": 70,
-      "atk": 140,
-      "def": 75,
-      "spa": 140,
-      "spd": 85,
+      "atk": 185,
+      "def": 65,
+      "spa": 185,
+      "spd": 65,
       "spe": 145
     }
   },
