@@ -1339,11 +1339,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 53,
     "baseStats": {
       "hp": 80,
-      "atk": 70,
+      "atk": 60,
       "def": 90,
-      "spa": 145,
-      "spd": 149,
-      "spe": 96
+      "spa": 155,
+      "spd": 155,
+      "spe": 90
     }
   },
   "34": {
@@ -1362,14 +1362,14 @@ const MEGA_EVOLUTION_DATA = {
   "36": {
     "type1": "grass",
     "type2": "shine",
-    "ability": 147,
+    "ability": 33,
     "baseStats": {
       "hp": 110,
-      "atk": 120,
-      "def": 110,
-      "spa": 120,
-      "spd": 120,
-      "spe": 100
+      "atk": 125,
+      "def": 150,
+      "spa": 125,
+      "spd": 150,
+      "spe": 90
     }
   },
   "41": {
@@ -1693,10 +1693,10 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "steel",
     "ability": 53,
     "baseStats": {
-      "hp": 80,
-      "atk": 130,
+      "hp": 60,
+      "atk": 90,
       "def": 130,
-      "spa": 35,
+      "spa": 55,
       "spd": 100,
       "spe": 75
     }
@@ -2174,12 +2174,12 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "fighting",
     "ability": 116,
     "baseStats": {
-      "hp": 88,
+      "hp": 98,
       "atk": 167,
       "def": 172,
-      "spa": 84,
-      "spd": 115,
-      "spe": 54
+      "spa": 44,
+      "spd": 145,
+      "spe": 74
     }
   },
   "384": {
@@ -2435,11 +2435,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 78,
     "baseStats": {
       "hp": 70,
-      "atk": 117,
+      "atk": 127,
       "def": 110,
       "spa": 117,
       "spd": 110,
-      "spe": 110
+      "spe": 100
     }
   },
   "1003": {
@@ -2783,14 +2783,14 @@ const MEGA_EVOLUTION_DATA = {
   "1057": {
     "type1": "steel",
     "type2": "electric",
-    "ability": 134,
+    "ability": 3,
     "baseStats": {
-      "hp": 80,
-      "atk": 60,
-      "def": 153,
+      "hp": 130,
+      "atk": 0,
+      "def": 163,
       "spa": 75,
-      "spd": 146,
-      "spe": 111
+      "spd": 137,
+      "spe": 120
     }
   },
   "1079": {
@@ -3285,6 +3285,9 @@ function createRandomPokemon(speciesId, level = 100, shinyPercent = 5) {
     gyakujouTriggered: false,
     energyStacks: 0,
     chimyaku: 0,           // 地脈（0〜3）：付与されると、カリブレーション持ち・じめん/いわタイプから受けるダメージが増える
+    kaze: 0,               // 風息（上限なし）：付与されると、むし/ひこう/くさタイプから受けるダメージが増える
+    everHadCharge: false,  // このバトル中にチャージを1以上獲得したことがあるか（キャンバス拡張の わざ5 の条件）
+    bonusMove: null,       // キャンバス拡張で増える「わざ5」（技オブジェクト。無ければnull）
     tauntTurns: 0, // 挑発ターン
     bindTurns: 0,  // バインド状態残りターン
     shadowTrappedBy: null, // かげぬい：縫い付けた相手への参照。その相手が場にいる限り逃げられない（交代不可）
@@ -3362,7 +3365,7 @@ const TYPE_EFFECTIVENESS_OVERRIDE_MOVES = {
 
 // 高確率急所技（技自体の性質による急所ランク+1補正。きあいだめ等の蓄積とは別枠で、
 // 使用したそのターンのみ加算される）。
-const HIGH_CRIT_MOVES = new Set([23,125,143,152,163,182,183,204,249,406,264,266,281,303,328,387]);
+const HIGH_CRIT_MOVES = new Set([23,125,143,152,163,182,183,204,249,406,264,266,281,303,328,387,521,524]);
 
 function getTypeEffectiveness(atkType, defType1, defType2, moveId) {
   const override = moveId != null ? TYPE_EFFECTIVENESS_OVERRIDE_MOVES[moveId] : null;
@@ -3628,9 +3631,9 @@ const TYPE_ABSORB_ABILITY_TYPE = {
   [ABILITY.SOUSHOKU]: 'grass',
 };
 
-const KIRU_MOVE_IDS = [1,23,45,68,150,152,168,183,187,247,266,281,32,328,387,389,406];
+const KIRU_MOVE_IDS = [1,23,45,68,150,152,168,183,187,247,266,281,32,328,387,389,406,521];
 const KAMU_MOVE_IDS = [24,25,28,124,61,261,222,284,206,348];
-const HADOU_MOVE_IDS = [504,117,218,334,32,54,112,352,376,394,501];
+const HADOU_MOVE_IDS = [504,117,218,334,32,54,112,352,376,394,501,522,524];
 const KOBUSHI_MOVE_IDS = [461,62,84,102,106,107,117,122,164,223,226,250,324,327];
 const ENERGY_CHARGE_MOVE_IDS = [66,77,79,83,97,103,115,127,128,157,169,177,184,207,218,225,294,315,334,510];
 
@@ -3642,6 +3645,8 @@ const MULTI_HIT_MOVES = {
   367: { maxHits: 5, minHits: 2, fixed: false, powerStep: 0, basePower: 35 },
   388: { maxHits: 5, minHits: 2, fixed: false, powerStep: 0, basePower: 50 },
   472: { maxHits: 6, minHits: 6, fixed: true,  powerStep: 5, basePower: 10 },
+  // フリーダムペイント：最大6回、外れるまで攻撃。当たるたびに相手へ風息を1付与（ワイドブルームの+1は1発目のみ）
+  523: { maxHits: 6, minHits: 6, fixed: true,  powerStep: 0, basePower: 20 },
   189: { maxHits: 5, minHits: 2, fixed: false, powerStep: 0, basePower: 25 },
 };
 
@@ -3676,6 +3681,147 @@ function isChimyakuSource(attacker) {
   return types.includes('ground') || types.includes('rock');
 }
 
+// ---- 風息（地脈とほぼ同じ仕組みの、相手に付与するスタック。上限なし） ----
+// エレガントチェイン(521)・フローラルガード(522)・フリーダムペイント(523)で相手に付与する。
+// 風息を付与されたポケモンは、むし／ひこう／くさタイプのポケモンから受けるダメージが
+// 1つ:1.5倍、2つ目から1つにつき+0.5倍（2つ:2倍 / 3つ:2.5倍 …）になる。
+const KAZE_ICON_HTML = '<img src="./kaze.png" class="inline-stat-icon" onerror="this.style.visibility=\'hidden\'">';
+const KAZE_SOURCE_TYPES = ['bug', 'flying', 'grass'];
+const KAZE_ELEGANT_CHAIN_ID = 521;   // エレガントチェイン
+const KAZE_FLORAL_GUARD_ID = 522;    // フローラルガード
+const KAZE_FREEDOM_PAINT_ID = 523;   // フリーダムペイント
+const KAZE_ROCKET_PARTY_ID = 524;    // ロケットパーティー
+const KAZE_WIDE_BLOOM_ID = 525;      // ワイドブルーム
+const KAZE_CANVAS_ID = 526;          // キャンバス拡張
+// グラスフィールド中に使うと自分の素早さが2段階上がる技
+const GRASSY_SPEED_UP_MOVE_IDS = [521, 522, 523, 524, 525, 526];
+// 「自分の攻撃と特攻の高い方」で攻撃する（物理／特殊が切り替わる）技
+const HIGHER_STAT_MOVE_IDS = [521, 522, 523, 524];
+
+// 風息によるダメージ倍率（n=0なら1倍）。1つ:1.5倍、以降1つにつき+0.5倍。
+function kazeDamageMult(n) {
+  n = n || 0;
+  return n > 0 ? 1 + 0.5 * n : 1;
+}
+
+function addKaze(poke, amount, logFn) {
+  if (!poke || poke.fainted || !(amount > 0)) return;
+  poke.kaze = (poke.kaze || 0) + amount;
+  if (logFn) logFn(`${poke.species.name}に${KAZE_ICON_HTML}風息が${amount}付与された！（現在${poke.kaze}）`);
+}
+
+// ワイドブルーム(525)が効いている側か
+function hasWideBloom(poke) {
+  return !!poke && (poke.side === 'player' ? battleField.wideBloomPlayer : battleField.wideBloomCpu);
+}
+
+// attacker が defender に風息を付与する（ワイドブルーム中は付与量+1）。bonus=false で追加分を付けない。
+function grantKaze(attacker, defender, amount, logFn, bonus) {
+  if (!defender || defender.fainted) return 0;
+  let total = amount;
+  if (bonus !== false && hasWideBloom(attacker)) total += 1;
+  addKaze(defender, total, logFn);
+  return total;
+}
+
+// 風息ダメージ増加の発動源か（むし／ひこう／くさタイプ）
+function isKazeSource(attacker) {
+  if (!attacker) return false;
+  const types = getEffectiveTypes(attacker);
+  return types.some((t) => KAZE_SOURCE_TYPES.includes(t));
+}
+
+// 技が「自分の能力が高い方」で攻撃する技の場合、物理／特殊を切り替えた技オブジェクトを返す（ランク補正込み、同値なら元の分類）
+function applyHigherStatCategory(attacker, move, logFn) {
+  if (!move || !HIGHER_STAT_MOVE_IDS.includes(move.id)) return move;
+  const effAtk = attacker.stats.atk * rankMultiplier(attacker.ranks.atk);
+  const effSpa = attacker.stats.spa * rankMultiplier(attacker.ranks.spa);
+  const cat = effAtk > effSpa ? 'physical' : (effSpa > effAtk ? 'special' : move.category);
+  if (cat === move.category) return move;
+  if (logFn) logFn(`${attacker.species.name}の${move.name}は${cat === 'physical' ? '物理技' : '特殊技'}になった！`);
+  return { ...move, category: cat };
+}
+
+// ロケットパーティー(524)：自分のチャージが1以上、かつ相手の風息が1以上の時だけ使える
+function canUseRocketParty(attacker, defender) {
+  return !!attacker && !!defender && (attacker.energyStacks || 0) >= 1 && (defender.kaze || 0) >= 1;
+}
+
+// 技が今の状況で選べるか（技メニュー／CPUの技選択用）。使えない時は理由の文を返す（使えるなら null）。
+function getMoveUnusableReason(attacker, defender, move) {
+  if (move && move.id === KAZE_ROCKET_PARTY_ID && !canUseRocketParty(attacker, defender)) {
+    return 'チャージ1以上＋相手に風息がある時のみ';
+  }
+  return null;
+}
+
+// ---- キャンバス拡張(526)：チャージを1以上獲得した自分と味方は「わざ5」が増える ----
+// わざ5 = 習得できる技（レベル技）のうち、自分の能力が高い方の分類（物理/特殊）の攻撃技で、威力80以上、
+// 今持っている技とタイプが被らない技。候補が複数ならランダム。
+// 候補が無い場合（覚える技が全て持ち技と同タイプ等）は「優先度が高い技 ＞ 自分のタイプ一致で最高威力の技」。
+function chooseBonusMoveFor(poke) {
+  const sp = GAME_DATA.species[poke.speciesId] || poke.species;
+  const learn = (sp && Array.isArray(sp.levelMoves)) ? sp.levelMoves : [];
+  const heldIds = new Set((poke.moves || []).filter(Boolean).map((m) => m.id));
+  const heldTypes = new Set((poke.moves || []).filter(Boolean).map((m) => m.type));
+  const effAtk = poke.stats.atk * rankMultiplier(poke.ranks.atk);
+  const effSpa = poke.stats.spa * rankMultiplier(poke.ranks.spa);
+  const cat = effAtk > effSpa ? 'physical' : 'special';
+  const myTypes = getEffectiveTypes(poke);
+
+  const seen = new Set();
+  const pool = [];
+  for (const entry of learn) {
+    const id = Array.isArray(entry) ? entry[1] : entry;
+    if (!id || seen.has(id) || heldIds.has(id)) continue;
+    seen.add(id);
+    if (id === KAZE_ROCKET_PARTY_ID) continue; // 使用条件つきの技は わざ5 には選ばない
+    const m = buildMoveObject(id);
+    if (!m || m.category !== cat || !(m.power > 0)) continue;
+    if (m.selfDestruct || m.callRandomMove || m.chargeTurn || isKimariteMove(m)) continue;
+    pool.push(m);
+  }
+  if (pool.length === 0) return null;
+
+  // ① 威力80以上・持ち技とタイプが被らない
+  const fresh = pool.filter((m) => m.power >= 80 && !heldTypes.has(m.type));
+  if (fresh.length > 0) return pick(fresh);
+
+  // ② 優先度が高い技（優先度が最も高いもの。同順なら威力が高い方）
+  const prio = pool.filter((m) => (m.priority || 0) > 0);
+  if (prio.length > 0) {
+    prio.sort((a, b) => (b.priority - a.priority) || (b.power - a.power));
+    return prio[0];
+  }
+  // ③ 自分のタイプ一致で最高威力の技
+  const stab = pool.filter((m) => myTypes.includes(m.type));
+  if (stab.length > 0) {
+    stab.sort((a, b) => b.power - a.power);
+    return stab[0];
+  }
+  return null;
+}
+
+function isCanvasActiveFor(poke) {
+  return !!poke && (poke.side === 'player' ? battleField.canvasPlayer : battleField.canvasCpu);
+}
+
+// 条件（キャンバス拡張が効いている側 かつ チャージを1度でも獲得）を満たしていて、まだ無ければ わざ5 を決める
+function refreshBonusMove(poke, logFn) {
+  if (!poke || poke.fainted || poke.bonusMove) return;
+  if (!poke.everHadCharge || !isCanvasActiveFor(poke)) return;
+  const mv = chooseBonusMoveFor(poke);
+  if (!mv) return;
+  poke.bonusMove = mv;
+  if (logFn) logFn(`${poke.species.name}は キャンバスの 力で ${mv.name}を 使えるようになった！`);
+}
+
+// 技メニュー／CPUの技選択で使う、「わざ5（あれば先頭）＋通常の技」の一覧
+function getBattleMoves(poke) {
+  const base = (poke && Array.isArray(poke.moves)) ? poke.moves : [];
+  return (poke && poke.bonusMove) ? [poke.bonusMove, ...base] : base;
+}
+
 // ---- エナジースタック操作 ----
 // noDouble=true のときはジオ・マテリアライズによる2倍化をしない（グランドアンカーの「チャージを2にする」用）
 function addEnergyStacks(poke, amount, logFn, noDouble) {
@@ -3684,6 +3830,12 @@ function addEnergyStacks(poke, amount, logFn, noDouble) {
   const before = poke.energyStacks;
   poke.energyStacks += amount;
   if (logFn) logFn(`${poke.species.name}の<img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">が${amount}増えた！（現在${poke.energyStacks}）`);
+
+  // キャンバス拡張(526)用：チャージを1以上獲得した事実を覚えておく（消費して0になっても残る）
+  if (poke.energyStacks >= 1) {
+    poke.everHadCharge = true;
+    refreshBonusMove(poke, logFn);
+  }
 
   const gasActive = battleField.chemicalGasActive;
   const gasImmune = poke.ability === ABILITY.KAGAKUHENKAGASU;
@@ -3887,6 +4039,11 @@ const battleField = {
   // 誰か1匹がメガシンカした時点で、そのサイドは以降このバトル中ずっとメガシンカ不可になる。
   megaUsedPlayer: false,
   megaUsedCpu: false,
+  // ワイドブルーム(525)／キャンバス拡張(526)：このバトル中ずっと続く、サイドごとの効果
+  wideBloomPlayer: false,
+  wideBloomCpu: false,
+  canvasPlayer: false,
+  canvasCpu: false,
   // ふるえるとうし（味方の瀕死数を参照するため）・いちじんのかぜ（自分の場においかぜ）用に、
   // バトル中の手持ち全体への参照をここに保持する。ui.js側からresetField()呼び出し時に渡される。
   playerTeam: null,
@@ -3910,7 +4067,11 @@ function resetField(playerTeam, cpuTeam) {
   battleField.turnCount = 0;
   battleField.megaUsedPlayer = false;
   battleField.megaUsedCpu = false;
-  battleField.playerTeam = Array.isArray(playerTeam) ? playerTeam : null;
+  battleField.wideBloomPlayer = false;
+  battleField.wideBloomCpu = false;
+  battleField.canvasPlayer = false;
+  battleField.canvasCpu = false;
+  battleField.playerTeam =Array.isArray(playerTeam) ? playerTeam : null;
   battleField.cpuTeam = Array.isArray(cpuTeam) ? cpuTeam : null;
 }
 
@@ -4469,6 +4630,12 @@ function calcDamage(attacker, defender, move, logFn) {
     const chimyakuMult = CHIMYAKU_DAMAGE_MULT[Math.min(CHIMYAKU_MAX, defender.chimyaku)];
     dmg = Math.floor(dmg * chimyakuMult);
     if (logFn) logFn(`${defender.species.name}は${CHIMYAKU_ICON_HTML}地脈の影響で受けるダメージが${chimyakuMult}倍になった！`);
+  }
+  // 風息：風息を付与されている相手に、むし／ひこう／くさタイプが攻撃すると、数に応じてダメージが増える（1つ:1.5倍、以降+0.5倍ずつ・上限なし）
+  if ((defender.kaze || 0) > 0 && isKazeSource(attacker)) {
+    const kazeMult = kazeDamageMult(defender.kaze);
+    dmg = Math.floor(dmg * kazeMult);
+    if (logFn) logFn(`${defender.species.name}は${KAZE_ICON_HTML}風息の影響で受けるダメージが${kazeMult}倍になった！`);
   }
   if (!ignoreWalls && attacker.ability !== ABILITY.KATAYABURI) {
     const side = defender.side === 'player' ? 'player' : 'cpu';
@@ -5105,18 +5272,19 @@ function executeMultiHit(attacker, defender, move, logFn) {
   if (!config) return false;
 
   const isSkillLink = attacker.ability === ABILITY.SKILL_LINK;
-  let hitCount;
-  if (isSkillLink) {
-    hitCount = config.maxHits;
-  } else if (config.fixed) {
-    hitCount = config.maxHits;
-  } else {
-    hitCount = rand(config.minHits, config.maxHits);
-  }
+  // 仕様：2〜5回のランダム抽選は行わず、常に最大回数まで攻撃する。
+  // 途中で命中判定に外れた時点（または相手がひんしになった時点）でのみ打ち切られる。
+  // 命中率95%の技なら、各打ごとに95%判定を行い、外れるまで最大回数分続ける。
+  // （スキルリンクは命中判定自体を行わないので常に最大回数）
+  const hitCount = config.maxHits;
 
   let totalDamage = 0;
   let hitIndex = 0;
   let anyHit = false;
+
+  // テンポ改善：連続技は、1発ごとに「特性発動・威力上昇・ダメージ・急所・効果は抜群」を毎回すべて表示する。
+  // ただし1行ずつ待たず、行間の待ちを短くして一気に流す（fast指定。実際の待ち時間はui.js側のMSG_FAST_MS）。
+  const fastLog = (msg, meta) => logFn(msg, Object.assign({}, meta || {}, { fast: true }));
 
   for (let i = 0; i < hitCount; i++) {
     if (attacker.fainted || defender.fainted) break;
@@ -5145,7 +5313,7 @@ function executeMultiHit(attacker, defender, move, logFn) {
     }
 
     const tempMove = Object.assign({}, move, { power: power });
-    const result = calcDamage(attacker, defender, tempMove, logFn);
+    const result = calcDamage(attacker, defender, tempMove, fastLog);
     const damage = result.damage;
     const typeMult = result.typeMult;
     const isCrit = result.isCrit;
@@ -5171,12 +5339,17 @@ function executeMultiHit(attacker, defender, move, logFn) {
 
     defender.currentHp = Math.max(0, defender.currentHp - damage);
     if (survivedByGanjou || survivedByEndure) defender.currentHp = 1;
-    logFn(`${defender.species.name}に${damage}のダメージ！`, { hit: defender.side, typeMult, moveType: move.type, movePower: power, moveId: move.id });
-    if (isCrit) logFn('急所に当たった！');
-    if (typeMult > 1) logFn('効果は抜群だ！');
-    else if (typeMult < 1) logFn('効果は今ひとつのようだ…');
-    if (survivedByGanjou) logFn(`${defender.species.name}はがんじょうで持ちこたえた！`);
-    if (survivedByEndure) logFn(`${defender.species.name}はこらえた！`);
+    fastLog(`${defender.species.name}に${damage}のダメージ！`, { hit: defender.side, typeMult, moveType: move.type, movePower: power, moveId: move.id });
+    if (isCrit) fastLog('急所に当たった！');
+    if (typeMult > 1) fastLog('効果は抜群だ！');
+    else if (typeMult < 1) fastLog('効果は今ひとつのようだ…');
+    if (survivedByGanjou) fastLog(`${defender.species.name}はがんじょうで持ちこたえた！`);
+    if (survivedByEndure) fastLog(`${defender.species.name}はこらえた！`);
+
+    // フリーダムペイント(523)：当たるたびに相手へ風息を1付与（ワイドブルームの追加+1は技を使って1発目が当たった時のみ）
+    if (move.id === KAZE_FREEDOM_PAINT_ID && defender.currentHp > 0) {
+      grantKaze(attacker, defender, 1, logFn, hitIndex === 1);
+    }
 
     let suppressSecondary = false;
     if (attacker.ability === ABILITY.CHIKARAZUKU && abilityActive(attacker)) suppressSecondary = true;
@@ -5210,6 +5383,13 @@ function executeMultiHit(attacker, defender, move, logFn) {
       break;
     }
     anyHit = true;
+  }
+
+  // フリーダムペイント(523)：攻撃後、相手の風息が7以上なら自分にチャージ+10
+  if (move.id === KAZE_FREEDOM_PAINT_ID && anyHit && !attacker.fainted && (defender.kaze || 0) >= 7) {
+    if (!battleField.chemicalGasActive || attacker.ability === ABILITY.KAGAKUHENKAGASU) {
+      addEnergyStacks(attacker, 10, logFn);
+    }
   }
 
   // ランク変化（selfRank/oppRank）は連続ヒットの回数分ではなく、技を出した時に1回だけ適用する。
@@ -5432,7 +5612,7 @@ function executeMoveCore(attacker, defender, move, logFn, turnCtx) {
 
   // ---- アンコール強制チェック ----
   if (attacker.encoreTurns > 0 && attacker.encoreMoveId !== null) {
-    const forcedMove = attacker.moves.find(m => m.id === attacker.encoreMoveId);
+    const forcedMove = getBattleMoves(attacker).find(m => m.id === attacker.encoreMoveId);
     if (forcedMove && forcedMove !== move) {
       logFn(`${attacker.species.name}はアンコールで${forcedMove.name}を強制された！`);
       move = forcedMove;
@@ -5441,7 +5621,7 @@ function executeMoveCore(attacker, defender, move, logFn, turnCtx) {
 
   // ---- げきりん強制連続使用チェック ----
   if (attacker.gekirinTurns > 0 && attacker.gekirinMoveId !== null) {
-    const forcedGekirin = attacker.moves.find(m => m.id === attacker.gekirinMoveId);
+    const forcedGekirin = getBattleMoves(attacker).find(m => m.id === attacker.gekirinMoveId);
     if (forcedGekirin && forcedGekirin !== move) {
       move = forcedGekirin;
     }
@@ -5535,6 +5715,13 @@ function executeMoveCore(attacker, defender, move, logFn, turnCtx) {
     return;
   }
   
+  // ---- ロケットパーティー(524)：自分のチャージが1以上、相手の風息が1以上の時だけ使える ----
+  // （技メニュー／CPUの技選択でも弾いているが、同じターン内の状況変化に備えて実行時にも確認する。PPは消費しない）
+  if (move.id === KAZE_ROCKET_PARTY_ID && !canUseRocketParty(attacker, defender)) {
+    logFn(`しかし　${move.name}は　今は　使えなかった！`);
+    return;
+  }
+
 // 変更後
 move.pp--;
 logFn(`${attacker.species.name}の${move.name}！`, {
@@ -5542,6 +5729,12 @@ logFn(`${attacker.species.name}の${move.name}！`, {
   moveId: move.id,
   moveCategory: move.category,
 });
+  // ---- グラスフィールド中：風息関連の技を使うと自分の素早さが2段階上がる ----
+  if (GRASSY_SPEED_UP_MOVE_IDS.includes(move.id) && battleField.terrain === 'grassy') {
+    applyRankChange(attacker, [100, 0, 0, 0, 0, 2, 0, 0], logFn);
+  }
+  // ---- 風息の攻撃技：自分の攻撃と特攻の高い方で攻撃する（物理／特殊が切り替わる） ----
+  move = applyHigherStatCategory(attacker, move, logFn);
   // ---- メガソーラー：発動ログ ----
   // 「ひでり扱い」が実際に結果を変える場合だけ、技1回につき1回出す（連続技・おやこあいのループの外側）。
   //  ・ほのお技：ひでりの強化を受ける／みず技：半減する（実際の天候が晴れ以外の時のみ意味がある）
@@ -5595,6 +5788,30 @@ logFn(`${attacker.species.name}の${move.name}！`, {
   }
 
   // ---- 変化技の特殊処理 ----
+  // ワイドブルーム(525)：このバトル中、自分と味方が相手に風息を付与する時、付与量がさらに+1される（ターン無限）
+  if (move.id === KAZE_WIDE_BLOOM_ID) {
+    if (hasWideBloom(attacker)) {
+      logFn(`しかし　${KAZE_ICON_HTML}ワイドブルームは　すでに　効いている！`);
+    } else {
+      if (attacker.side === 'player') battleField.wideBloomPlayer = true;
+      else battleField.wideBloomCpu = true;
+      logFn(`${attacker.species.name}は　ワイドブルームで　花を　咲かせた！　${KAZE_ICON_HTML}風息を付与する時、さらに+1されるようになった！`);
+    }
+    return;
+  }
+  // キャンバス拡張(526)：このバトル中、チャージを1以上獲得した自分と味方は わざ が1つ増える（ターン無限）
+  if (move.id === KAZE_CANVAS_ID) {
+    if (isCanvasActiveFor(attacker)) {
+      logFn(`しかし　キャンバスは　すでに　広がっている！`);
+    } else {
+      if (attacker.side === 'player') battleField.canvasPlayer = true;
+      else battleField.canvasCpu = true;
+      logFn(`${attacker.species.name}は　キャンバスを　広げた！　チャージを　得た　味方は　わざが　1つ　増える！`);
+      const canvasTeam = attacker.side === 'player' ? battleField.playerTeam : battleField.cpuTeam;
+      (Array.isArray(canvasTeam) && canvasTeam.length > 0 ? canvasTeam : [attacker]).forEach((p) => refreshBonusMove(p, logFn));
+    }
+    return;
+  }
   if (move.id === 160) { // おいかぜ
     const side = attacker.side === 'player' ? 'player' : 'cpu';
     if (side === 'player') battleField.tailwindPlayer = 4;
@@ -5686,7 +5903,7 @@ logFn(`${attacker.species.name}の${move.name}！`, {
   // ---- アンコール (492) ----
   if (move.id === 492) {
     if (defender.lastUsedMoveId !== null) {
-      const lastMove = defender.moves.find(m => m.id === defender.lastUsedMoveId);
+      const lastMove = getBattleMoves(defender).find(m => m.id === defender.lastUsedMoveId);
       if (lastMove && lastMove.pp > 0) {
         defender.encoreMoveId = defender.lastUsedMoveId;
         defender.encoreTurns = 3;
@@ -5703,7 +5920,7 @@ logFn(`${attacker.species.name}の${move.name}！`, {
   // ---- ひややかパンチ (226) ----
   if (move.id === 226) {
     if (defender.lastUsedMoveId !== null) {
-      const targetMove = defender.moves.find(m => m.id === defender.lastUsedMoveId);
+      const targetMove = getBattleMoves(defender).find(m => m.id === defender.lastUsedMoveId);
       if (targetMove && targetMove.pp > 0) {
         const reduce = Math.min(4, targetMove.pp);
         targetMove.pp -= reduce;
@@ -6107,6 +6324,27 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     if (!gaFuyuImmune && getTypeEffectiveness(move.type, gaDefTypes[0], gaDefTypes[1], move.id) !== 0) {
       addChimyaku(defender, 1, logFn);
       chimyakuPreGranted = true;
+    }
+  }
+
+  // ---- エレガントチェイン(521)／フローラルガード(522)：攻撃の前に先に相手へ風息を付与する ----
+  //  521：風息を1つ（自分のチャージが2以上なら2つ）。 522：風息を1つ。付与後に相手の風息が2以上なら
+  //  自分の防御と特防を1段階上げ、自分のチャージが4以下なら4にする。無効（相性0）の相手には付与しない。
+  if (move.id === KAZE_ELEGANT_CHAIN_ID || move.id === KAZE_FLORAL_GUARD_ID) {
+    const kzDefTypes = getEffectiveTypes(defender);
+    if (getTypeEffectiveness(move.type, kzDefTypes[0], kzDefTypes[1], move.id) !== 0) {
+      if (move.id === KAZE_ELEGANT_CHAIN_ID) {
+        grantKaze(attacker, defender, attacker.energyStacks >= 2 ? 2 : 1, logFn);
+      } else {
+        grantKaze(attacker, defender, 1, logFn);
+        if ((defender.kaze || 0) >= 2) {
+          applyRankChange(attacker, [100, 0, 1, 0, 1, 0, 0, 0], logFn);
+          if (attacker.energyStacks <= 4 && (!gasActive || gasImmune(attacker))) {
+            const kzNeed = 4 - attacker.energyStacks;
+            if (kzNeed > 0) addEnergyStacks(attacker, kzNeed, logFn, true);
+          }
+        }
+      }
     }
   }
 
@@ -6820,16 +7058,18 @@ function chooseCpuAction(cpuPoke, playerPoke, cpuTeam, megaEvolutionEnabled, pla
   // （実際に行動を封じる処理は checkCanMove 側で行われるため、ここではダミーの
   //   アクションを返すだけでよい）
   if (cpuPoke.mustRechargeTurns > 0) {
-    return { type: 'move', move: cpuPoke.moves.find(m => m.id === cpuPoke.lastUsedMoveId) || cpuPoke.moves[0] };
+    return { type: 'move', move: getBattleMoves(cpuPoke).find(m => m.id === cpuPoke.lastUsedMoveId) || cpuPoke.moves[0] };
   }
 
-  const usable = cpuPoke.moves.filter((m) => m.pp > 0 && !m.locked && !(m.id === 4 && cpuPoke.deaigashiraLocked) &&
-    !(cpuPoke.typeLockTurns > 0 && cpuPoke.typeLockType === m.type));
+  // キャンバス拡張の「わざ5」も候補に含める。ロケットパーティーは使用条件を満たさない時は選ばない。
+  const usable = getBattleMoves(cpuPoke).filter((m) => m.pp > 0 && !m.locked && !(m.id === 4 && cpuPoke.deaigashiraLocked) &&
+    !(cpuPoke.typeLockTurns > 0 && cpuPoke.typeLockType === m.type) &&
+    !getMoveUnusableReason(cpuPoke, playerPoke, m));
   if (usable.length === 0) return { type: 'move', move: cpuPoke.moves.find(m => m.pp > 0) || cpuPoke.moves[0] };
 
   // げきりん強制連続使用
   if (cpuPoke.gekirinTurns > 0 && cpuPoke.gekirinMoveId !== null) {
-    const forcedGekirin = cpuPoke.moves.find(m => m.id === cpuPoke.gekirinMoveId);
+    const forcedGekirin = getBattleMoves(cpuPoke).find(m => m.id === cpuPoke.gekirinMoveId);
     if (forcedGekirin && forcedGekirin.pp > 0 && !forcedGekirin.locked) {
       return { type: 'move', move: forcedGekirin };
     }
@@ -6837,7 +7077,7 @@ function chooseCpuAction(cpuPoke, playerPoke, cpuTeam, megaEvolutionEnabled, pla
 
   // アンコール強制
   if (cpuPoke.encoreTurns > 0 && cpuPoke.encoreMoveId !== null) {
-    const forced = cpuPoke.moves.find(m => m.id === cpuPoke.encoreMoveId);
+    const forced = getBattleMoves(cpuPoke).find(m => m.id === cpuPoke.encoreMoveId);
     if (forced && forced.pp > 0 && !forced.locked) {
       return { type: 'move', move: forced };
     }
@@ -6900,7 +7140,7 @@ const HYPNOSIS_MOVE_ID = 293; // ねむり付与技の代表ID（実際の効果
 // AI評価用：連続技（複数回ヒットする技）の実質威力上書き。
 // 原作のオーバーライド値をそのまま踏襲（該当技がない場合は無害）。
 const _AI_MULTI_HIT_POWER_OVERRIDE = {
-  472: 100, 48: 80, 309: 80, 189: 80, 461: 80, 388: 150, 367: 100,
+  472: 100, 48: 80, 309: 80, 189: 80, 461: 80, 388: 150, 367: 100, 523: 100,
 };
 
 // AIのダメージ見積もり用：クレッシェンド／シアーハートは「今のターンの威力」で評価する

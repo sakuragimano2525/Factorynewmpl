@@ -214,6 +214,23 @@ const MOVE_COND_DEFS = {
   57:  [['w:starrysky', '優先度+1']],                        // 穿星波
   503: [['', '天候によって技のタイプが変わり、変わると威力2倍']],   // ウェザーボール
   504: [['', 'フィールドによって技のタイプが変わり、変わると威力2倍']], // だいちのはどう
+  // ---- 風息の技（グラスフィールド中に使うと自分の素早さが2段階上がる） ----
+  521: [['', '自分の攻撃と特攻の高い方で攻撃する', '先に相手に風息を1付与してから攻撃する'],   // エレガントチェイン
+        ['自分のチャージが2以上の時', '先に風息を2つ付与してから攻撃する'],
+        ['t:grassy', '自分の素早さが2段階上がる']],
+  522: [['', '自分の攻撃と特攻の高い方で攻撃する', '先に相手に風息を1付与してから攻撃する'],   // フローラルガード
+        ['相手の風息が2以上の時', '自分の防御と特防が1段階上がる', '自分のチャージが4以下なら4にする'],
+        ['t:grassy', '自分の素早さが2段階上がる']],
+  523: [['', '自分の攻撃と特攻の高い方で攻撃する', '最大6回、外れるまで攻撃する', '当たるたびに相手に風息を1付与する'],   // フリーダムペイント
+        ['相手の風息が7以上の時', '自分のチャージが10増える'],
+        ['t:grassy', '自分の素早さが2段階上がる']],
+  524: [['', '自分の攻撃と特攻の高い方で攻撃する'],   // ロケットパーティー
+        ['使用条件', '自分のチャージが1以上、かつ相手の風息が1以上の時のみ使える'],
+        ['t:grassy', '自分の素早さが2段階上がる']],
+  525: [['', 'このバトル中、自分と味方は相手に風息を付与する時、付与量がさらに+1される', '（ターン無限）'],   // ワイドブルーム
+        ['t:grassy', '自分の素早さが2段階上がる']],
+  526: [['', 'このバトル中、チャージを1以上獲得した自分と味方は、わざが1つ増える（わざ5）', '自分の能力が高い方の分類で威力80以上の、持ち技と被らないタイプの技が選ばれる', '（ターン無限）'],   // キャンバス拡張
+        ['t:grassy', '自分の素早さが2段階上がる']],
 };
 
 function condLabelText(c) {
@@ -1447,6 +1464,7 @@ window.makeTeamCardFallback = function (speciesId) {
 let msgQueue = [];
 let msgResolve = null;
 const MSG_AUTO_MS = 750;
+const MSG_FAST_MS = 220; // 連続技など、行を一気に流したい時（meta.fast）の行間の待ち
 const LOG_STACK_MAX = 6;
 let logLines = [];
 
@@ -1475,7 +1493,7 @@ function sendPrivateLogToGuestOnly(text) {
 
 function queueMessage(text, after, netMeta) {
   const _logSide = netMeta && netMeta.moveUse ? netMeta.moveUse : (netMeta && netMeta.hit ? netMeta.hit : null);
-  msgQueue.push({ text, after, side: _logSide });
+  msgQueue.push({ text, after, side: _logSide, fast: !!(netMeta && netMeta.fast) });
   // ホスト → ゲストへイベントを即時送信（ホストの演出テンポとゲストの受信をリアルタイム同期させる）。
   // hideFromGuest：ホスト側の持ち主だけに見せる非公開ログ（ランダムアクトの技変化）はゲストへ送らない。
   if (state.multiplayer && state.isHost && !(netMeta && netMeta.hideFromGuest)) {
@@ -1500,6 +1518,7 @@ function queueMessage(text, after, netMeta) {
       turn: netMeta && netMeta.turn ? netMeta.turn : null,
       wfx: netMeta && netMeta.weatherFx ? netMeta.weatherFx : null,
       wnb: netMeta && netMeta.weatherFxNoWait ? true : false,
+      fs: netMeta && netMeta.fast ? true : false,
       mp: netMeta && netMeta.movePower !== undefined ? netMeta.movePower : null,
       yf: netMeta && netMeta.yowashiForm ? netMeta.yowashiForm : null,
       ys: netMeta && netMeta.yowashiSide ? netMeta.yowashiSide : null,
@@ -1550,10 +1569,12 @@ function queueTurnDivider(turnNumber) {
   const skipFx = turnNumber === 1;
   getFieldContinueMessages().forEach(({ text: msg, weatherFx: fx }) => {
     const weatherFx = skipFx ? null : fx;
+    // テンポ改善：「あと〇ターン つづいている！」の背景演出は再生だけして、終わるのを待たずに
+    // 次のメッセージへ進める（バトル開始時の天候発動と同じ扱い）。ゲスト側にも weatherFxNoWait で伝える。
     queueMessage(
       msg,
-      weatherFx ? () => playWeatherEffect(weatherFx) : null,
-      weatherFx ? { weatherFx } : null
+      weatherFx ? () => { try { playWeatherEffect(weatherFx); } catch (e) {} } : null,
+      weatherFx ? { weatherFx, weatherFxNoWait: true } : null
     );
     pushBattleLogHistory({ text: msg, side: null, kind: 'plain', speciesId: null, shiny: false });
   });
@@ -1624,7 +1645,7 @@ function drainMessages() {
         clearTimeout(timer);
         showNext();
       };
-      const timer = setTimeout(advance, MSG_AUTO_MS);
+      const timer = setTimeout(advance, item.fast ? MSG_FAST_MS : MSG_AUTO_MS);
       msgResolve = advance;
     }
     showNext();
@@ -4688,25 +4709,33 @@ function renderMoveMenu() {
   // 技はひこうタイプのアイコン・色で表示する）。
   const displayTypeOf = (m) => displayMoveType(poke, m);
   // げきりん強制中は、その技のみ選択可能（自動選択でもよいが、UIとしては強制技のみ表示）
+  // キャンバス拡張で増えた「わざ5」があれば、一番上に表示する（以降は通常のわざ1〜4）。
+  const battleMoves = getBattleMoves(poke);
+  panel.classList.toggle('move-list-5', battleMoves.length > 4);
   const gekirinForced = poke.gekirinTurns > 0 && poke.gekirinMoveId !== null
-    ? poke.moves.find(m => m.id === poke.gekirinMoveId)
+    ? battleMoves.find(m => m.id === poke.gekirinMoveId)
     : null;
-  const moveButtons = poke.moves.map((m, idx) => {
+  const moveButtons = battleMoves.map((m, idx) => {
     const deaiLocked = isDeaigashiraLockedFor(poke, m);
     const gekirinLocked = gekirinForced && m.id !== gekirinForced.id;
     const typeLocked = poke.typeLockTurns > 0 && poke.typeLockType === m.type;
-    const disabled = m.pp <= 0 || m.locked || deaiLocked || gekirinLocked || typeLocked;
+    // ロケットパーティー：チャージ1以上＋相手に風息がある時のみ選べる
+    const condReason = getMoveUnusableReason(poke, state.cpuActive, m);
+    const disabled = m.pp <= 0 || m.locked || deaiLocked || gekirinLocked || typeLocked || !!condReason;
+    const isBonus = poke.bonusMove === m;
     const dispType = displayTypeOf(m);
     return `
     <div class="neu-btn cmd-btn move-row ${TYPE_CLASS(dispType)}-edge ${disabled ? 'move-row-disabled' : ''}" data-idx="${idx}" role="button" tabindex="0">
       <div class="move-row-top">
         ${typeIconHtml(dispType)}
         <span class="move-row-name">${m.name}</span>
+        ${isBonus ? '<span style="font-size:10px;font-weight:900;color:var(--accent-b);">わざ5</span>' : ''}
         <button class="move-row-info-btn" type="button" data-info-idx="${idx}" aria-label="わざの詳細">i</button>
         <span class="move-row-pp">PP ${m.pp}/${m.maxPp}</span>
-        ${(m.locked || deaiLocked || typeLocked) ? '<span style="color:#ff5d5d;font-size:10px;font-weight:900;">🔒</span>' : ''}
+        ${(m.locked || deaiLocked || typeLocked || condReason) ? '<span style="color:#ff5d5d;font-size:10px;font-weight:900;">🔒</span>' : ''}
       </div>
       ${moveDetailLineHtml(m, poke, state.cpuActive)}
+      ${condReason ? `<div style="font-size:10px;color:#ff5d5d;font-weight:700;">${condReason}</div>` : ''}
     </div>
   `;
   }).join('');
@@ -4718,14 +4747,14 @@ function renderMoveMenu() {
     btn.addEventListener('click', (e) => {
       if (e.target.closest('.move-row-info-btn')) return; // 詳細ボタンはここでは技を選ばせない
       const idx = parseInt(btn.dataset.idx, 10);
-      playerChooseMove(poke.moves[idx]);
+      playerChooseMove(battleMoves[idx]);
     });
   });
   panel.querySelectorAll('.move-row-info-btn[data-info-idx]').forEach((btn) => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const idx = parseInt(btn.dataset.infoIdx, 10);
-      openBattleMoveInfo(poke.moves[idx]);
+      openBattleMoveInfo(battleMoves[idx]);
     });
   });
   $('act-move-back').addEventListener('click', () => renderActionMenu());
@@ -4954,6 +4983,17 @@ function renderWatchField() {
     chips.push(watchIconChip('timy', `地脈 ${poke.chimyaku}段階（じめん・いわ・カリブレーションから${chimyakuMult}倍）`));
   }
 
+  if (poke && poke.kaze > 0) {
+    const kazeMult = 1 + 0.5 * poke.kaze;
+    chips.push(watchIconChip('kaze', `風息 ${poke.kaze}（むし・ひこう・くさから${kazeMult}倍）`));
+  }
+  {
+    const wb = watchSelectedSide === 'self' ? battleField.wideBloomPlayer : battleField.wideBloomCpu;
+    if (wb) chips.push(watchIconChip('kaze', `ワイドブルーム（風息の付与+1）`));
+    const cv = watchSelectedSide === 'self' ? battleField.canvasPlayer : battleField.canvasCpu;
+    if (cv) chips.push(`キャンバス拡張（チャージ獲得でわざ5）`);
+  }
+
   if (poke && poke.critRank > 0) chips.push(`きあいだめ`);
 
   const reflectTurns = watchSelectedSide === 'self' ? battleField.playerReflect : battleField.cpuReflect;
@@ -4982,7 +5022,7 @@ function renderWatchField() {
   }
 
   if (poke && poke.encoreTurns > 0 && poke.encoreMoveId !== null) {
-    const move = poke.moves.find(m => m.id === poke.encoreMoveId);
+    const move = getBattleMoves(poke).find(m => m.id === poke.encoreMoveId);
     chips.push(watchIconChip('encore', `アンコール ${move ? move.name : ''} ${poke.encoreTurns}ターン`));
   }
 
@@ -5355,7 +5395,7 @@ function partyListItemHtml(p, idx) {
         <div class="pli-hpbar-outer"><div class="pli-hpbar-inner" style="width:${ratio * 100}%; background:${hpBarColor(ratio)};"></div></div>
         <div class="pli-hp-text">${p.currentHp}/${p.maxHp}</div>
         ${isActive ? '<div class="pli-active-tag">たたかっている</div>' : statusTag}
-        <div class="pli-hp-text" style="font-size:8.5px;color:var(--accent-b);"><img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.energyStacks || 0} <img src="./timy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.chimyaku || 0}</div>
+        <div class="pli-hp-text" style="font-size:8.5px;color:var(--accent-b);"><img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.energyStacks || 0} <img src="./timy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.chimyaku || 0} <img src="./kaze.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.kaze || 0}</div>
       </div>
     </button>
   `;
@@ -5786,13 +5826,13 @@ function waitForPlayerAction() {
     clearCmdPanel();
     $('cmd-dock').classList.remove('dock-wide');
     setWatchLogButtonsActive(false);
-    return Promise.resolve({ type: 'move', move: poke.moves.find(m => m.id === poke.lastUsedMoveId) || poke.moves[0] });
+    return Promise.resolve({ type: 'move', move: getBattleMoves(poke).find(m => m.id === poke.lastUsedMoveId) || poke.moves[0] });
   }
   // げきりん強制中は、コマンド選択そのものを行わせず自動でその技を選択する。
   // （本家のように「げきりんしか選べない」表示にするのではなく、選択操作自体を
   //   スキップしてそのまま技が繰り出される形にする）
   if (poke && poke.gekirinTurns > 0 && poke.gekirinMoveId !== null) {
-    const forcedMove = poke.moves.find(m => m.id === poke.gekirinMoveId);
+    const forcedMove = getBattleMoves(poke).find(m => m.id === poke.gekirinMoveId);
     if (forcedMove) {
       clearCmdPanel();
       $('cmd-dock').classList.remove('dock-wide');
@@ -6078,6 +6118,7 @@ const isStatusSpecialMove = isSpecialMove
       moveId: moveId,
       weatherFx: weatherFx,
       weatherFxNoWait: weatherFxNoWait,
+      fast: !!(meta && meta.fast),
       movePower: meta && meta.movePower !== undefined ? meta.movePower : null,
       yowashiForm: meta && meta.yowashiForm ? meta.yowashiForm : null,
       yowashiSide: meta && meta.side ? meta.side : null,
@@ -6721,6 +6762,9 @@ function resetPokeForBattle(poke) {
   poke.moves.forEach((m) => { m.pp = m.maxPp; m.locked = false; });
   poke.energyStacks = 0;
   poke.chimyaku = 0;
+  poke.kaze = 0;
+  poke.everHadCharge = false;
+  poke.bonusMove = null;
   poke.fundoTriggered = false;
   poke.moraibiActive = false;
   poke.lazyTurns = false;
@@ -8913,6 +8957,7 @@ async function handleGuestEvent(ev) {
     msgQueue.push({
       text: ev.t,
       side: logSide,
+      fast: !!ev.fs,
       after: async () => {
         if (isGuestHazardMove) {
           await playSpecialMoveEffect(ev.mi, guestHazardDefSide);
@@ -9244,7 +9289,7 @@ async function playGuestMessages() {
       pushLogLine(item.text, item.side);
       const afterPromise = item.after ? withTimeout(item.after(), 4000) : Promise.resolve();
       afterPromise.then(() => {
-        setTimeout(() => { showNext(); }, MSG_AUTO_MS);
+        setTimeout(() => { showNext(); }, item.fast ? MSG_FAST_MS : MSG_AUTO_MS);
       });
     }
     showNext();
@@ -13377,12 +13422,15 @@ const WP_RANDOM = 13; // 無料。ホームに戻るたび、持っているテ�
 const WP_ORDER = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 14, 15, 10, 16, 17, 18, 13];
 const WP_OWNED_KEY = 'pokeriere_wp_owned_v1';
 const WP_SEL_KEY = 'pokeriere_wp_sel_v1';
+const WP_BATTLE_DEFAULT_KEY = 'pokeriere_wp_battle_default_v1';
+let wpBattleDefault = false; // true：バトル画面だけは壁紙に関係なくデフォルトの色にする
 let wpOwned = new Set([0]);
 let wpSel = 0;
 let wpEff = 0; // 実際に画面へ適用中のテーマ（ランダム選択時は抽選結果）
 try {
   JSON.parse(localStorage.getItem(WP_OWNED_KEY) || '[]').forEach((n) => wpOwned.add(Number(n)));
   wpSel = Number(localStorage.getItem(WP_SEL_KEY)) || 0;
+  wpBattleDefault = localStorage.getItem(WP_BATTLE_DEFAULT_KEY) === '1';
 } catch (e) {}
 wpOwned.add(WP_RANDOM);
 if (!wpOwned.has(wpSel) || !WP_NAMES[wpSel]) wpSel = 0;
@@ -13396,17 +13444,23 @@ function wpPick() {
 function wpReroll() { if (wpSel !== WP_RANDOM) return; wpPick(); wpApply(true); }
 wpPick();
 
+// 壁紙の配色を各画面へ反映する（BGMには触らない）。
+// 「バトル中はデフォルトの色にする」設定がONなら、バトル画面だけ data-theme を付けない（＝デフォルトのバトルUIの色）。
+function wpApplyTheme() {
+  ['screen-title', 'screen-multiplayer', 'screen-npc-mode', 'screen-team', 'screen-battle'].forEach((id) => {
+    const t = $(id);
+    if (!t) return;
+    const themeForScreen = (id === 'screen-battle' && wpBattleDefault) ? 0 : wpEff;
+    // 【軽量化】同じテーマなら何もしない（無駄なスタイル再計算を避ける）
+    if (themeForScreen) { if (t.getAttribute('data-theme') !== String(themeForScreen)) t.setAttribute('data-theme', String(themeForScreen)); }
+    else if (t.hasAttribute('data-theme')) t.removeAttribute('data-theme');
+  });
+}
 function wpApply(deferBgm) {
   if (wpSel !== WP_RANDOM) wpEff = wpSel;
   // ホーム＋対戦方法／NPCバトル方法／手持ちポケモン（勝利後の入れ替え含む）／バトル画面のUIに壁紙を反映
   // （バトルは配色のみ。マップ背景・BGMは従来どおり。ランダム壁紙の再抽選はホームへ戻る時だけなので、バトル中に変わることはない）
-  ['screen-title', 'screen-multiplayer', 'screen-npc-mode', 'screen-team', 'screen-battle'].forEach((id) => {
-    const t = $(id);
-    if (!t) return;
-    // 【軽量化】同じテーマなら何もしない（無駄なスタイル再計算を避ける）
-    if (wpEff) { if (t.getAttribute('data-theme') !== String(wpEff)) t.setAttribute('data-theme', String(wpEff)); }
-    else if (t.hasAttribute('data-theme')) t.removeAttribute('data-theme');
-  });
+  wpApplyTheme();
   // 壁紙に合わせてメニューBGMを切り替える。
   // 【軽量化】ホームへ戻る時（deferBgm）は、新しい曲ファイルの読み込み・デコードが画面遷移と重なってカクつくので、
   // 遷移が終わってから切り替える（壁紙の見た目・曲の組み合わせは同じ）。
@@ -13418,6 +13472,7 @@ function wpSave() {
   try {
     localStorage.setItem(WP_OWNED_KEY, JSON.stringify([...wpOwned]));
     localStorage.setItem(WP_SEL_KEY, String(wpSel));
+    localStorage.setItem(WP_BATTLE_DEFAULT_KEY, wpBattleDefault ? '1' : '0');
   } catch (e) {}
 }
 function wpPrevHtml(i, large) {
@@ -13425,6 +13480,8 @@ function wpPrevHtml(i, large) {
 }
 function wpRender() {
   $('wp-currency-count').textContent = String(Shop.getDisc());
+  const bdChk = $('wp-battle-default-chk');
+  if (bdChk) bdChk.checked = wpBattleDefault;
   $('wp-grid').innerHTML = WP_ORDER.map((i) => {
     const name = WP_NAMES[i];
     const owned = wpOwned.has(i);
@@ -13461,6 +13518,12 @@ $('btn-title-wallpaper').addEventListener('click', () => {
   $('wp-overlay').classList.add('show');
 });
 $('wp-close-btn').addEventListener('click', () => $('wp-overlay').classList.remove('show'));
+// 「バトル中はデフォルトの色にする」スイッチ：切り替えたらすぐ保存して、バトル画面の配色に反映する
+$('wp-battle-default-chk').addEventListener('change', (e) => {
+  wpBattleDefault = !!e.target.checked;
+  wpSave();
+  wpApplyTheme();
+});
 $('wp-grid').addEventListener('click', (e) => {
   const cell = e.target.closest('.wp-cell');
   if (!cell) return;

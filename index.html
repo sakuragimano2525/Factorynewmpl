@@ -2113,6 +2113,12 @@ html,body{
   grid-template-columns: 1fr;
   grid-template-rows: repeat(4, 1fr) 0.6fr;
 }
+/* キャンバス拡張で「わざ5」が増えた時：5行＋もどる */
+.move-list.with-side-buttons.move-list-5{
+  grid-template-rows: repeat(5, 1fr) 0.6fr;
+  gap: 4px;
+}
+.move-list.move-list-5 .move-row{ padding-top: 2px; padding-bottom: 2px; }
 /* メガシンカボタン：技パネルとは別枠の独立ボタン。技メニュー表示中のみ、
    わざパネルの登場と同じ「右から左へスライドイン」の動きで表示する。
    cmd-dockのすぐ上に絶対配置。出す時だけスライド＋フェードし、消す時は
@@ -6642,6 +6648,16 @@ span.pdt-card-img{ display:flex; align-items:center; justify-content:center; }
 .wp-state img{width:18px;height:18px;object-fit:contain}
 .wp-cell.selected .wp-state{color:#e06b1f}
 .wp-lack{font-size:12px;font-weight:800;color:#e63946;margin:-4px 0 10px}
+/* 壁紙画面：バトル中はデフォルトの色にするスイッチ */
+.wp-battle-default-row{flex-shrink:0;display:flex;align-items:center;gap:12px;margin:10px 16px 0;padding:10px 14px;border-radius:14px;background:rgba(255,255,255,.72);box-shadow:0 2px 10px rgba(120,130,160,.14);cursor:pointer;-webkit-tap-highlight-color:transparent;position:relative;z-index:2}
+.wp-bd-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.wp-bd-title{font-size:13.5px;font-weight:900;color:var(--shop-ink)}
+.wp-bd-sub{font-size:11px;font-weight:700;color:var(--shop-ink-soft);line-height:1.35}
+.wp-bd-chk{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
+.wp-bd-switch{flex-shrink:0;position:relative;width:46px;height:26px;border-radius:13px;background:#c9d0e0;transition:background .18s ease}
+.wp-bd-switch::after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.28);transition:transform .18s ease}
+.wp-bd-chk:checked + .wp-bd-switch{background:#4f8cff}
+.wp-bd-chk:checked + .wp-bd-switch::after{transform:translateX(20px)}
 
 /* ===== 壁紙テーマを他の画面にも反映：NPCバトル方法 / たいせんほうほう / 手持ちポケモン（勝利後の入れ替え含む） ===== */
 #screen-multiplayer[data-theme], #screen-npc-mode[data-theme], #screen-team[data-theme]{
@@ -7963,6 +7979,14 @@ html.lite .title-record-btn.rank-rainbow{ animation:none !important; }
         <span id="wp-currency-count">-</span>
       </div>
     </div>
+    <label class="wp-battle-default-row" for="wp-battle-default-chk">
+      <span class="wp-bd-text">
+        <span class="wp-bd-title">バトル中はデフォルトの色にする</span>
+        <span class="wp-bd-sub">ONにすると、バトル画面だけ壁紙の色を使わず、もとのUIの色で表示されます</span>
+      </span>
+      <input type="checkbox" id="wp-battle-default-chk" class="wp-bd-chk">
+      <span class="wp-bd-switch" aria-hidden="true"></span>
+    </label>
     <div class="shop-grid" id="wp-grid"></div>
   </div>
   <div class="shop-detail-overlay" id="wp-confirm-overlay">
