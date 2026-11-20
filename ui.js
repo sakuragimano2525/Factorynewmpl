@@ -231,6 +231,30 @@ const MOVE_COND_DEFS = {
         ['t:grassy', '自分の素早さが2段階上がる']],
   526: [['', 'このバトル中、チャージを1以上獲得した自分と味方は、わざが1つ増える（わざ5）', '自分の能力が高い方の分類で威力80以上の、持ち技と被らないタイプの技が選ばれる', '（ターン無限）'],   // キャンバス拡張
         ['t:grassy', '自分の素早さが2段階上がる']],
+  // ---- 聖炎の技（ひでり中に使うと自分の攻撃と特攻が1段階上がる） ----
+  527: [['', '自分の攻撃と特攻の高い方で攻撃する', '攻撃後、相手に聖炎を1付与する'],   // マーシャルヒーツ
+        ['自分のチャージが2以上の時', '先に聖炎を1つ付与してから攻撃する'],
+        ['w:sun', '自分の攻撃と特攻が1段階上がる']],
+  528: [['', '自分の攻撃と特攻の高い方で攻撃する', '攻撃後、相手に聖炎を1付与する'],   // フレイムアッパー
+        ['相手の聖炎が2以上の時', '自分のチャージが10増える'],
+        ['w:sun', '自分の攻撃と特攻が1段階上がる']],
+  529: [['', '自分の攻撃と特攻の高い方で攻撃する'],   // ストレートフレア
+        ['相手に地脈か風息がある時', '先にそれらを全て聖炎に変えて、その聖炎を倍にしてから攻撃する'],
+        ['自分のチャージが4以上の時', '先に自分の素早さが2段階上がる'],
+        ['w:sun', '自分の攻撃と特攻が1段階上がる']],
+  530: [['', '自分の攻撃と特攻の高い方で攻撃する', '攻撃後、自分と相手のチャージを全て消費し、その合計分の聖炎を相手に付与する'],   // レイジングソウル
+        ['自分の特性がえいきゅうきかんの時', '特性が先に働いてから消費する'],
+        ['w:sun', '自分の攻撃と特攻が1段階上がる']],
+  531: [['', 'このバトル中、自分と味方は相手に聖炎を付与する時、付与量がさらに+1される', '（ターン無限）'],   // ラヴァチャージ
+        ['w:sun', '自分の攻撃と特攻が1段階上がる']],
+  532: [['', 'このバトル中、相手ポケモン全員は聖炎を付与されると攻撃と特攻が1段階下がるようになる', '（各ポケモンの初回のみ・ターン無限）'],   // スキルウォーマー
+        ['w:sun', '自分の攻撃と特攻が1段階上がる']],
+  // ---- 地脈・チャージ系の技 ----
+  533: [['', 'このバトル中、自分と味方は相手に地脈を付与する時、付与量がさらに+1される', '（ターン無限）'],   // アースロケーション
+        ['カリブレーションがジオ・マテリアライズに出た時', '防御と特防が1段階上がるようになる']],
+  534: [['', 'このバトル中、自分と味方は地脈の倍率が 1つ:1.5倍・2つ目から+1倍 になり、上限がなくなる', '（ターン無限）'],   // 大地共鳴
+        ['t:geomat', '自分と味方は毎ターン、チャージが溜まる']],
+  535: [['', 'このバトル中、自分と味方のはかいこうせんが、いわタイプになり威力1.5倍になる', 'ファセットグロース・ガイアキューブ・ジオ・バスターで消費するチャージが、今あるチャージの半分になる', '（ターン無限）']],   // ブーストスキャン
 };
 
 function condLabelText(c) {
@@ -409,22 +433,40 @@ const NpcDifficulty = (() => {
   const LABELS = { easy: 'イージー', normal: 'ノーマル', hard: 'ハード', dread: 'ドレッド' };
   const LEVEL_OFFSET = { easy: -10, normal: 0, hard: 5, dread: 5 };
   let cur = 'normal';
+  let forced = null;   // カオスモード中だけ立てる固定難易度（保存はしない）
   try {
     const raw = localStorage.getItem(NPC_DIFFICULTY_STORAGE_KEY);
     if (raw && LABELS[raw]) cur = raw;
   } catch (e) {}
-  function get() { return cur; }
+  function get() { return forced || cur; }
+  function force(d) { forced = (d && LABELS[d]) ? d : null; }
   function set(d) {
     if (!LABELS[d]) return;
     cur = d;
     try { localStorage.setItem(NPC_DIFFICULTY_STORAGE_KEY, d); } catch (e) {}
   }
-  function label(d) { return LABELS[d || cur]; }
-  function levelOffset() { return LEVEL_OFFSET[cur]; }
+  function label(d) { return LABELS[d || get()]; }
+  function levelOffset() { return LEVEL_OFFSET[get()]; }
   // ディスク・実績・記録・メガ解放が有効か（ノーマル以上）
-  function rewardsEnabled() { return cur !== 'easy'; }
-  function isDread() { return cur === 'dread'; }
-  return { get, set, label, levelOffset, rewardsEnabled, isDread };
+  function rewardsEnabled() { return get() !== 'easy'; }
+  function isDread() { return get() === 'dread'; }
+  return { get, set, force, label, levelOffset, rewardsEnabled, isDread };
+})();
+
+/* カオスモード専用の記録（通常の最大連勝記録とは別に保存する） */
+const ChaosRecord = (() => {
+  const KEY_BEST = 'pokeriere_chaos_best_streak_v1';
+  const KEY_CLEAR = 'pokeriere_chaos_clear_count_v1';
+  function read(k) { try { const n = Number(localStorage.getItem(k)); return Number.isFinite(n) && n > 0 ? n : 0; } catch (e) { return 0; } }
+  function write(k, v) { try { localStorage.setItem(k, String(v)); } catch (e) {} }
+  let best = read(KEY_BEST);
+  let clearCount = read(KEY_CLEAR);
+  return {
+    best: () => best,
+    clears: () => clearCount,
+    report(streak) { if (streak > best) { best = streak; write(KEY_BEST, best); } },
+    reportClear() { clearCount++; write(KEY_CLEAR, clearCount); },
+  };
 })();
 
 const MAX_WIN_STREAK_STORAGE_KEY_LEGACY = 'pokeriere_max_win_streak_v1';
@@ -1373,7 +1415,7 @@ function showScreen(name) {
   // ダンジョン画面以外へ移ったら、ダンジョン用BGM（dungeon.mp3 / dungeon2.mp3）は必ず止める
   if (window.DungeonBgm && name !== 'dungeon-home' && name !== 'dungeon-map') window.DungeonBgm.stop();
   checkOrientation();
-  if (name === 'title') { refreshTitleNameLabel(); setMegaLockActive(true); npcTeamEndRun(); state.mpChosenTeamIdx = -1; try { wpReroll(); } catch (e) {} } // タイトルに戻ったらロック有効に戻す／チーム戦のランも終了
+  if (name === 'title') { refreshTitleNameLabel(); setMegaLockActive(true); npcTeamEndRun(); chaosEnd(); state.mpChosenTeamIdx = -1; try { wpReroll(); } catch (e) {} } // タイトルに戻ったらロック有効に戻す／チーム戦のランも終了
 }
 
 /* ---------------- Sprite helpers ---------------- */
@@ -1665,6 +1707,13 @@ function hpBarColor(ratio) {
 // （ダメージ計算やステータス異常付与が同期的に先に確定してしまう都合上、メガシンカ演出のように
 // 「本当はまだこのタイミングでは反映されていないはず」の見た目を保つために使う）
 // statusOverride: { status, confuseTurns } の形。省略時はpoke自身の現在値を使う。
+function hudTypeIconHtml(type) {
+  const id = TYPE_ID[type];
+  const jp = typeJp(type);
+  if (id === undefined) return `<span class="hud-type-fb">${jp}</span>`;
+  return `<img src="./type${id}.png" alt="${jp}" title="${jp}" class="hud-type-icon" onerror="this.outerHTML='<span class=&quot;hud-type-fb&quot;>${jp}</span>'">`;
+}
+
 function updateHud(poke, prefix, hpOverride, statusOverride) {
   // メガシンカ発動前：canMegaEvolveなら「Xリザードン」のようにX/Yが分かる表記にする
   //   （megaFormは選出時点で既に確定しているので、対戦中もそのまま使える）。
@@ -1699,6 +1748,9 @@ function updateHud(poke, prefix, hpOverride, statusOverride) {
   statusEl.innerHTML = statusBadges.map((b) =>
     `<span class="hud-status-chip ${b.key === 'confuse' ? 'status-confuse' : 'status-' + statusSource.status}">${b.label}</span>`
   ).join('');
+  // カオスモード：HP表示の左に、今のタイプ（消失・変化も反映）のアイコンを出す。自分・相手どちらも。
+  const typesEl = $(prefix + '-types');
+  if (typesEl) typesEl.innerHTML = ChaosMode.isActive() ? getEffectiveTypesForDisplay(poke).map(hudTypeIconHtml).join('') : '';
   if (prefix === 'self') {
     $('self-hp-text').textContent = `${hp}/${poke.maxHp}`;
   } else {
@@ -4692,6 +4744,8 @@ function displayMoveType(poke, m) {
       Array.isArray(poke.moves) && poke.moves[3] === m && poke.moves[0] && poke.moves[0].type) {
     return poke.moves[0].type;
   }
+  // ブーストスキャン：はかいこうせんはいわタイプで繰り出す
+  if (m.id === 253 && typeof hasBoostScan === 'function' && hasBoostScan(poke)) return 'rock';
   return (skinType && m.type === 'normal') ? skinType : m.type;
 }
 
@@ -4979,7 +5033,8 @@ function renderWatchField() {
   if (tauntTurns > 0) chips.push(watchIconChip('taunt', `ちょうはつ ${tauntTurns}ターン`));
 
   if (poke && poke.chimyaku > 0) {
-    const chimyakuMult = [1, 1.5, 2, 2.5][Math.min(3, poke.chimyaku)];
+    // 相手側が大地共鳴中なら、地脈の倍率が大きくなる（攻撃する側の効果）
+    const chimyakuMult = chimyakuDamageMult(poke.chimyaku, { side: watchSelectedSide === 'self' ? 'cpu' : 'player' });
     chips.push(watchIconChip('timy', `地脈 ${poke.chimyaku}段階（じめん・いわ・カリブレーションから${chimyakuMult}倍）`));
   }
 
@@ -4987,9 +5042,23 @@ function renderWatchField() {
     const kazeMult = 1 + 0.5 * poke.kaze;
     chips.push(watchIconChip('kaze', `風息 ${poke.kaze}（むし・ひこう・くさから${kazeMult}倍）`));
   }
+  if (poke && poke.seien > 0) {
+    const seienMult = 1.5 + 0.5 * poke.seien;
+    chips.push(watchIconChip('sein', `聖炎 ${poke.seien}（ほのお・ドラゴン・かくとうから${seienMult}倍）`));
+  }
   {
     const wb = watchSelectedSide === 'self' ? battleField.wideBloomPlayer : battleField.wideBloomCpu;
     if (wb) chips.push(watchIconChip('kaze', `ワイドブルーム（風息の付与+1）`));
+    const lc = watchSelectedSide === 'self' ? battleField.lavaChargePlayer : battleField.lavaChargeCpu;
+    if (lc) chips.push(watchIconChip('sein', `ラヴァチャージ（聖炎の付与+1）`));
+    const el = watchSelectedSide === 'self' ? battleField.earthLocationPlayer : battleField.earthLocationCpu;
+    if (el) chips.push(watchIconChip('timy', `アースロケーション（地脈の付与+1）`));
+    const gr = watchSelectedSide === 'self' ? battleField.geoResonancePlayer : battleField.geoResonanceCpu;
+    if (gr) chips.push(watchIconChip('timy', `大地共鳴（地脈1つ:1.5倍・以降+1倍・上限なし／ジオ・マテリアライズ中は毎ターンチャージ）`));
+    const bs = watchSelectedSide === 'self' ? battleField.boostScanPlayer : battleField.boostScanCpu;
+    if (bs) chips.push(`ブーストスキャン（はかいこうせんいわ化・威力1.5倍／チャージ消費半分）`);
+    const sw = watchSelectedSide === 'self' ? battleField.skillWarmerPlayer : battleField.skillWarmerCpu;
+    if (sw) chips.push(watchIconChip('sein', `スキルウォーマー（相手は聖炎の初回付与で攻撃・特攻ダウン）`));
     const cv = watchSelectedSide === 'self' ? battleField.canvasPlayer : battleField.canvasCpu;
     if (cv) chips.push(`キャンバス拡張（チャージ獲得でわざ5）`);
   }
@@ -5395,7 +5464,7 @@ function partyListItemHtml(p, idx) {
         <div class="pli-hpbar-outer"><div class="pli-hpbar-inner" style="width:${ratio * 100}%; background:${hpBarColor(ratio)};"></div></div>
         <div class="pli-hp-text">${p.currentHp}/${p.maxHp}</div>
         ${isActive ? '<div class="pli-active-tag">たたかっている</div>' : statusTag}
-        <div class="pli-hp-text" style="font-size:8.5px;color:var(--accent-b);"><img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.energyStacks || 0} <img src="./timy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.chimyaku || 0} <img src="./kaze.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.kaze || 0}</div>
+        <div class="pli-hp-text" style="font-size:8.5px;color:var(--accent-b);"><img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.energyStacks || 0} <img src="./timy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.chimyaku || 0} <img src="./kaze.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.kaze || 0} <img src="./sein.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.seien || 0}</div>
       </div>
     </button>
   `;
@@ -6508,7 +6577,8 @@ async function endBattle(playerWon) {
   const rewardsOn = NpcDifficulty.rewardsEnabled();
   if (playerWon && !state.multiplayer) {
     state.winStreak++;
-    if (rewardsOn) {
+    if (ChaosMode.isActive()) ChaosRecord.report(state.winStreak);
+    if (rewardsOn && !ChaosMode.isActive()) {   // カオスは通常の最大連勝記録に混ぜない
       MaxWinStreak.reportStreak(state.winStreak, npcTeamState.active ? 'team' : state.megaEvolutionEnabled);
       updateRecordBtnRank();
     }
@@ -6532,7 +6602,7 @@ async function endBattle(playerWon) {
   // 判定は「組んだ手持ち6匹」(npcTeamState.source)で行う。state.playerTeamは
   // そこから実際にバトルへ選出した3匹(NPC_PICK_COUNT)しか入っておらず、
   // isPartyOfTypeがteam.length<6で弾いてしまうため常にfalseになっていた。
-  if (!state.multiplayer && rewardsOn && typeof TypeStreak !== 'undefined') {
+  if (!state.multiplayer && rewardsOn && !ChaosMode.isActive() && typeof TypeStreak !== 'undefined') {
     const typeStreakTeam = (npcTeamState.active && npcTeamState.source) ? npcTeamState.source : state.playerTeam;
     TypeStreak.reportResult(!!npcTeamState.active, playerWon, typeStreakTeam);
   }
@@ -6544,7 +6614,12 @@ async function endBattle(playerWon) {
   if (playerWon && !state.multiplayer) state.runBattleCount++;
   // ドレッド：ボス戦（11戦目）に勝ったらエンドレスには進まず、ドレッドモードクリアで終了する。
   const dreadClear = !!(playerWon && !state.multiplayer && NpcDifficulty.isDread() && state.isBossBattle);
-  BattleHistory.add({
+  // カオス：ボス戦（11戦目＝MPLの首領）に勝ったらクリア。エンドレスには進まない。
+  const chaosClear = !!(playerWon && !state.multiplayer && ChaosMode.isActive() && state.isBossBattle);
+  if (chaosClear) ChaosRecord.reportClear();
+  const runClear = dreadClear || chaosClear;
+  // 戦績カードは種族データ（タイプ・特性）から表示を復元するため、入れ替わったカオスの戦いは残さない
+  if (!ChaosMode.isActive()) BattleHistory.add({
     mode: state.multiplayer ? 'pvp' : 'npc',
     mega: !!state.megaEvolutionEnabled,
     isTeam: !!(npcTeamState.active),
@@ -6556,9 +6631,11 @@ async function endBattle(playerWon) {
     oppTeam: snapshotTeamForHistory(state.cpuTeam),
   });
   const overlay = $('result-overlay');
-  $('result-title').textContent = dreadClear ? 'DREAD CLEAR!' : (playerWon ? 'WIN' : 'LOSE');
-  $('result-title').className = 'result-title ' + (dreadClear ? 'win dread' : (playerWon ? 'win' : 'lose'));
-  $('result-desc').textContent = dreadClear
+  $('result-title').textContent = chaosClear ? 'CHAOS CLEAR!' : (dreadClear ? 'DREAD CLEAR!' : (playerWon ? 'WIN' : 'LOSE'));
+  $('result-title').className = 'result-title ' + (runClear ? 'win dread' : (playerWon ? 'win' : 'lose'));
+  $('result-desc').textContent = chaosClear
+    ? `カオスモード クリア！おめでとう！（${state.winStreak}連勝　ディスク+${earnedDisc}　クリア${ChaosRecord.clears()}回目）`
+    : dreadClear
     ? `ドレッドモード クリア！おめでとう！（${state.winStreak}連勝　ディスク+${earnedDisc}）`
     : playerWon
     ? (state.multiplayer
@@ -6566,14 +6643,16 @@ async function endBattle(playerWon) {
         : (rewardsOn
             ? `${state.winStreak}連勝中！ディスク+${earnedDisc}　つぎの相手が待っている。`
             : `${state.winStreak}連勝中！（イージーはディスク・実績・記録なし）　つぎの相手が待っている。`))
-    : `連勝は${state.winStreak}でストップ。またチャレンジしよう！`;
-  $('btn-result-next').textContent = dreadClear ? 'タイトルへ' : 'つぎへ';
+    : (ChaosMode.isActive()
+        ? `連勝は${state.winStreak}でストップ（カオス最高記録 ${ChaosRecord.best()}連勝）。またチャレンジしよう！`
+        : `連勝は${state.winStreak}でストップ。またチャレンジしよう！`);
+  $('btn-result-next').textContent = runClear ? 'タイトルへ' : 'つぎへ';
   overlay.classList.add('show');
 
   $('btn-result-next').onclick = async () => {
     overlay.classList.remove('show');
     $('btn-result-next').textContent = 'つぎへ';
-    if (dreadClear) {
+    if (runClear) {
       // クリアしたらランを終了してタイトルへ（負けた時と同じ後始末。連勝は0に戻す）
       state.winStreak = 0;
       MenuBgm.start();
@@ -6763,6 +6842,8 @@ function resetPokeForBattle(poke) {
   poke.energyStacks = 0;
   poke.chimyaku = 0;
   poke.kaze = 0;
+  poke.seien = 0;
+  poke.seienSkillWarmed = false;
   poke.everHadCharge = false;
   poke.bonusMove = null;
   poke.fundoTriggered = false;
@@ -7232,6 +7313,7 @@ let debugIntrusionTestPending = false;
 
 function startNewRun(initialWinStreak, debugIntrusion) {
   MenuBgm.start();
+  chaosEnd();
   npcTeamEndRun();   // ランダム戦は「相手からもらう」を挟む通常フロー。チーム戦の状態は残さない
   state.multiplayer = false;
   setMegaLockActive(true); // NPC戦：乱入ボスのメガシンカは解放するまでロック
@@ -11832,6 +11914,32 @@ $('ps-action-cancel').addEventListener('click', sbClosePartyActionSheet);
               （※いまはUIのみ。チームをタップしても何も起きない）
    ・どちらの画面からも「もどる」で戻れる
    ========================================================= */
+/* =========================================================
+   カオスモード開始／終了
+   ・NPC・メガなし・難易度ノーマル固定。技／種族値／特性／タイプが入れ替わる（engine.js の ChaosMode）。
+   ・ボス（11戦目のMPLの首領）だけは何も変化せず、倒すとクリア。
+   ========================================================= */
+function startChaosRun(initialWinStreak) {
+  MenuBgm.start();
+  npcTeamEndRun();
+  ChaosMode.start();                 // 先に入れ替え表を作る（この後に生成されるポケモンが対象）
+  NpcDifficulty.force('normal');
+  state.multiplayer = false;
+  state.megaEvolutionEnabled = false; // メガなし固定（メガあり/なしの選択は挟まない）
+  debugMegaTestPending = false;
+  debugIntrusionTestPending = false;
+  setMegaLockActive(true);
+  state.winStreak = initialWinStreak || 0;
+  resetIntrusionRun();
+  showInitialPickOverlay();
+}
+
+function chaosEnd() {
+  if (typeof ChaosMode === 'undefined') return;
+  ChaosMode.stop();
+  NpcDifficulty.force(null);
+}
+
 function openNpcModeSelect() {
   showScreen('npc-mode');
 }
@@ -11859,6 +11967,11 @@ $('btn-npc-mode-random').addEventListener('click', () => {
   startNewRun(initial);
 });
 $('btn-npc-mode-team').addEventListener('click', openNpcTeamSelect);
+$('btn-npc-mode-chaos').addEventListener('click', () => {
+  const initial = debugPendingBossSkipWinStreak;
+  debugPendingBossSkipWinStreak = 0;
+  startChaosRun(initial);
+});
 $('btn-npc-mode-back').addEventListener('click', () => {
   debugPendingBossSkipWinStreak = 0; // モード選択を離れる＝デバッグ指定は破棄
   showScreen('title');
@@ -11931,6 +12044,7 @@ var npcTeamState = {
 
 function startNpcTeamRun(partyIdx, initialWinStreak) {
   MenuBgm.start();
+  chaosEnd();
   const pt = sbState.parties[partyIdx];
   // 保存データから、バトルで使える完全な個体へ復元する（実数値・努力値・性格・技・特性・色違い）
   npcTeamState.source = pt.snapshot.slice(0, 6).map((d) => sbRestorePoke(sbSerializePoke(d))).filter(Boolean);

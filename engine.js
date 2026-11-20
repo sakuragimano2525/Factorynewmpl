@@ -1144,7 +1144,7 @@ function updateYowashiForm(poke, logFn, withEffect) {
 // という仕様のため、ヨワシとは別関数として実装する。
 // フォルムチェンジ後の種族値（この差分だけ変化する。元の種族値はgamedata.js側で定義される）。
 const AINEECHU_SPECIES_ID = 1990;
-const AINEECHU_FORM_BASE_STATS = { hp: 246, atk: 113, def: 110, spa: 111, spd: 110, spe: 20 };
+const AINEECHU_FORM_BASE_STATS = { hp: 256, atk: 110, def: 91, spa: 110, spd: 85, spe: 125 };
 
 // フォルムチェンジ後の実数値（atk/def/spa/spd/spe）を再計算する。
 // HPは「増加分」を個別に加算して処理するため、ここでは対象外。
@@ -2292,11 +2292,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 3,
     "baseStats": {
       "hp": 105,
-      "atk": 140,
+      "atk": 170,
       "def": 70,
       "spa": 90,
       "spd": 100,
-      "spe": 135
+      "spe": 105
     }
   },
   "486": {
@@ -2877,9 +2877,9 @@ const MEGA_Z_EVOLUTION_DATA = {
     "ability": 19,
     "baseStats": {
       "hp": 108,
-      "atk": 150,
-      "def": 85,
-      "spa": 171,
+      "atk": 130,
+      "def": 95,
+      "spa": 181,
       "spd": 85,
       "spe": 151
     }
@@ -3240,8 +3240,64 @@ function arrangeShinkirouMoves(poke) {
   poke.moves = [...damageMoves.slice(0, 2), keepStatus, ...damageMoves.slice(2)];
 }
 
+/* =========================================================
+   カオスモード（NPCとバトル → カオス）
+   ・ラン開始時に「種族 → ランダムな別種族」の対応表を4種類（技 / 種族値 / 特性 / タイプ）それぞれ
+     独立に作り、そのランの間は固定で使う。自分・相手どちらのポケモンにも同じ表が掛かる。
+     （例：リザードンの技 ← ガブリアスの技、リザードンの種族値 ← ミミッキュの種族値 …）
+   ・対応先は完全ランダムなので、4種類で同じ種族になることも、自分自身になる（変化なし）こともある。
+   ・入れ替え元は「実際に登場する最終進化の種族（素のフォーム）」だけ。メガシンカ後の姿とは入れ替えない。
+   ・ボス専用種族（MPLの首領など BOSS_ONLY_SPECIES_IDS）は何も変化しない。
+   ・仕組み：createRandomPokemon が種族オブジェクトを speciesFor(id) の結果に差し替えるだけ。
+     以降のバトル・表示・実数値計算はすべて poke.species を見るので、そのまま反映される。
+   ========================================================= */
+const ChaosMode = (() => {
+  let active = false;
+  let maps = null;     // { moves:{種族ID:入れ替え先ID}, stats:{…}, ability:{…}, type:{…} }
+  let cache = null;    // 種族ID → 入れ替え済みの種族オブジェクト（同じランでは同じものを使い回す）
+  let pool = null;     // 入れ替え先の候補ID
+  function start() {
+    active = true;
+    maps = { moves: {}, stats: {}, ability: {}, type: {} };
+    cache = {};
+    pool = getFinalSpeciesIds().filter((id) => !BOSS_ONLY_SPECIES_IDS.includes(id));
+  }
+  function stop() { active = false; maps = null; cache = null; pool = null; }
+  function isActive() { return active; }
+  function donorFor(kind, id) {
+    const m = maps[kind];
+    if (m[id] === undefined) m[id] = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : id;
+    return GAME_DATA.species[m[id]] || GAME_DATA.species[id];
+  }
+  // 入れ替え後の種族オブジェクト。対象外（カオスでない・ボス専用）なら null を返す。
+  function speciesFor(id) {
+    if (!active || BOSS_ONLY_SPECIES_IDS.includes(id)) return null;
+    if (cache[id]) return cache[id];
+    const base = GAME_DATA.species[id];
+    if (!base) return null;
+    const dMoves = donorFor('moves', id);
+    const dStats = donorFor('stats', id);
+    const dAbility = donorFor('ability', id);
+    const dType = donorFor('type', id);
+    const sp = Object.assign({}, base, {
+      type1: dType.type1,
+      type2: dType.type2,
+      abilities: Array.isArray(dAbility.abilities) ? dAbility.abilities.slice() : [],
+      baseStats: Object.assign({}, dStats.baseStats),
+      levelMoves: dMoves.levelMoves,
+      chaosFrom: { moves: dMoves.id, stats: dStats.id, ability: dAbility.id, type: dType.id },
+    });
+    cache[id] = sp;
+    return sp;
+  }
+  return { start, stop, isActive, speciesFor };
+})();
+if (typeof window !== 'undefined') window.ChaosMode = ChaosMode;
+
 function createRandomPokemon(speciesId, level = 100, shinyPercent = 5) {
-  const species = GAME_DATA.species[speciesId];
+  // カオスモード中は、技・種族値・特性・タイプが別の種族のものに入れ替わった種族データを使う（ボスは対象外）
+  const chaosSpecies = ChaosMode.speciesFor(speciesId);
+  const species = chaosSpecies || GAME_DATA.species[speciesId];
   const nature = rand(1, 24);
   const ability = rollAbility(species);
   const moveIds = chooseMoves(species);
@@ -3286,6 +3342,8 @@ function createRandomPokemon(speciesId, level = 100, shinyPercent = 5) {
     energyStacks: 0,
     chimyaku: 0,           // 地脈（0〜3）：付与されると、カリブレーション持ち・じめん/いわタイプから受けるダメージが増える
     kaze: 0,               // 風息（上限なし）：付与されると、むし/ひこう/くさタイプから受けるダメージが増える
+    seien: 0,              // 聖炎（上限なし）：付与されると、ほのお/ドラゴン/かくとうタイプから受けるダメージが増える
+    seienSkillWarmed: false, // スキルウォーマー(532)：このバトル中、初めて聖炎を付与された時の能力ダウンを既に受けたか
     everHadCharge: false,  // このバトル中にチャージを1以上獲得したことがあるか（キャンバス拡張の わざ5 の条件）
     bonusMove: null,       // キャンバス拡張で増える「わざ5」（技オブジェクト。無ければnull）
     tauntTurns: 0, // 挑発ターン
@@ -3329,6 +3387,7 @@ function createRandomPokemon(speciesId, level = 100, shinyPercent = 5) {
     // 一度trueになったら戦闘終了までfalseに戻らない（片道のフォルムチェンジ）。
     aineechuFormed: false,
   };
+  if (chaosSpecies) poke.isChaos = true;
   arrangeShinkirouMoves(poke); // しんきろう持ちは変化技を最大1つ・3つ目に置く
   return poke;
 }
@@ -3634,7 +3693,7 @@ const TYPE_ABSORB_ABILITY_TYPE = {
 const KIRU_MOVE_IDS = [1,23,45,68,150,152,168,183,187,247,266,281,32,328,387,389,406,521];
 const KAMU_MOVE_IDS = [24,25,28,124,61,261,222,284,206,348];
 const HADOU_MOVE_IDS = [504,117,218,334,32,54,112,352,376,394,501,522,524];
-const KOBUSHI_MOVE_IDS = [461,62,84,102,106,107,117,122,164,223,226,250,324,327];
+const KOBUSHI_MOVE_IDS = [461,62,84,102,106,107,117,122,164,223,226,250,324,327,527,528]; // 527マーシャルヒーツ・528フレイムアッパーも対象
 const ENERGY_CHARGE_MOVE_IDS = [66,77,79,83,97,103,115,127,128,157,169,177,184,207,218,225,294,315,334,510];
 
 const MULTI_HIT_MOVES = {
@@ -3659,15 +3718,57 @@ const CHIMYAKU_MAX = 3;
 const CHIMYAKU_DAMAGE_MULT = [1, 1.5, 2, 2.5];
 const CHIMYAKU_ICON_HTML = '<img src="./timy.png" class="inline-stat-icon" onerror="this.style.visibility=\'hidden\'">';
 
-function addChimyaku(poke, amount, logFn) {
+// granter（付与した側のポケモン）を渡すと、アースロケーション(533)の+1と大地共鳴(534)の上限撤廃が反映される。
+function addChimyaku(poke, amount, logFn, granter) {
   if (!poke || poke.fainted) return;
   const before = poke.chimyaku || 0;
-  if (before >= CHIMYAKU_MAX) {
+  const cap = hasGeoResonance(granter) ? Infinity : CHIMYAKU_MAX;
+  if (before >= cap) {
     if (logFn) logFn(`${poke.species.name}の${CHIMYAKU_ICON_HTML}地脈はこれ以上増えない！`);
     return;
   }
-  poke.chimyaku = Math.min(CHIMYAKU_MAX, before + amount);
+  let total = amount;
+  if (hasEarthLocation(granter)) total += 1;
+  poke.chimyaku = Math.min(cap, before + total);
   if (logFn) logFn(`${poke.species.name}に${CHIMYAKU_ICON_HTML}地脈が付与された！（${poke.chimyaku}段階）`);
+}
+
+// ---- アースロケーション(533)／大地共鳴(534)／ブーストスキャン(535)：このバトル中ずっと続く、サイドごとの効果 ----
+const EARTH_LOCATION_ID = 533;   // アースロケーション：地脈を付与する時+1／カリブレーションがジオ・マテリアライズに出ると防御・特防+1
+const GEO_RESONANCE_ID = 534;    // 大地共鳴：ジオ・マテリアライズ中の毎ターンチャージ+1／地脈の倍率が 1つ:1.5倍・以降+1倍・上限なし
+const BOOST_SCAN_ID = 535;       // ブーストスキャン：はかいこうせんがいわタイプ・威力1.5倍／ファセットグロース・ガイアキューブ・ジオ・バスターの消費チャージが半分
+const HYPER_BEAM_ID = 253;       // はかいこうせん
+function _sideFlag(poke, pKey, cKey) {
+  return !!poke && (poke.side === 'player' ? battleField[pKey] : battleField[cKey]);
+}
+function hasEarthLocation(poke) { return _sideFlag(poke, 'earthLocationPlayer', 'earthLocationCpu'); }
+function hasGeoResonance(poke) { return _sideFlag(poke, 'geoResonancePlayer', 'geoResonanceCpu'); }
+function hasBoostScan(poke) { return _sideFlag(poke, 'boostScanPlayer', 'boostScanCpu'); }
+
+// 地脈によるダメージ倍率。attacker側が大地共鳴中なら 1つ:1.5倍・以降+1倍（n=2:2.5倍, n=3:3.5倍…）、そうでなければ従来（1.5/2/2.5倍・3段階まで）。
+function chimyakuDamageMult(n, attacker) {
+  n = n || 0;
+  if (n <= 0) return 1;
+  if (hasGeoResonance(attacker)) return 0.5 + n;
+  return CHIMYAKU_DAMAGE_MULT[Math.min(CHIMYAKU_MAX, n)];
+}
+
+// 大地共鳴(534)：ジオ・マテリアライズ中、その側の場のポケモンはターン終了時にチャージ+1
+function applyGeoResonanceEnergy(poke, logFn) {
+  if (!poke || poke.fainted) return;
+  if (battleField.terrain !== 'geomat' || !hasGeoResonance(poke)) return;
+  if (logFn) logFn(`${poke.species.name}は　大地共鳴で　地脈の　エネルギーを　受け取った！`);
+  addEnergyStacks(poke, 1, logFn);
+}
+
+// ブーストスキャン(535)：ファセットグロース・ガイアキューブ・ジオ・バスターの消費チャージ。
+// ブーストスキャン中は「今あるチャージの半分（切り捨て）」だけ消費する。そうでなければ全て消費。
+function consumeEnergyForMove(poke, logFn) {
+  if (!poke || poke.fainted) return 0;
+  if (!hasBoostScan(poke)) return consumeEnergyStacks(poke, logFn);
+  const half = Math.floor((poke.energyStacks || 0) / 2);
+  poke.energyStacks -= half;
+  return half;
 }
 
 // 地脈ダメージ増加の発動源か（特性カリブレーション、またはじめん／いわタイプ）
@@ -3696,7 +3797,7 @@ const KAZE_CANVAS_ID = 526;          // キャンバス拡張
 // グラスフィールド中に使うと自分の素早さが2段階上がる技
 const GRASSY_SPEED_UP_MOVE_IDS = [521, 522, 523, 524, 525, 526];
 // 「自分の攻撃と特攻の高い方」で攻撃する（物理／特殊が切り替わる）技
-const HIGHER_STAT_MOVE_IDS = [521, 522, 523, 524];
+const HIGHER_STAT_MOVE_IDS = [521, 522, 523, 524, 527, 528, 529, 530]; // 527〜530は聖炎の攻撃技
 
 // 風息によるダメージ倍率（n=0なら1倍）。1つ:1.5倍、以降1つにつき+0.5倍。
 function kazeDamageMult(n) {
@@ -3731,6 +3832,83 @@ function isKazeSource(attacker) {
   return types.some((t) => KAZE_SOURCE_TYPES.includes(t));
 }
 
+// ---- 聖炎（地脈・風息とほぼ同じ仕組みの、相手に付与するスタック。上限なし） ----
+// マーシャルヒーツ(527)・フレイムアッパー(528)・ストレートフレア(529)・レイジングソウル(530)で相手に付与する。
+// 聖炎を付与されたポケモンは、ほのお／ドラゴン／かくとうタイプのポケモンから受けるダメージが
+// 1つ:2倍、2つ目から1つにつき+0.5倍（2つ:2.5倍 / 3つ:3倍 …）になる。
+const SEIEN_ICON_HTML = '<img src="./sein.png" class="inline-stat-icon" onerror="this.style.visibility=\'hidden\'">';
+const SEIEN_SOURCE_TYPES = ['fire', 'dragon', 'fighting'];
+const SEIEN_MARTIAL_HEAT_ID = 527;    // マーシャルヒーツ
+const SEIEN_FLAME_UPPER_ID = 528;     // フレイムアッパー
+const SEIEN_STRAIGHT_FLARE_ID = 529;  // ストレートフレア
+const SEIEN_RAGING_SOUL_ID = 530;     // レイジングソウル
+const SEIEN_LAVA_CHARGE_ID = 531;     // ラヴァチャージ
+const SEIEN_SKILL_WARMER_ID = 532;    // スキルウォーマー
+// ひでり中に使うと、自分の攻撃と特攻が1段階上がる技（聖炎の技すべて）
+const SEIEN_SUN_BOOST_MOVE_IDS = [527, 528, 529, 530, 531, 532];
+
+// 聖炎によるダメージ倍率（n=0なら1倍）。1つ:2倍、以降1つにつき+0.5倍。
+function seienDamageMult(n) {
+  n = n || 0;
+  return n > 0 ? 1.5 + 0.5 * n : 1;
+}
+
+// ラヴァチャージ(531)が効いている側か（その側のポケモンが聖炎を付与する時+1）
+function hasLavaCharge(poke) {
+  return !!poke && (poke.side === 'player' ? battleField.lavaChargePlayer : battleField.lavaChargeCpu);
+}
+
+// スキルウォーマー(532)の影響下か（相手側がスキルウォーマーを使っている）
+function isUnderSkillWarmer(poke) {
+  return !!poke && (poke.side === 'player' ? battleField.skillWarmerCpu : battleField.skillWarmerPlayer);
+}
+
+// 聖炎を amount 増やす（付与の元は問わない基本処理）。スキルウォーマー下なら、そのポケモンの初回のみ攻撃・特攻が1段階下がる。
+function addSeien(poke, amount, logFn) {
+  if (!poke || poke.fainted || !(amount > 0)) return;
+  poke.seien = (poke.seien || 0) + amount;
+  if (logFn) logFn(`${poke.species.name}に${SEIEN_ICON_HTML}聖炎が${amount}付与された！（現在${poke.seien}）`);
+  if (isUnderSkillWarmer(poke) && !poke.seienSkillWarmed) {
+    poke.seienSkillWarmed = true;
+    if (logFn) logFn(`${poke.species.name}は　スキルウォーマーの　効果で　${SEIEN_ICON_HTML}聖炎に　力を　奪われた！`);
+    applyRankChange(poke, [100, -1, 0, -1, 0, 0, 0, 0], logFn);
+  }
+}
+
+// attacker が defender に聖炎を付与する（ラヴァチャージ中は付与量+1）。bonus=false で追加分を付けない。
+function grantSeien(attacker, defender, amount, logFn, bonus) {
+  if (!defender || defender.fainted || !(amount > 0)) return 0;
+  let total = amount;
+  if (bonus !== false && hasLavaCharge(attacker)) total += 1;
+  addSeien(defender, total, logFn);
+  return total;
+}
+
+// 聖炎ダメージ増加の発動源か（ほのお／ドラゴン／かくとうタイプ）
+function isSeienSource(attacker) {
+  if (!attacker) return false;
+  const types = getEffectiveTypes(attacker);
+  return types.some((t) => SEIEN_SOURCE_TYPES.includes(t));
+}
+
+// ストレートフレア(529)：相手の他の印シリーズ（地脈・風息）を全て聖炎に変え、その分を倍にする。
+// 印が無ければ何もしない（倍もなし）。「付与」ではなく「変換」なのでラヴァチャージの+1は乗らない。
+function convertMarksToSeien(defender, logFn) {
+  if (!defender || defender.fainted) return 0;
+  const c = defender.chimyaku || 0;
+  const k = defender.kaze || 0;
+  if (c + k <= 0) return 0;
+  defender.chimyaku = 0;
+  defender.kaze = 0;
+  const parts = [];
+  if (c > 0) parts.push(`${CHIMYAKU_ICON_HTML}地脈`);
+  if (k > 0) parts.push(`${KAZE_ICON_HTML}風息`);
+  const gain = (c + k) * 2;
+  if (logFn) logFn(`${defender.species.name}の${parts.join('と')}が　全て　${SEIEN_ICON_HTML}聖炎に　変わり、倍になった！`);
+  addSeien(defender, gain, logFn);
+  return gain;
+}
+
 // 技が「自分の能力が高い方」で攻撃する技の場合、物理／特殊を切り替えた技オブジェクトを返す（ランク補正込み、同値なら元の分類）
 function applyHigherStatCategory(attacker, move, logFn) {
   if (!move || !HIGHER_STAT_MOVE_IDS.includes(move.id)) return move;
@@ -3760,7 +3938,8 @@ function getMoveUnusableReason(attacker, defender, move) {
 // 今持っている技とタイプが被らない技。候補が複数ならランダム。
 // 候補が無い場合（覚える技が全て持ち技と同タイプ等）は「優先度が高い技 ＞ 自分のタイプ一致で最高威力の技」。
 function chooseBonusMoveFor(poke) {
-  const sp = GAME_DATA.species[poke.speciesId] || poke.species;
+  // カオスのポケモンは、入れ替わった後の覚える技（poke.species）から選ぶ
+  const sp = (poke.isChaos ? poke.species : GAME_DATA.species[poke.speciesId]) || poke.species;
   const learn = (sp && Array.isArray(sp.levelMoves)) ? sp.levelMoves : [];
   const heldIds = new Set((poke.moves || []).filter(Boolean).map((m) => m.id));
   const heldTypes = new Set((poke.moves || []).filter(Boolean).map((m) => m.type));
@@ -4044,6 +4223,18 @@ const battleField = {
   wideBloomCpu: false,
   canvasPlayer: false,
   canvasCpu: false,
+  // ラヴァチャージ(531)：その側のポケモンが聖炎を付与する時+1／スキルウォーマー(532)：その側の相手ポケモン全員が、聖炎を初めて付与された時に攻撃・特攻ダウン
+  lavaChargePlayer: false,
+  lavaChargeCpu: false,
+  skillWarmerPlayer: false,
+  skillWarmerCpu: false,
+  // アースロケーション(533)／大地共鳴(534)／ブーストスキャン(535)
+  earthLocationPlayer: false,
+  earthLocationCpu: false,
+  geoResonancePlayer: false,
+  geoResonanceCpu: false,
+  boostScanPlayer: false,
+  boostScanCpu: false,
   // ふるえるとうし（味方の瀕死数を参照するため）・いちじんのかぜ（自分の場においかぜ）用に、
   // バトル中の手持ち全体への参照をここに保持する。ui.js側からresetField()呼び出し時に渡される。
   playerTeam: null,
@@ -4071,6 +4262,16 @@ function resetField(playerTeam, cpuTeam) {
   battleField.wideBloomCpu = false;
   battleField.canvasPlayer = false;
   battleField.canvasCpu = false;
+  battleField.lavaChargePlayer = false;
+  battleField.lavaChargeCpu = false;
+  battleField.skillWarmerPlayer = false;
+  battleField.skillWarmerCpu = false;
+  battleField.earthLocationPlayer = false;
+  battleField.earthLocationCpu = false;
+  battleField.geoResonancePlayer = false;
+  battleField.geoResonanceCpu = false;
+  battleField.boostScanPlayer = false;
+  battleField.boostScanCpu = false;
   battleField.playerTeam =Array.isArray(playerTeam) ? playerTeam : null;
   battleField.cpuTeam = Array.isArray(cpuTeam) ? cpuTeam : null;
 }
@@ -4183,6 +4384,11 @@ function applyWeatherTerrainAbilityOnSwitchIn(poke, logFn, opponent) {
   // カリブレーション：場に出た時、フィールドがジオ・マテリアライズなら5ターン延長する（ログなし）
   if (poke.ability === ABILITY.CALIBRATION && battleField.terrain === 'geomat') {
     battleField.terrainTurns += 5;
+    // アースロケーション(533)：カリブレーション持ちがジオ・マテリアライズに出ると、防御と特防が1段階上がる
+    if (hasEarthLocation(poke)) {
+      logFn(`${poke.species.name}は　アースロケーションで　地脈の　力を　受け取った！`);
+      applyRankChange(poke, [100, 0, 1, 0, 1, 0, 0, 0], logFn);
+    }
   }
 }
 
@@ -4418,13 +4624,13 @@ function calcDamage(attacker, defender, move, logFn) {
   }
   if (attacker.ability === ABILITY.SUN_POWER && effWeather === 'sun' && isSpaStat) {
     if (!battleField.chemicalGasActive || attacker.ability === ABILITY.KAGAKUHENKAGASU) {
-      effAtk *= 1.5;
+      effAtk *= 2;
       if (logFn) logFn(`${attacker.species.name}の${abilityJp(attacker.ability)}が発動！特攻が1.5倍になった！`);
     }
   }
   if (attacker.ability === ABILITY.ICE_BREAK && effWeather === 'snow' && (isAtkStat || isSpaStat)) {
     if (!battleField.chemicalGasActive || attacker.ability === ABILITY.KAGAKUHENKAGASU) {
-      effAtk *= 1.5;
+      effAtk *= 2;
       if (logFn) logFn(`${attacker.species.name}の${abilityJp(attacker.ability)}が発動！${isAtkStat ? '攻撃' : '特攻'}が1.5倍になった！`);
     }
   }
@@ -4448,7 +4654,7 @@ function calcDamage(attacker, defender, move, logFn) {
   if (attacker.ability === ABILITY.NERVOUS_RAGE && move.category !== 'status'
       && ((attacker.encoreTurns || 0) > 0 || (attacker.tauntTurns || 0) > 0)) {
     if (!battleField.chemicalGasActive || attacker.ability === ABILITY.KAGAKUHENKAGASU) {
-      effAtk *= 1.5;
+      effAtk *= 3;
       if (logFn) logFn(`${attacker.species.name}の${abilityJp(attacker.ability)}が発動！${isPhysical ? '攻撃' : '特攻'}が1.5倍になった！`);
     }
   }
@@ -4627,7 +4833,7 @@ function calcDamage(attacker, defender, move, logFn) {
 
   // 地脈：地脈を付与されている相手に、カリブレーション持ち／じめん・いわタイプが攻撃すると段階に応じて威力アップ
   if ((defender.chimyaku || 0) > 0 && isChimyakuSource(attacker)) {
-    const chimyakuMult = CHIMYAKU_DAMAGE_MULT[Math.min(CHIMYAKU_MAX, defender.chimyaku)];
+    const chimyakuMult = chimyakuDamageMult(defender.chimyaku, attacker);
     dmg = Math.floor(dmg * chimyakuMult);
     if (logFn) logFn(`${defender.species.name}は${CHIMYAKU_ICON_HTML}地脈の影響で受けるダメージが${chimyakuMult}倍になった！`);
   }
@@ -4636,6 +4842,12 @@ function calcDamage(attacker, defender, move, logFn) {
     const kazeMult = kazeDamageMult(defender.kaze);
     dmg = Math.floor(dmg * kazeMult);
     if (logFn) logFn(`${defender.species.name}は${KAZE_ICON_HTML}風息の影響で受けるダメージが${kazeMult}倍になった！`);
+  }
+  // 聖炎：聖炎を付与されている相手に、ほのお／ドラゴン／かくとうタイプが攻撃すると、数に応じてダメージが増える（1つ:2倍、以降+0.5倍ずつ・上限なし）
+  if ((defender.seien || 0) > 0 && isSeienSource(attacker)) {
+    const seienMult = seienDamageMult(defender.seien);
+    dmg = Math.floor(dmg * seienMult);
+    if (logFn) logFn(`${defender.species.name}は${SEIEN_ICON_HTML}聖炎の影響で受けるダメージが${seienMult}倍になった！`);
   }
   if (!ignoreWalls && attacker.ability !== ABILITY.KATAYABURI) {
     const side = defender.side === 'player' ? 'player' : 'cpu';
@@ -5006,6 +5218,7 @@ function applyEndOfTurnStatus(poke, logFn) {
   }
 
   applyEnergyPermanent(poke, logFn);
+  applyGeoResonanceEnergy(poke, logFn);
 
   if (poke.tauntTurns > 0) {
     poke.tauntTurns--;
@@ -5658,6 +5871,13 @@ function executeMoveCore(attacker, defender, move, logFn, turnCtx) {
     }
   }
 
+  // ---- ブーストスキャン(535)：はかいこうせんがいわタイプに変わり、威力が1.5倍になる ----
+  // （元データは書き換えず、このターン限りのローカルコピーにする。タイプがいわになるのでスキン系は乗らない）
+  if (move.id === HYPER_BEAM_ID && hasBoostScan(attacker)) {
+    move = { ...move, type: 'rock', power: Math.floor((move.power || 0) * 1.5) };
+    logFn(`${attacker.species.name}の${move.name}は　ブーストスキャンで　いわタイプに　変わり、威力が${move.power}になった！`);
+  }
+
   // ---- スキン系 ----
   // move はポケモンの moves 配列に入っている実データへの参照なので、ここで
   // move.type を直接書き換えると技のタイプが次のターン以降も変わったままに
@@ -5733,6 +5953,10 @@ logFn(`${attacker.species.name}の${move.name}！`, {
   if (GRASSY_SPEED_UP_MOVE_IDS.includes(move.id) && battleField.terrain === 'grassy') {
     applyRankChange(attacker, [100, 0, 0, 0, 0, 2, 0, 0], logFn);
   }
+  // ---- ひでり中：聖炎の技を使うと自分の攻撃と特攻が1段階上がる（メガソーラーのひでり扱い・ノーてんきも考慮） ----
+  if (SEIEN_SUN_BOOST_MOVE_IDS.includes(move.id) && getAttackWeather(attacker, defender) === 'sun') {
+    applyRankChange(attacker, [100, 1, 0, 1, 0, 0, 0, 0], logFn);
+  }
   // ---- 風息の攻撃技：自分の攻撃と特攻の高い方で攻撃する（物理／特殊が切り替わる） ----
   move = applyHigherStatCategory(attacker, move, logFn);
   // ---- メガソーラー：発動ログ ----
@@ -5796,6 +6020,49 @@ logFn(`${attacker.species.name}の${move.name}！`, {
       if (attacker.side === 'player') battleField.wideBloomPlayer = true;
       else battleField.wideBloomCpu = true;
       logFn(`${attacker.species.name}は　ワイドブルームで　花を　咲かせた！　${KAZE_ICON_HTML}風息を付与する時、さらに+1されるようになった！`);
+    }
+    return;
+  }
+  // ラヴァチャージ(531)：このバトル中、自分と味方が相手に聖炎を付与する時、付与量がさらに+1される（ターン無限）
+  if (move.id === SEIEN_LAVA_CHARGE_ID) {
+    if (hasLavaCharge(attacker)) {
+      logFn(`しかし　${SEIEN_ICON_HTML}ラヴァチャージは　すでに　効いている！`);
+    } else {
+      if (attacker.side === 'player') battleField.lavaChargePlayer = true;
+      else battleField.lavaChargeCpu = true;
+      logFn(`${attacker.species.name}は　ラヴァチャージで　溶岩を　たぎらせた！　${SEIEN_ICON_HTML}聖炎を付与する時、さらに+1されるようになった！`);
+    }
+    return;
+  }
+  // アースロケーション(533)／大地共鳴(534)／ブーストスキャン(535)：このバトル中ずっと続く、自分と味方への効果（ターン無限）
+  if (move.id === EARTH_LOCATION_ID || move.id === GEO_RESONANCE_ID || move.id === BOOST_SCAN_ID) {
+    const defs = {
+      [EARTH_LOCATION_ID]: { key: 'earthLocation', name: 'アースロケーション',
+        msg: `${CHIMYAKU_ICON_HTML}地脈を付与する時、さらに+1されるようになった！　カリブレーションがジオ・マテリアライズに出ると、防御と特防が上がる！` },
+      [GEO_RESONANCE_ID]: { key: 'geoResonance', name: '大地共鳴',
+        msg: `ジオ・マテリアライズ中、毎ターン<img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">が溜まる！　${CHIMYAKU_ICON_HTML}地脈の倍率が上がり、上限もなくなった！` },
+      [BOOST_SCAN_ID]: { key: 'boostScan', name: 'ブーストスキャン',
+        msg: `はかいこうせんが　いわタイプで　威力1.5倍に！　ファセットグロース・ガイアキューブ・ジオ・バスターの<img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">消費が　半分になる！` },
+    };
+    const d = defs[move.id];
+    const flagKey = d.key + (attacker.side === 'player' ? 'Player' : 'Cpu');
+    if (battleField[flagKey]) {
+      logFn(`しかし　${d.name}は　すでに　効いている！`);
+    } else {
+      battleField[flagKey] = true;
+      logFn(`${attacker.species.name}は　${d.name}を　使った！　${d.msg}`);
+    }
+    return;
+  }
+  // スキルウォーマー(532)：このバトル中、相手ポケモン全員は聖炎を初めて付与された時に攻撃と特攻が1段階下がる（ターン無限）
+  if (move.id === SEIEN_SKILL_WARMER_ID) {
+    const alreadyWarmer = attacker.side === 'player' ? battleField.skillWarmerPlayer : battleField.skillWarmerCpu;
+    if (alreadyWarmer) {
+      logFn(`しかし　${SEIEN_ICON_HTML}スキルウォーマーは　すでに　効いている！`);
+    } else {
+      if (attacker.side === 'player') battleField.skillWarmerPlayer = true;
+      else battleField.skillWarmerCpu = true;
+      logFn(`${attacker.species.name}は　スキルウォーマーで　場を　あたためた！　相手は　${SEIEN_ICON_HTML}聖炎を　付与されると　こうげきと　とくこうが　下がるようになった！`);
     }
     return;
   }
@@ -6131,9 +6398,10 @@ logFn(`${attacker.species.name}の${move.name}！`, {
 
   // ---- ファセットグロース(310)：チャージが4以上なら全て消費し、攻撃を2段階上げてから攻撃 ----
   if (move.id === 310 && attacker.energyStacks >= 4) {
-    const facetConsumed = consumeEnergyStacks(attacker, logFn);
+    const facetHalf = hasBoostScan(attacker);
+    const facetConsumed = consumeEnergyForMove(attacker, logFn);
     if (facetConsumed > 0) {
-      logFn(`${attacker.species.name}は <img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'"> ${facetConsumed} を 全て 消費した！`);
+      logFn(`${attacker.species.name}は <img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'"> ${facetConsumed} を ${facetHalf ? '半分' : '全て'} 消費した！`);
       applyRankChange(attacker, [100, 2, 0, 0, 0, 0, 0, 0], logFn, null, defender);
     }
   }
@@ -6142,11 +6410,14 @@ logFn(`${attacker.species.name}の${move.name}！`, {
   let energyConsumed = 0;
   if (move.id === 218 || move.id === 334) {
     if (attacker.energyStacks >= 2) {
-      energyConsumed = consumeEnergyStacks(attacker, logFn);
+      const heldBeforeConsume = attacker.energyStacks;
+      const cubeHalf = hasBoostScan(attacker);
+      energyConsumed = consumeEnergyForMove(attacker, logFn);
       if (energyConsumed > 0) {
         modifiedPower += energyConsumed * 20;
-        logFn(`${attacker.species.name}は <img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'"> ${energyConsumed} を 全て 消費して わざの 威力が上がった！`);
-        if (energyConsumed >= 4) {
+        logFn(`${attacker.species.name}は <img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'"> ${energyConsumed} を ${cubeHalf ? '半分' : '全て'} 消費して わざの 威力が上がった！`);
+        // 特攻+2の条件はチャージが4以上あること（ブーストスキャンで消費が半分でも変わらない）
+        if (heldBeforeConsume >= 4) {
           const rankData = [100, 0, 0, 2, 0, 0, 0, 0];
           applyRankChange(attacker, rankData, logFn);
           logFn(`${attacker.species.name}の特攻が2段階上がった！`);
@@ -6265,7 +6536,7 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     applyStatus(attacker, move.selfStatus, logFn);
     applyStatus(defender, move.oppStatus, logFn, effectiveAbilityId(attacker));
     // 地脈：マグナライズ(219)など、使うと相手に地脈を1付与する
-    if (CHIMYAKU_MOVE_IDS.includes(move.id)) addChimyaku(defender, 1, logFn);
+    if (CHIMYAKU_MOVE_IDS.includes(move.id)) addChimyaku(defender, 1, logFn, attacker);
     // 技を使った本人（attacker）のlastUsedMoveIdを記録（アンコール・ひややかパンチ用）
     attacker.lastUsedMoveId = move.id;
     return;
@@ -6322,7 +6593,7 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     const gaFuyuImmune = defender.ability === ABILITY.FUYU && attacker.ability !== ABILITY.KATAYABURI
       && (!battleField.chemicalGasActive || defender.ability === ABILITY.KAGAKUHENKAGASU);
     if (!gaFuyuImmune && getTypeEffectiveness(move.type, gaDefTypes[0], gaDefTypes[1], move.id) !== 0) {
-      addChimyaku(defender, 1, logFn);
+      addChimyaku(defender, 1, logFn, attacker);
       chimyakuPreGranted = true;
     }
   }
@@ -6344,6 +6615,26 @@ logFn(`${attacker.species.name}の${move.name}！`, {
             if (kzNeed > 0) addEnergyStacks(attacker, kzNeed, logFn, true);
           }
         }
+      }
+    }
+  }
+
+  // ---- マーシャルヒーツ(527)／ストレートフレア(529)：攻撃の前の処理 ----
+  //  527：自分のチャージが2以上なら、攻撃の前に先に聖炎を1つ付与する（付与の順番が変わるだけで、合計は1つ）。
+  //  529：自分のチャージが4以上なら素早さを2段階上げる。相手に地脈／風息があれば全て聖炎に変えて倍にしてから攻撃する（無ければ何もなし）。
+  //  無効（相性0）の相手には付与・変換しない。
+  let seienPreGranted = false;
+  if (move.id === SEIEN_STRAIGHT_FLARE_ID && (attacker.energyStacks || 0) >= 4) {
+    applyRankChange(attacker, [100, 0, 0, 0, 0, 2, 0, 0], logFn);
+  }
+  if (move.id === SEIEN_MARTIAL_HEAT_ID || move.id === SEIEN_STRAIGHT_FLARE_ID) {
+    const seDefTypes = getEffectiveTypes(defender);
+    if (getTypeEffectiveness(move.type, seDefTypes[0], seDefTypes[1], move.id) !== 0) {
+      if (move.id === SEIEN_MARTIAL_HEAT_ID && (attacker.energyStacks || 0) >= 2) {
+        grantSeien(attacker, defender, 1, logFn);
+        seienPreGranted = true;
+      } else if (move.id === SEIEN_STRAIGHT_FLARE_ID) {
+        convertMarksToSeien(defender, logFn);
       }
     }
   }
@@ -6452,7 +6743,7 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     // ときは自分のselfRankが下のブロックで1回だけ発動するようにする。
     if (defender.currentHp > 0) {
       // 地脈：209・217・310など、命中すれば相手に地脈を1付与（おやこあい等の複数ヒットでも1回だけ）
-      if (hitNum === 1 && CHIMYAKU_MOVE_IDS.includes(move.id) && !chimyakuPreGranted) addChimyaku(defender, 1, logFn);
+      if (hitNum === 1 && CHIMYAKU_MOVE_IDS.includes(move.id) && !chimyakuPreGranted) addChimyaku(defender, 1, logFn, attacker);
       if (!suppressSecondary) {
         let flinchChance = move.flinchChance || 0;
         if (attacker.ability === ABILITY.TEN_NO_MEGUMI && abilityActive(attacker)) flinchChance = Math.min(100, flinchChance * 2);
@@ -6555,6 +6846,33 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     battleField.terrain = 'none';
     battleField.terrainTurns = 0;
     logFn(`フィールドが破壊された！`, { weatherFx: 'fieldend' }); // UI側：常時表示のフィールド演出（ジオ・マテリアライズ）を終える合図
+  }
+
+  // ---- 聖炎の攻撃技：攻撃後の処理（命中した場合のみここに来る） ----
+  if (!attacker.fainted) {
+    // 527（先に付与していなければ）・528：攻撃後に相手へ聖炎を1付与
+    if ((move.id === SEIEN_MARTIAL_HEAT_ID && !seienPreGranted) || move.id === SEIEN_FLAME_UPPER_ID) {
+      if (!defender.fainted && defender.currentHp > 0) grantSeien(attacker, defender, 1, logFn);
+    }
+    // 528：相手の聖炎が2以上なら自分にチャージ+10
+    if (move.id === SEIEN_FLAME_UPPER_ID && (defender.seien || 0) >= 2) {
+      if (!battleField.chemicalGasActive || attacker.ability === ABILITY.KAGAKUHENKAGASU) {
+        addEnergyStacks(attacker, 10, logFn);
+      }
+    }
+    // 530：自分と相手のチャージを全て消費し、その合計分の聖炎を相手に付与（えいきゅうきかんは特性が先に働く）
+    if (move.id === SEIEN_RAGING_SOUL_ID && !defender.fainted && defender.currentHp > 0) {
+      if (attacker.ability === ABILITY.ENERGY_PERMANENT) applyEnergyPermanent(attacker, logFn);
+      const rsMine = consumeEnergyStacks(attacker, logFn);
+      const rsTheirs = consumeEnergyStacks(defender, logFn);
+      const rsTotal = rsMine + rsTheirs;
+      if (rsTotal > 0) {
+        logFn(`${attacker.species.name}と${defender.species.name}の<img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">が　全て　消費された！（合計${rsTotal}）`);
+        grantSeien(attacker, defender, rsTotal, logFn);
+      } else {
+        logFn(`しかし　消費できる<img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">が　なかった！`);
+      }
+    }
   }
 
   // ---- かげぬい／ランチャーアーム：命中してもなお相手が場に残っていれば、逃げられなくする ----

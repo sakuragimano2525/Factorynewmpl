@@ -7035,6 +7035,17 @@ html.lite .mega-evo-btn,
 html.lite .tpc-new-badge.tpc-new-badge-mega,
 html.lite .title-record-btn.rank-rainbow{ animation:none !important; }
 </style>
+<style id="chaos-mode-style">
+.npc-mode-btn.chaos .nmb-title{ color:#8a3ffc; }
+.npc-mode-btn.chaos{ outline:2px solid rgba(138,63,252,.35); outline-offset:-4px; }
+/* カオスモード：HUDのHP表示の左に現在のタイプアイコンを出す（それ以外のモードでは空） */
+.hud-hp-line{ display:flex; align-items:center; justify-content:space-between; gap:6px; margin-top:4px; }
+.hud-hp-line .hud-hp-text, .hud-hp-line .hud-hp-percent{ margin-top:0; margin-left:auto; }
+.hud-types{ display:flex; align-items:center; gap:3px; min-height:0; }
+.hud-type-icon{ width:17px; height:17px; object-fit:contain; flex:none; }
+.hud-type-fb{ font-size:9.5px; font-weight:900; color:var(--ink-soft); }
+@media (max-width: 820px){ .hud-type-icon{ width:14px; height:14px; } }
+</style>
 </head>
 <body>
 
@@ -7465,6 +7476,11 @@ html.lite .title-record-btn.rank-rainbow{ animation:none !important; }
         <span class="nmb-title">チーム</span>
         <span class="nmb-sub">つくったパーティで挑戦</span>
       </button>
+      <button id="btn-npc-mode-chaos" class="neu-btn npc-mode-btn chaos" type="button">
+        <img class="nmb-icon-img" src="./type25.png" alt="" onerror="this.outerHTML='<span class=&quot;nmb-icon&quot;>🌀</span>'">
+        <span class="nmb-title">カオス</span>
+        <span class="nmb-sub">種族値など全てが入れ替わったカオス！</span>
+      </button>
     </div>
     <button id="btn-npc-mode-back" class="neu-btn npc-mode-back" type="button" data-gp-back>タイトルにもどる</button>
   </div>
@@ -7669,7 +7685,7 @@ html.lite .title-record-btn.rank-rainbow{ animation:none !important; }
             <span class="hud-lv" id="opp-lv">Lv100</span>
           </div>
           <div class="hud-hpbar-outer"><div class="hud-hpbar-inner" id="opp-hpbar"></div></div>
-          <div class="hud-hp-percent" id="opp-hp-percent">100%</div>
+          <div class="hud-hp-line"><span class="hud-types" id="opp-types"></span><div class="hud-hp-percent" id="opp-hp-percent">100%</div></div>
           <div id="opp-status"></div>
         </div>
         <div class="sprite-slot" id="sprite-opp-wrap"></div>
@@ -7683,7 +7699,7 @@ html.lite .title-record-btn.rank-rainbow{ animation:none !important; }
             <span class="hud-lv" id="self-lv">Lv100</span>
           </div>
           <div class="hud-hpbar-outer"><div class="hud-hpbar-inner" id="self-hpbar"></div></div>
-          <div class="hud-hp-text" id="self-hp-text">0/0</div>
+          <div class="hud-hp-line"><span class="hud-types" id="self-types"></span><div class="hud-hp-text" id="self-hp-text">0/0</div></div>
           <div id="self-status"></div>
         </div>
       </div>

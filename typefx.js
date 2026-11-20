@@ -28438,6 +28438,2368 @@ SPECIAL_IMPACT_FX[338] = SPECIAL_IMPACT_FX[333];
     ],
   };
 
+  // ============================================================
+  // マーシャルヒーツ（attack527／ほのお・物理・威力80・命中100）専用演出
+  // 参考画像（3枚）：
+  //   ・始め：相手の足元に白〜青紫の閃光が弾け、地面に黄色い輪が走る。白い光の筋が放射状に伸び、
+  //           頭上を炎の弧（三日月状の斬撃の軌跡）が駆け抜ける。赤い小さな火の粉が散る。
+  //   ・中盤：相手を炎の輪（黄色い芯・オレンジの縁）が包み、輪から炎の舌が流れる。
+  //           黄色いギザギザの炎の筋が後ろへ吹き流れ、暗い赤の煙が広がる。右上へ炎の鞭が伸びる。
+  //   ・終わり：輪はオレンジ〜赤に変わり、足元の地面に黄色く光るひび割れが走る。
+  //           赤い細い筋・黄色い短い線・火の粉が四方に飛び散り、細い赤の衝撃輪が広がって消える。
+  // 構成：①攻撃側から炎の彗星が飛び込む → ②白青の閃光＋黄色い地面の輪＋炎の弧（始め）
+  //       ③炎の輪が相手を包み、炎の筋と煙（中盤） → ④ひび割れ・炎の噴き上がり・火の粉（終わり＝ダメージの瞬間）
+  //
+  // info = { from:{x,y}, to:{x,y}, scale } は他の飛翔型演出と同じ（playSpecialTypeEffect が実測）。
+  // ============================================================
+  const MH_BURST_MS = 250;                          // 閃光が弾ける（始め）
+  const MH_RING_MS = 520;                           // 炎の輪が相手を包み始める（中盤）
+  const MH_HIT_MS = 880;                            // ひび割れ・輪の炸裂＝ダメージの瞬間（終わり）
+  const MH_END_MS = 1800;
+
+  function spawnMartialHeatSpecial(particles, w, h, info) {
+    const TAU = Math.PI * 2;
+    const from = (info && info.from) || { x: w * 0.28, y: h * 0.68 };
+    const to = (info && info.to) || { x: w * 0.72, y: h * 0.32 };
+    const S = (info && info.scale) || 1;
+    const LITE = !!(window && window.__LITE);
+
+    // 色（参考画像から）
+    const WHITE = '#ffffff', CREAM = '#fff6c8', PALE = '#ffec8a', YELLOW = '#ffe04a', GOLD = '#ffc830';
+    const ORANGE = '#ff8a1e', DEEP = '#ff5a14', RED = '#e0301a', CRIM = '#7a1030', ROSE = '#d03a5a';
+    const LAV = '#b9c4ff', SKY = '#9fd0ff';
+
+    const GK = 0.56;                                    // 地面（斜め見下ろし）の潰れ具合
+    const M = { x: from.x, y: from.y - 6 * S };         // 攻撃側の胴のあたり
+    const P = { x: to.x, y: to.y };                     // 相手の中心
+    const G = { x: P.x, y: P.y + 30 * S };              // 相手の足元
+    let ux = P.x - M.x, uy = P.y - M.y;
+    const ul = Math.hypot(ux, uy) || 1; ux /= ul; uy /= ul;
+    const dirA = Math.atan2(uy, ux);                    // 攻撃側→相手の向き（炎が吹き流れる方向）
+    const R = 150 * S;                                  // 地面の輪の基準半径
+
+    const clampN = (v, a, b) => Math.max(a, Math.min(b, v));
+    const hx = (c) => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
+    const mixc = (c0, c1, k, a) => {
+      const A = hx(c0), B = hx(c1), q = clamp01(k);
+      return 'rgba(' + Math.round(A[0] + (B[0] - A[0]) * q) + ',' + Math.round(A[1] + (B[1] - A[1]) * q) + ',' +
+        Math.round(A[2] + (B[2] - A[2]) * q) + ',' + a + ')';
+    };
+    const mixh = (c0, c1, k) => {
+      const A = hx(c0), B = hx(c1), q = clamp01(k);
+      return '#' + [0, 1, 2].map((i) => ('0' + Math.round(A[i] + (B[i] - A[i]) * q).toString(16)).slice(-2)).join('');
+    };
+    const ground = (ctx, x, y, fn) => {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(1, GK);
+      fn();
+      ctx.restore();
+    };
+
+    // ---- 描画ヘルパー ----
+    function sparkle(ctx, x, y, size, alpha, color, rot) {
+      if (alpha <= 0.01 || size <= 0.3) return;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rot || 0);
+      const gr = ctx.createRadialGradient(0, 0, 0, 0, 0, size * 0.95);
+      gr.addColorStop(0, rgba(color, alpha * 0.55));
+      gr.addColorStop(1, rgba(color, 0));
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.arc(0, 0, size * 0.95, 0, TAU); ctx.fill();
+      ctx.fillStyle = rgba(color, alpha);
+      ctx.beginPath();
+      ctx.moveTo(0, -size);
+      ctx.quadraticCurveTo(size * 0.1, -size * 0.1, size, 0);
+      ctx.quadraticCurveTo(size * 0.1, size * 0.1, 0, size);
+      ctx.quadraticCurveTo(-size * 0.1, size * 0.1, -size, 0);
+      ctx.quadraticCurveTo(-size * 0.1, -size * 0.1, 0, -size);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    function glow(ctx, x, y, r, color, alpha, core) {
+      if (alpha <= 0.01 || r <= 0.5) return;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, rgba(core || WHITE, alpha));
+      g.addColorStop(0.35, rgba(color, alpha * 0.55));
+      g.addColorStop(1, rgba(color, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    }
+    // 両端が細く、中ほどが太い光の筋（tail→tip の向き ang）
+    function streak(ctx, x, y, ang, tail, tip, hw, c0, c1, alpha) {
+      if (alpha <= 0.01 || tip <= tail) return;
+      const c = Math.cos(ang), s = Math.sin(ang), nx = -s, ny = c;
+      const mid = (tail + tip) * 0.5;
+      const g = ctx.createLinearGradient(x + c * tail, y + s * tail, x + c * tip, y + s * tip);
+      g.addColorStop(0, rgba(c0, alpha));
+      g.addColorStop(1, rgba(c1, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(x + c * tail, y + s * tail);
+      ctx.lineTo(x + c * mid + nx * hw, y + s * mid + ny * hw);
+      ctx.lineTo(x + c * tip, y + s * tip);
+      ctx.lineTo(x + c * mid - nx * hw, y + s * mid - ny * hw);
+      ctx.closePath(); ctx.fill();
+    }
+    // 炎の舌（根元が太く、先が曲がって細くなる）
+    function tongue(ctx, x, y, ang, len, wd, c0, c1, alpha, bend) {
+      if (alpha <= 0.01 || len <= 1) return;
+      const c = Math.cos(ang), s = Math.sin(ang), nx = -s, ny = c;
+      const bx = x + c * len * 0.5 + nx * bend * len, by = y + s * len * 0.5 + ny * bend * len;
+      const tx = x + c * len + nx * bend * len * 1.5, ty = y + s * len + ny * bend * len * 1.5;
+      const g = ctx.createLinearGradient(x, y, tx, ty);
+      g.addColorStop(0, rgba(c0, alpha));
+      g.addColorStop(0.55, rgba(c1, alpha * 0.85));
+      g.addColorStop(1, rgba(c1, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(x + nx * wd, y + ny * wd);
+      ctx.quadraticCurveTo(bx + nx * wd * 0.8, by + ny * wd * 0.8, tx, ty);
+      ctx.quadraticCurveTo(bx - nx * wd * 0.8, by - ny * wd * 0.8, x - nx * wd, y - ny * wd);
+      ctx.closePath(); ctx.fill();
+    }
+    // 黄色いギザギザの炎の筋（seeds で縁の凹凸が決まる）
+    function spike(ctx, x, y, ang, len, wd, seeds, c0, c1, alpha) {
+      if (alpha <= 0.01 || len <= 2) return;
+      const c = Math.cos(ang), s = Math.sin(ang), nx = -s, ny = c, n = seeds.length;
+      const g = ctx.createLinearGradient(x, y, x + c * len, y + s * len);
+      g.addColorStop(0, rgba(c0, alpha));
+      g.addColorStop(0.5, rgba(c1, alpha * 0.9));
+      g.addColorStop(1, rgba(c1, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      for (let k = 0; k < n; k++) {
+        const u = (k + 1) / (n + 1), ww = wd * Math.sin(Math.PI * Math.pow(u, 0.7)) * (1 + seeds[k]);
+        ctx.lineTo(x + c * len * u + nx * ww, y + s * len * u + ny * ww);
+      }
+      ctx.lineTo(x + c * len, y + s * len);
+      for (let k = n - 1; k >= 0; k--) {
+        const u = (k + 1) / (n + 1), ww = wd * Math.sin(Math.PI * Math.pow(u, 0.7)) * (1 + seeds[(k + 2) % n]);
+        ctx.lineTo(x + c * len * u - nx * ww, y + s * len * u - ny * ww);
+      }
+      ctx.closePath(); ctx.fill();
+    }
+    // 炎の弧（三日月状の軌跡）。aHead が先端、そこから span ぶん後ろへ尾が伸びる。
+    function sweepArc(ctx, cx, cy, rx, ry, aHead, span, wmax, alpha, K) {
+      const pts = [];
+      for (let k = 0; k <= K; k++) {
+        const a = aHead + span * (k / K);
+        pts.push({ x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry });
+      }
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      const passes = [[1.9, 0, 0.28], [1.0, 1, 0.88], [0.4, 2, 0.95]];
+      for (let pi = 0; pi < passes.length; pi++) {
+        const ps = passes[pi];
+        for (let k = 0; k < K; k++) {
+          const q = k / K;
+          const taper = Math.pow(1 - q, 0.7) * Math.min(1, 0.35 + q * 5);
+          const lw = Math.max(0.6, wmax * ps[0] * taper);
+          const fade = alpha * (1 - 0.7 * q);
+          ctx.strokeStyle = ps[1] === 0 ? rgba(ORANGE, ps[2] * fade)
+            : ps[1] === 1 ? mixc('#ffe86a', '#ff6a1a', q, ps[2] * fade)
+            : rgba(CREAM, ps[2] * fade);
+          ctx.lineWidth = lw;
+          ctx.beginPath(); ctx.moveTo(pts[k].x, pts[k].y); ctx.lineTo(pts[k + 1].x, pts[k + 1].y); ctx.stroke();
+        }
+      }
+    }
+    // 炎の輪（帯）。aLen が輪の長さ、phase で明暗が流れる。cs=0:黄色寄り → 1:赤寄り
+    function fireRing(ctx, cx, cy, rx, ry, rot, aLen, phase, lw, cs, alpha, K) {
+      const cr = Math.cos(rot), sr = Math.sin(rot);
+      const pt = (a) => {
+        const x = Math.cos(a) * rx, y = Math.sin(a) * ry;
+        return { x: cx + x * cr - y * sr, y: cy + x * sr + y * cr };
+      };
+      const step = aLen / K, closed = aLen >= TAU - 0.01, aS = phase * TAU;
+      // ① 外側のにじむ光：1本のパスで描く（縞が出ない）
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineCap = 'round';
+      ctx.lineWidth = lw * 2.3;
+      ctx.strokeStyle = mixc('#ff9a20', '#ff7424', cs, 0.27 * alpha);
+      ctx.beginPath();
+      for (let j = 0; j <= K; j++) { const p = pt(aS + j * step); j === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y); }
+      if (closed) ctx.closePath();
+      ctx.stroke();
+      // ② 帯本体：明暗は色で流す（アルファは一定）→ 継ぎ目が目立たない
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.lineCap = 'butt';
+      for (let j = 0; j < K; j++) {
+        const a0 = aS + j * step, a1 = a0 + step * 1.08;
+        const b = 0.5 + 0.5 * Math.sin(a0 - phase * 7.5);
+        const wf = closed ? 1 : Math.pow((j + 1) / K, 0.55);
+        const p0 = pt(a0), p1 = pt(a1);
+        ctx.strokeStyle = mixc(mixh('#ff9418', '#e83a10', cs), '#ffd24a', b * 0.55 * (1 - cs * 0.5), 0.94 * alpha);
+        ctx.lineWidth = lw * wf;
+        ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+      }
+      // ③ 黄白の芯
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineCap = 'round';
+      ctx.lineWidth = lw * 0.36;
+      ctx.strokeStyle = mixc('#fff2b0', '#ffb860', cs, 0.8 * alpha);
+      ctx.beginPath();
+      for (let j = 0; j <= K; j++) { const p = pt(aS + j * step); j === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y); }
+      if (closed) ctx.closePath();
+      ctx.stroke();
+      ctx.globalCompositeOperation = 'source-over';
+      return pt;
+    }
+    // 途中まで描くポリライン（ひび割れの成長用）
+    function strokePartial(ctx, pts, frac) {
+      let total = 0;
+      const segs = [];
+      for (let k = 1; k < pts.length; k++) {
+        const l = Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y);
+        segs.push(l); total += l;
+      }
+      let need = total * frac;
+      ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+      for (let k = 1; k < pts.length && need > 0; k++) {
+        const l = segs[k - 1];
+        if (need >= l) { ctx.lineTo(pts[k].x, pts[k].y); need -= l; }
+        else {
+          const q = need / l;
+          ctx.lineTo(pts[k - 1].x + (pts[k].x - pts[k - 1].x) * q, pts[k - 1].y + (pts[k].y - pts[k - 1].y) * q);
+          need = 0;
+        }
+      }
+      ctx.stroke();
+    }
+    function quad(p0, p1, p2, u) {
+      const m = 1 - u;
+      return { x: m * m * p0.x + 2 * m * u * p1.x + u * u * p2.x, y: m * m * p0.y + 2 * m * u * p1.y + u * u * p2.y };
+    }
+    const easeOutBackMH = (t) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+
+    // ============================================================
+    // ①  攻撃側から炎の彗星が相手へ飛び込む
+    // ============================================================
+    particles.push({
+      delay: 0, maxLife: MH_BURST_MS + 40,
+      draw(ctx, t) {
+        const q = easeInCubic(clamp01(t / 0.9));
+        const hx0 = lerp(M.x, P.x, q), hy0 = lerp(M.y, P.y, q);
+        const a = t < 0.9 ? 1 : 1 - (t - 0.9) / 0.1;
+        if (a <= 0.01) return;
+        ctx.globalCompositeOperation = 'lighter';
+        const tail = 130 * S * Math.min(1, q * 2.2 + 0.15);
+        streak(ctx, hx0, hy0, dirA + Math.PI, 0, tail, 9 * S, YELLOW, ORANGE, a * 0.9);
+        streak(ctx, hx0, hy0, dirA + Math.PI, 0, tail * 0.7, 4 * S, WHITE, YELLOW, a);
+        glow(ctx, hx0, hy0, 34 * S, ORANGE, 0.9 * a, CREAM);
+        for (let k = 0; k < 4; k++) {
+          const off = (k - 1.5) * 9 * S, back = (22 + k * 16) * S;
+          const sx = hx0 - ux * back - uy * off, sy = hy0 - uy * back + ux * off;
+          glow(ctx, sx, sy, (8 + 4 * k) * S, RED, 0.6 * a * (1 - k * 0.18), YELLOW);
+        }
+      },
+    });
+
+    // ============================================================
+    // ②  始め：白青の閃光・黄色い地面の輪・放射状の光の筋
+    // ============================================================
+    particles.push({
+      delay: MH_BURST_MS, maxLife: 780,
+      draw(ctx, t) {
+        const aR = 1 - easeInCubic(clamp01((t - 0.3) / 0.7));            // 黄色い輪はやや長く残る
+        const a = 1 - Math.pow(clamp01((t - 0.12) / 0.55), 1.1);         // 白青の閃光は素早く引く
+        if (aR <= 0.01) return;
+        const e = easeOutCubic(clamp01(t / 0.38));
+        const rr = R * (0.28 + 0.78 * e);
+        // 輪の内側：白→青紫の半透明の閃光
+        if (a > 0.01) ground(ctx, G.x, G.y, () => {
+          const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rr);
+          g.addColorStop(0, rgba(WHITE, 0.95 * a));
+          g.addColorStop(0.45, rgba(LAV, 0.62 * a));
+          g.addColorStop(0.85, rgba(SKY, 0.28 * a));
+          g.addColorStop(1, rgba(SKY, 0));
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU); ctx.fill();
+        });
+        ctx.globalCompositeOperation = 'lighter';
+        // 相手の足元から立ちのぼる白い光
+        if (a > 0.01) glow(ctx, P.x, P.y + 6 * S, (64 + 34 * e) * S, WHITE, 0.5 * a, WHITE);
+        // 黄色い輪（太い）と白い内輪
+        ground(ctx, G.x, G.y, () => {
+          ctx.lineWidth = Math.max(1.5, 6 * S * (1 - t * 0.45));
+          ctx.strokeStyle = rgba(GOLD, 0.95 * aR);
+          ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU); ctx.stroke();
+          ctx.lineWidth = Math.max(1, 2.4 * S);
+          ctx.strokeStyle = rgba(CREAM, 0.9 * aR);
+          ctx.beginPath(); ctx.arc(0, 0, rr * 0.96, 0, TAU); ctx.stroke();
+          ctx.lineWidth = Math.max(1, 2 * S);
+          ctx.strokeStyle = rgba(YELLOW, 0.5 * aR);
+          ctx.beginPath(); ctx.arc(0, 0, rr * 1.12, 0, TAU); ctx.stroke();
+        });
+        // 放射状の白い光の筋
+        const NR = a > 0.01 ? (LITE ? 14 : 22) : 0;
+        for (let k = 0; k < NR; k++) {
+          const ang = (k / NR) * TAU + 0.13 * Math.sin(k * 2.7);
+          const len = (46 + 62 * ((k * 7) % 5) / 4) * S * e;
+          streak(ctx, P.x, P.y + 4 * S, ang, 12 * S, 12 * S + len, 1.7 * S, k % 3 === 0 ? CREAM : WHITE, SKY, a * 0.9);
+        }
+        if (a > 0.01) sparkle(ctx, P.x, P.y, 52 * S * easeOutBackMH(clamp01(t / 0.3)) * (1 - 0.35 * t), a, WHITE, t * 1.4);
+      },
+    });
+
+    // ============================================================
+    // ③  始め：頭上を駆け抜ける炎の弧（三日月状の軌跡）
+    // ============================================================
+    const ARCS = [
+      { d: 0,   r: 104, ry: 0.78, a0: 0.5, a1: -3.7, span: 1.7, w: 15, cx: 12, cy: -6 },
+      { d: 55,  r: 124, ry: 0.74, a0: 0.2, a1: -3.5, span: 1.5, w: 11, cx: 4,  cy: -2 },
+      { d: 105, r: 86,  ry: 0.82, a0: 0.7, a1: -3.9, span: 1.3, w: 9,  cx: 16, cy: -10 },
+    ];
+    ARCS.forEach((A, i) => {
+      particles.push({
+        delay: MH_BURST_MS - 30 + A.d, maxLife: 720,
+        draw(ctx, t) {
+          const mv = easeOutCubic(clamp01(t / 0.58));
+          const aHead = lerp(A.a0, A.a1, mv);
+          const fade = 1 - easeInCubic(clamp01((t - 0.55) / 0.45));
+          if (fade <= 0.01) return;
+          const len = Math.min(A.span, Math.max(0.2, (A.a0 - aHead) * 0.9 + 0.3));
+          ctx.globalCompositeOperation = 'lighter';
+          sweepArc(ctx, P.x + A.cx * S, P.y + A.cy * S, A.r * S, A.r * A.ry * S, aHead, len, A.w * S, fade, LITE ? 14 : 20);
+          // 弧に沿って走る黄色い細い火花の線
+          const sp = (A.ry > 0.8) ? 2 : 3;
+          for (let k = 0; k < sp; k++) {
+            const aa = aHead + len * (0.2 + 0.25 * k) + 0.05 * Math.sin(t * 30 + k + i);
+            const rr2 = A.r * S * (1.1 + 0.08 * k);
+            const x0 = P.x + A.cx * S + Math.cos(aa) * rr2, y0 = P.y + A.cy * S + Math.sin(aa) * rr2 * A.ry;
+            const ang = aa - Math.PI / 2;
+            streak(ctx, x0, y0, ang, 0, (20 + 14 * k) * S, 1.5 * S, YELLOW, ORANGE, fade * 0.9);
+          }
+        },
+      });
+    });
+
+    // 始め：相手に燃え移る小さな炎と、赤い火の粉（攻撃側と反対へ流れる）
+    const smallFlames = [];
+    for (let k = 0; k < 5; k++) smallFlames.push({ ox: rand(-34, 30), oy: rand(-34, 2), ang: -Math.PI / 2 + rand(-0.5, 0.5), ln: rand(24, 44), wd: rand(6, 10), ph: rand(0, TAU), dl: rand(0, 90) });
+    particles.push({
+      delay: MH_BURST_MS + 40, maxLife: 640, blend: 'lighter',
+      draw(ctx, t) {
+        const a = 1 - easeInCubic(clamp01((t - 0.4) / 0.6));
+        if (a <= 0.01) return;
+        for (let k = 0; k < smallFlames.length; k++) {
+          const f = smallFlames[k];
+          const g = clamp01((t * 640 - f.dl) / 160);
+          const fl = 0.75 + 0.25 * Math.sin(t * 40 + f.ph);
+          tongue(ctx, P.x + f.ox * S, P.y + f.oy * S, f.ang, f.ln * S * g * fl, f.wd * S, PALE, ORANGE, a * 0.95, 0.12 * Math.sin(t * 20 + f.ph));
+        }
+      },
+    });
+    const redDots = [];
+    for (let k = 0; k < (LITE ? 8 : 14); k++) {
+      const ang = dirA + rand(-0.9, 0.9), sp = rand(120, 300) * S;
+      redDots.push({ vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - rand(20, 120) * S, r: rand(1.6, 3.2) * S, dl: rand(0, 120), life: rand(560, 900), ox: rand(-24, 24) * S, oy: rand(-24, 10) * S });
+    }
+    redDots.forEach((d) => {
+      particles.push({
+        delay: MH_BURST_MS + 30 + d.dl, maxLife: d.life,
+        draw(ctx, t) {
+          const a = 1 - easeInCubic(clamp01((t - 0.55) / 0.45));
+          if (a <= 0.01) return;
+          const ts = t * d.life / 1000, dr = (1 - Math.exp(-3 * ts)) / 3;
+          const x = P.x + d.ox + d.vx * dr, y = P.y + d.oy + d.vy * dr + 300 * S * ts * ts;
+          ctx.fillStyle = rgba(RED, a);
+          ctx.beginPath(); ctx.arc(x, y, d.r, 0, TAU); ctx.fill();
+        },
+      });
+    });
+
+    // ============================================================
+    // ④  中盤：炎の輪が相手を包む（輪の色は黄→オレンジ→赤へ変わる）
+    // ============================================================
+    const RING_DELAY = MH_RING_MS - 40;
+    const RING_LIFE = MH_END_MS - RING_DELAY - 60;
+    const NT = LITE ? 9 : 14;
+    const tongues = [];
+    for (let k = 0; k < NT; k++) tongues.push({ ph: rand(0, TAU), fl: rand(9, 16), ln: rand(34, 60), wd: rand(8, 13) });
+    const hitU = (MH_HIT_MS - RING_DELAY) / RING_LIFE;
+    particles.push({
+      delay: RING_DELAY, maxLife: RING_LIFE,
+      draw(ctx, t) {
+        const appear = clamp01(t / 0.22);
+        const aLen = Math.max(0.2, TAU * easeOutCubic(appear));
+        const rf = lerp(1.6, 1.0, easeOutCubic(clamp01(t / 0.24)));
+        const bump = Math.exp(-Math.pow((t - hitU - 0.02) / 0.06, 2));
+        const shrink = 1 - 0.1 * clamp01((t - hitU) / 0.4);
+        const fade = clamp01(t / 0.08) * (1 - easeInCubic(clamp01((t - 0.74) / 0.26)));
+        if (fade <= 0.01) return;
+        const cs = clamp01((t - 0.2) / 0.5);
+        const rx = 104 * S * rf * shrink * (1 + 0.09 * bump), ry = 118 * S * rf * shrink * (1 + 0.09 * bump);
+        const lw = (12 + 5 * bump + 3 * cs) * S * (0.65 + 0.35 * clamp01(t / 0.3));
+        const cx = P.x, cy = P.y - 6 * S, rot = -0.12;
+        // 輪の内側のほんのりした橙の光
+        ctx.globalCompositeOperation = 'lighter';
+        glow(ctx, cx, cy, Math.max(rx, ry) * 1.15, ORANGE, 0.26 * fade * (1 + bump), YELLOW);
+        const pt = fireRing(ctx, cx, cy, rx, ry, rot, aLen, t * 1.6, lw, cs, fade, LITE ? 30 : 44);
+        // 輪から流れる炎の舌
+        if (appear > 0.5) {
+          const ta = fade * clamp01((appear - 0.5) / 0.5);
+          const cr = Math.cos(rot), sr = Math.sin(rot);
+          for (let k = 0; k < NT; k++) {
+            const T = tongues[k];
+            const th = t * 1.6 * TAU + (k / NT) * TAU;
+            const bx = Math.cos(th) * rx, by = Math.sin(th) * ry;
+            const x = cx + bx * cr - by * sr, y = cy + bx * sr + by * cr;
+            const outward = Math.atan2(y - cy, x - cx) + 0.75;
+            const fl = 0.6 + 0.4 * Math.sin(t * T.fl * 5 + T.ph);
+            ctx.globalCompositeOperation = 'lighter';
+            tongue(ctx, x, y, outward, T.ln * S * fl * (1 + 0.5 * bump) * (1 - 0.3 * cs), T.wd * S, cs < 0.5 ? PALE : GOLD, cs < 0.5 ? ORANGE : DEEP, ta * 0.85, 0.28);
+          }
+          ctx.globalCompositeOperation = 'source-over';
+        }
+        // 外側の細い橙の弧（回りながら消える）
+        const oa = fade * (1 - cs * 0.4);
+        ctx.lineCap = 'round';
+        ctx.lineWidth = Math.max(1, 3 * S);
+        ctx.strokeStyle = mixc('#ffb040', '#ff5a20', cs, 0.8 * oa);
+        const a0 = -t * 3.2 + 2.2;
+        ctx.beginPath();
+        for (let k = 0; k <= 24; k++) {
+          const aa = a0 + 3.4 * (k / 24);
+          const px = cx + Math.cos(aa) * rx * 1.42, py = cy + Math.sin(aa) * ry * 1.42;
+          k === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+        ctx.globalCompositeOperation = 'source-over';
+      },
+    });
+
+    // 中盤：後ろへ吹き流れる黄色いギザギザの炎の筋
+    const NS = LITE ? 5 : 7;
+    for (let k = 0; k < NS; k++) {
+      const off = (k - (NS - 1) / 2) * 0.17 + rand(-0.04, 0.04);
+      const seeds = []; for (let q = 0; q < 6; q++) seeds.push((q % 2 ? 0.6 : -0.3) + rand(-0.15, 0.15));
+      const len = rand(90, 170) * S, wd = rand(8, 15) * S, dl = rand(0, 70);
+      particles.push({
+        delay: MH_RING_MS + dl, maxLife: 520, blend: 'lighter',
+        draw(ctx, t) {
+          const e = easeOutCubic(clamp01(t / 0.45));
+          const a = 1 - easeInCubic(clamp01((t - 0.5) / 0.5));
+          if (a <= 0.01) return;
+          const jit = 1 + 0.08 * Math.sin(t * 50 + k * 2);
+          const sx = P.x + ux * 16 * S, sy = P.y - 4 * S + uy * 16 * S;
+          spike(ctx, sx, sy, dirA + off, len * e * jit, wd * (1 - t * 0.4), seeds, CREAM, k % 2 ? ORANGE : GOLD, a);
+        },
+      });
+    }
+    // 中盤：暗い赤〜桃色の煙（吹き流れる方向へ広がる）
+    const NSM = LITE ? 4 : 6;
+    for (let k = 0; k < NSM; k++) {
+      const dist = rand(30, 110) * S, spread = rand(-26, 26) * S, r0 = rand(32, 58) * S, dl = rand(0, 120);
+      const col = k % 3 === 2 ? ROSE : CRIM;
+      particles.push({
+        delay: MH_RING_MS + 30 + dl, maxLife: 620,
+        draw(ctx, t) {
+          const e = easeOutCubic(clamp01(t / 0.6));
+          const a = Math.sin(Math.PI * clamp01(t)) * 0.46;
+          if (a <= 0.01) return;
+          const x = P.x + ux * (14 * S + dist * e) - uy * spread, y = P.y - 4 * S + uy * (14 * S + dist * e) + ux * spread;
+          const r = r0 * (0.6 + 0.8 * e);
+          const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+          g.addColorStop(0, rgba(col, a));
+          g.addColorStop(0.6, rgba(col, a * 0.55));
+          g.addColorStop(1, rgba(col, 0));
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+        },
+      });
+    }
+    // 中盤：右上へ伸びる炎の鞭（根元が太く、先が細い黄白の帯）
+    const WP0 = { x: P.x + 8 * S, y: P.y - 12 * S }, WPC = { x: P.x + 62 * S, y: P.y - 118 * S }, WP1 = { x: P.x + 176 * S, y: P.y - 124 * S };
+    particles.push({
+      delay: MH_RING_MS + 30, maxLife: 560, blend: 'lighter',
+      draw(ctx, t) {
+        const head = easeOutCubic(clamp01(t / 0.5));
+        const tail = easeInCubic(clamp01((t - 0.3) / 0.7)) * 0.95;
+        const a = 1 - easeInCubic(clamp01((t - 0.62) / 0.38));
+        if (a <= 0.01 || head <= tail + 0.02) return;
+        const K = LITE ? 12 : 18;
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        const pts = [];
+        for (let k = 0; k <= K; k++) pts.push(quad(WP0, WPC, WP1, lerp(tail, head, k / K)));
+        const passes = [[2.0, 0, 0.3], [1.0, 1, 0.85], [0.4, 2, 0.95]];
+        for (let pi = 0; pi < passes.length; pi++) {
+          const ps = passes[pi];
+          for (let k = 0; k < K; k++) {
+            const q = k / K;
+            const taper = Math.pow(1 - q * 0.9, 0.9) * Math.min(1, 0.4 + (1 - q) * 0.6);
+            ctx.lineWidth = Math.max(0.8, 17 * S * ps[0] * taper * (0.6 + 0.4 * (1 - tail)));
+            ctx.strokeStyle = ps[1] === 0 ? rgba(ORANGE, ps[2] * a)
+              : ps[1] === 1 ? mixc('#ffe070', '#ff9a30', q, ps[2] * a)
+              : rgba(WHITE, ps[2] * a);
+            ctx.beginPath(); ctx.moveTo(pts[k].x, pts[k].y); ctx.lineTo(pts[k + 1].x, pts[k + 1].y); ctx.stroke();
+          }
+        }
+      },
+    });
+
+    // ============================================================
+    // ⑤  終わり（ダメージの瞬間）：地面のひび割れ・足元の橙の光・炎の噴き上がり
+    // ============================================================
+    const HIT0 = MH_HIT_MS - 30;
+    // 足元に広がる橙の光溜まりと白い霞
+    particles.push({
+      delay: HIT0, maxLife: 700,
+      draw(ctx, t) {
+        const a = 1 - easeInCubic(clamp01((t - 0.35) / 0.65));
+        if (a <= 0.01) return;
+        const e = easeOutCubic(clamp01(t / 0.3));
+        ctx.globalCompositeOperation = 'lighter';
+        ground(ctx, G.x, G.y, () => {
+          const r = 118 * S * (0.5 + 0.5 * e);
+          const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+          g.addColorStop(0, rgba('#ffd060', 0.78 * a));
+          g.addColorStop(0.5, rgba(ORANGE, 0.42 * a));
+          g.addColorStop(1, rgba(RED, 0));
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+        });
+        glow(ctx, P.x, P.y - 4 * S, 90 * S * (0.6 + 0.4 * e), WHITE, 0.5 * (1 - easeOutCubic(clamp01(t / 0.45))), WHITE);
+      },
+    });
+    // ひび割れ（黄色く光る稲妻状の線。地面座標なので楕円状に潰れて見える）
+    const crackN = LITE ? 7 : 11;
+    const cracks = [];
+    for (let i = 0; i < crackN; i++) {
+      const a = (i / crackN) * TAU + rand(-0.22, 0.22);
+      const len = rand(72, 150) * S, segs = 3 + ((Math.random() * 3) | 0), pts = [{ x: 0, y: 0 }];
+      for (let k = 1; k <= segs; k++) {
+        const aa = a + rand(-0.38, 0.38), rr = len * (k / segs);
+        pts.push({ x: Math.cos(aa) * rr, y: Math.sin(aa) * rr });
+      }
+      let fk = null;
+      if (Math.random() < 0.65) {
+        const at = 1 + ((Math.random() * (segs - 1)) | 0), base = pts[at], fa = a + rand(0.5, 1.0) * (Math.random() < 0.5 ? -1 : 1), fl = len * rand(0.22, 0.38);
+        fk = [{ x: base.x, y: base.y }, { x: base.x + Math.cos(fa) * fl * 0.55, y: base.y + Math.sin(fa) * fl * 0.55 + rand(-4, 4) * S }, { x: base.x + Math.cos(fa) * fl, y: base.y + Math.sin(fa) * fl }];
+      }
+      cracks.push({ pts, fk, dl: rand(0, 70) });
+    }
+    particles.push({
+      delay: HIT0, maxLife: 820, blend: 'lighter',
+      draw(ctx, t) {
+        const a = 1 - easeInCubic(clamp01((t - 0.5) / 0.5));
+        if (a <= 0.01) return;
+        ground(ctx, G.x, G.y, () => {
+          ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+          for (let i = 0; i < cracks.length; i++) {
+            const c = cracks[i];
+            const gr = easeOutCubic(clamp01((t * 820 - c.dl) / 190));
+            if (gr <= 0) continue;
+            const fl = 0.8 + 0.2 * Math.sin(t * 60 + i * 1.7);
+            ctx.lineWidth = 11 * S; ctx.strokeStyle = rgba(ORANGE, 0.36 * a * fl); strokePartial(ctx, c.pts, gr);
+            ctx.lineWidth = 4.2 * S; ctx.strokeStyle = rgba(YELLOW, 0.95 * a * fl); strokePartial(ctx, c.pts, gr);
+            ctx.lineWidth = 1.7 * S; ctx.strokeStyle = rgba(WHITE, a * fl); strokePartial(ctx, c.pts, gr);
+            if (c.fk && gr > 0.55) {
+              const fg = clamp01((gr - 0.55) / 0.45);
+              ctx.lineWidth = 3 * S; ctx.strokeStyle = rgba(YELLOW, 0.9 * a * fl); strokePartial(ctx, c.fk, fg);
+            }
+          }
+        });
+      },
+    });
+    // 相手の上へ噴き上がる炎の塊
+    const topFlames = [];
+    for (let k = 0; k < (LITE ? 6 : 9); k++) topFlames.push({ ox: rand(-40, 40), ang: -Math.PI / 2 + rand(-0.62, 0.62), ln: rand(64, 122), wd: rand(12, 22), ph: rand(0, TAU), fl: rand(10, 18), dl: rand(0, 90) });
+    particles.push({
+      delay: HIT0 - 20, maxLife: 760, blend: 'lighter',
+      draw(ctx, t) {
+        for (let k = 0; k < topFlames.length; k++) {
+          const f = topFlames[k];
+          const tt = clamp01((t * 760 - f.dl) / 660);
+          if (tt <= 0) continue;
+          const grow = easeOutCubic(clamp01(tt / 0.3)), die = 1 - easeInCubic(clamp01((tt - 0.5) / 0.5));
+          const fl = 0.78 + 0.22 * Math.sin(tt * f.fl * 3 + f.ph);
+          tongue(ctx, P.x + f.ox * S, P.y + 6 * S, f.ang, f.ln * S * grow * fl * (0.6 + 0.4 * die), f.wd * S * (0.5 + 0.5 * die), PALE, DEEP, die * 0.92, 0.1 * Math.sin(tt * 12 + f.ph));
+        }
+      },
+    });
+    // 細い赤の衝撃輪（広がって消える）
+    particles.push({
+      delay: HIT0, maxLife: 620,
+      draw(ctx, t) {
+        const a = 1 - easeInCubic(clamp01((t - 0.2) / 0.8));
+        if (a <= 0.01) return;
+        const e = easeOutCubic(t);
+        ctx.lineWidth = Math.max(1, 2.6 * S * (1 - t * 0.5));
+        ctx.strokeStyle = mixc('#ff6a30', '#d0281a', t, 0.85 * a);
+        ctx.beginPath(); ctx.ellipse(P.x, P.y - 2 * S, R * (0.8 + 1.0 * e), R * 0.86 * (0.8 + 1.0 * e), -0.12, 0, TAU); ctx.stroke();
+        ctx.lineWidth = Math.max(1, 1.6 * S);
+        ctx.strokeStyle = rgba(YELLOW, 0.5 * a);
+        ctx.beginPath(); ctx.ellipse(P.x, P.y - 2 * S, R * (0.7 + 0.85 * e), R * 0.86 * (0.7 + 0.85 * e), -0.12, 0, TAU); ctx.stroke();
+      },
+    });
+    // 四方へ飛ぶ赤い細い筋と黄色い短い線
+    const NRS = LITE ? 9 : 14;
+    for (let k = 0; k < NRS; k++) {
+      const a0 = (k / NRS) * TAU + rand(-0.2, 0.2), r0 = rand(0.55, 0.9) * R, r1 = r0 + rand(70, 150) * S;
+      const bend = rand(-0.25, 0.25), dl = rand(0, 130), life = rand(380, 560), yel = (k % 3 === 0);
+      particles.push({
+        delay: HIT0 + dl, maxLife: life,
+        draw(ctx, t) {
+          const head = easeOutCubic(clamp01(t / 0.7)), tail = easeInCubic(clamp01(t)) * 0.92;
+          const a = 1 - easeInCubic(clamp01((t - 0.55) / 0.45));
+          if (a <= 0.01 || head <= tail) return;
+          const cx0 = P.x, cy0 = P.y - 2 * S;
+          const pos = (u) => {
+            const r = lerp(r0, r1, u), an = a0 + bend * u;
+            return { x: cx0 + Math.cos(an) * r, y: cy0 + Math.sin(an) * r * 0.9 };
+          };
+          ctx.lineCap = 'round';
+          const KS = 6;
+          for (let q = 0; q < KS; q++) {
+            const u0 = lerp(tail, head, q / KS), u1 = lerp(tail, head, (q + 1) / KS), p0 = pos(u0), p1 = pos(u1);
+            const taper = (q + 1) / KS;
+            ctx.lineWidth = Math.max(0.8, (yel ? 3.0 : 2.0) * S * taper);
+            ctx.strokeStyle = yel ? rgba(YELLOW, a * taper) : rgba(RED, a * (0.35 + 0.65 * taper));
+            ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+          }
+        },
+      });
+    }
+    // 火の粉（上へ舞い上がりながらちらつく）
+    const NE = LITE ? 14 : 26;
+    for (let k = 0; k < NE; k++) {
+      const a0 = rand(0, TAU), sp = rand(70, 250) * S, r = rand(1.6, 3.8) * S, dl = rand(0, 160), life = rand(620, 980), ph = rand(0, TAU);
+      const col = k % 3 === 0 ? YELLOW : (k % 3 === 1 ? ORANGE : DEEP);
+      const ox = rand(-30, 30) * S, oy = rand(-10, 30) * S;
+      particles.push({
+        delay: HIT0 + dl, maxLife: life, blend: 'lighter',
+        draw(ctx, t) {
+          const a = 1 - easeInCubic(clamp01((t - 0.45) / 0.55));
+          if (a <= 0.01) return;
+          const ts = t * life / 1000, dr = (1 - Math.exp(-3.4 * ts)) / 3.4;
+          const x = P.x + ox + Math.cos(a0) * sp * dr, y = P.y + oy + Math.sin(a0) * sp * dr * 0.7 - 110 * S * ts;
+          const fl = 0.55 + 0.45 * Math.sin(t * 40 + ph);
+          glow(ctx, x, y, r * 3.2, col, 0.85 * a * fl, WHITE);
+        },
+      });
+    }
+    // ヒット時の画面の揺れ（SPECIAL_IMPACT_FX の shakes は delay を解釈しないため演出内で発火）
+    let shaken = false;
+    particles.push({
+      delay: MH_HIT_MS, maxLife: 10,
+      update() {
+        if (shaken) return;
+        shaken = true;
+        const layer = document.getElementById('special-fx-layer');
+        const target = (layer && layer.parentElement) || layer;
+        if (target) screenShake(target, { ampPx: 12, durationMs: 340, freq: 30 });
+      },
+      draw() {},
+    });
+    let shaken0 = false;
+    particles.push({
+      delay: MH_BURST_MS, maxLife: 10,
+      update() {
+        if (shaken0) return;
+        shaken0 = true;
+        const layer = document.getElementById('special-fx-layer');
+        const target = (layer && layer.parentElement) || layer;
+        if (target) screenShake(target, { ampPx: 5, durationMs: 200, freq: 30 });
+      },
+      draw() {},
+    });
+  }
+
+  SPECIAL_SCENES[527] = spawnMartialHeatSpecial;
+  SPECIAL_DURATION_MS[527] = MH_END_MS;
+  if (FLIGHT_MOVE_IDS.indexOf(527) === -1) FLIGHT_MOVE_IDS.push(527);
+  // 始め：白青の閃光 → 終わり：ひび割れの瞬間に橙の閃光
+  SPECIAL_IMPACT_FX[527] = {
+    flashes: [
+      { color: '#e8eeff', peakAlpha: 0.5, durationMs: 220, delay: MH_BURST_MS },
+      { color: '#ffb040', peakAlpha: 0.2, durationMs: 460, delay: MH_HIT_MS },
+    ],
+  };
+
+  // 再生の直前に呼ばれる前処理（技ID → (wrapEl, defSide, info) => 追加でinfoへ混ぜる値）。
+  // スプライト自体を動かす技（フレイムアッパー等）が、動きの計画を描画側へ渡すために使う。
+  const SPECIAL_PRE_PLAY = {};
+
+  // ============================================================
+  // フレイムアッパー（attack528／ほのお・物理・威力90・命中100）専用演出
+  // 参考画像（3枚）：
+  //   ・1枚目：黄色いギザギザの巨大な爆発星（コミック調）。左右に細い黄色の三日月状の弧が輪のように走り、
+  //            攻撃側の足元で橙の炎が燃え、赤い小さな火の粉が散る。
+  //   ・2枚目：アッパー。相手を橙の輪が包み、白い大きな弧（振り抜きの軌跡）が下から上へ走る。
+  //            黄橙の炎の渦と筋が拳の当たった所から噴き上がり、相手が打ち上がる。
+  //   ・3枚目：真下への叩きつけ。地面に太い黄色の二重の輪が広がり、輪の中は桃赤色に染まり、
+  //            黄色いギザギザの刃が放射状に走る。水色の細い弧、黒い破片、橙の尖った筋、頭上に橙の爆発星。
+  // 構成：①踏み込み → ②アッパー（橙の輪・白い弧・爆発星・相手が打ち上がる）→ ③炎の足で跳び上がる
+  //       → ④空中で拳に炎を溜める（細い三日月の弧）→ ⑤真下へ急降下して殴り落とす → ⑥地面に叩きつけ（3枚目）
+  // 攻撃側・相手のスプライト自体も translate / rotate で動かす（既存の transform とは競合しない）。
+  // 動きは flameUpperPlan() の関数1つから作り、スプライトの動き（DOM）と描画（Canvas）が必ず同じ位置になる。
+  //
+  // info = { from, to, scale, plan } ： plan は flameUpperPre() が作る（無ければ from/to から仮に作る）。
+  // ============================================================
+  const FU_DASH_MS = 240;     // 踏み込み完了
+  const FU_UP_MS = 300;       // アッパーが当たる瞬間
+  const FU_APEX_MS = 760;     // 空中の頂点
+  const FU_DIVE_MS = 900;     // 急降下の開始（拳が相手の頭を捉える）
+  const FU_HIT_MS = 1040;     // 地面に叩きつける＝ダメージの瞬間
+  const FU_RET0_MS = 1120;    // 攻撃側が元の位置へ戻り始める
+  const FU_RET1_MS = 1700;    // 戻り終わる
+  const FU_END_MS = 2000;
+
+  // 時刻ごとのキー値を滑らかに補間する（keys = [[ms, v1, v2, ...], ...]）
+  function fuKeys(keys, ms) {
+    const n = keys[0].length - 1;
+    if (ms <= keys[0][0]) return keys[0].slice(1);
+    for (let i = 1; i < keys.length; i++) {
+      if (ms <= keys[i][0]) {
+        const k0 = keys[i - 1], k1 = keys[i];
+        const q = easeInOutSine(clamp01((ms - k0[0]) / (k1[0] - k0[0])));
+        const out = [];
+        for (let j = 1; j <= n; j++) out.push(lerp(k0[j], k1[j], q));
+        return out;
+      }
+    }
+    return keys[keys.length - 1].slice(1);
+  }
+
+  // 攻撃側(a)・相手(d)の {x,y,size} から、全体の動き（座標を返す関数群）を作る。
+  function flameUpperPlan(a, d) {
+    const S = Math.max(0.6, Math.min(1.6, d.size / 120));
+    const aS = Math.max(60, a.size), dS = Math.max(60, d.size);
+    const M = { x: a.x, y: a.y }, P = { x: d.x, y: d.y };
+    let ux = P.x - M.x, uy = P.y - M.y;
+    const dist = Math.hypot(ux, uy) || 1;
+    ux /= dist; uy /= dist;
+    const sgn = ux >= 0 ? 1 : -1;                              // 攻撃側が相手の左(+1)か右(-1)か
+
+    // 踏み込み先：相手に拳が届く位置
+    const reach = 0.42 * aS + 0.38 * dS;
+    const D = dist > reach + 12 ? { x: P.x - ux * reach, y: P.y - uy * reach } : { x: M.x, y: M.y };
+    // 相手の打ち上げ高さ（画面の上端からはみ出さない範囲で）
+    const RT = Math.max(16, Math.min(P.y - dS * 0.5 - 6, 84 * S));
+    // 叩きつけの着地点（相手の頭の斜め上）と、跳び上がりの頂点
+    const yMin = aS * 0.5 + 2;
+    const E = { x: P.x - sgn * 0.2 * dS, y: Math.max(yMin, P.y - 0.3 * dS - 0.26 * aS) };
+    const Q = { x: P.x - sgn * 0.26 * dS, y: Math.max(yMin, E.y - Math.max(30 * S, RT)) };
+    if (Q.y > E.y - 12) Q.y = E.y - 12;
+    const Tp = { x: P.x + sgn * 0.14 * dS, y: P.y - RT };      // 打ち上げられた相手の頂点
+    const G = { x: P.x, y: P.y + 0.26 * dS };                  // 相手の足元（地面）
+
+    const wsx = Q.x - sgn * 10 * S, wsy = Q.y - 6 * S;         // 振りかぶり終わりの位置
+
+    const A = (ms) => {                                         // 攻撃側の中心
+      if (ms < FU_DASH_MS) { const q = easeOutCubic(ms / FU_DASH_MS); return { x: lerp(M.x, D.x, q), y: lerp(M.y, D.y, q) }; }
+      if (ms < FU_UP_MS) { const p = (ms - FU_DASH_MS) / (FU_UP_MS - FU_DASH_MS); return { x: D.x, y: D.y + 9 * S * Math.sin(Math.PI * p) }; }
+      if (ms < FU_APEX_MS) {
+        const p = (ms - FU_UP_MS) / (FU_APEX_MS - FU_UP_MS);
+        return { x: lerp(D.x, Q.x, easeInOutSine(p)), y: lerp(D.y, Q.y, easeOutCubic(p)) };
+      }
+      if (ms < FU_DIVE_MS) {
+        const p = (ms - FU_APEX_MS) / (FU_DIVE_MS - FU_APEX_MS), k = easeInOutSine(p);
+        return { x: lerp(Q.x, wsx, k), y: lerp(Q.y, wsy, k) + 2 * S * Math.sin(p * Math.PI * 2) };
+      }
+      if (ms < FU_HIT_MS) {
+        const q = easeInCubic((ms - FU_DIVE_MS) / (FU_HIT_MS - FU_DIVE_MS));
+        return { x: lerp(wsx, E.x, q), y: lerp(wsy, E.y, q) };
+      }
+      if (ms < FU_RET0_MS) { const p = (ms - FU_HIT_MS) / (FU_RET0_MS - FU_HIT_MS); return { x: E.x, y: E.y + 6 * S * Math.sin(Math.PI * p) }; }
+      if (ms < FU_RET1_MS) {
+        const q = easeInOutSine((ms - FU_RET0_MS) / (FU_RET1_MS - FU_RET0_MS));
+        return { x: lerp(E.x, M.x, q), y: lerp(E.y, M.y, q) - 20 * S * Math.sin(Math.PI * q) };
+      }
+      return { x: M.x, y: M.y };
+    };
+    const T = (ms) => {                                         // 相手の中心
+      if (ms < FU_UP_MS) return { x: P.x, y: P.y };
+      if (ms < FU_APEX_MS) { const q = easeOutCubic((ms - FU_UP_MS) / (FU_APEX_MS - FU_UP_MS)); return { x: lerp(P.x, Tp.x, q), y: lerp(P.y, Tp.y, q) }; }
+      if (ms < FU_DIVE_MS) { const p = (ms - FU_APEX_MS) / (FU_DIVE_MS - FU_APEX_MS); return { x: Tp.x, y: Tp.y + 4 * S * Math.sin(p * Math.PI * 2) }; }
+      if (ms < FU_HIT_MS) { const q = easeInCubic((ms - FU_DIVE_MS) / (FU_HIT_MS - FU_DIVE_MS)); return { x: lerp(Tp.x, P.x, q), y: lerp(Tp.y, P.y, q) }; }
+      if (ms < FU_HIT_MS + 300) { const p = (ms - FU_HIT_MS) / 300; return { x: P.x, y: P.y - 18 * S * Math.sin(Math.PI * p) * (1 - p * 0.6) }; }
+      return { x: P.x, y: P.y };
+    };
+    const TILT_T = [[0, 0], [FU_UP_MS, 0], [FU_APEX_MS, 16], [FU_DIVE_MS, 16], [FU_HIT_MS, 0]];
+    const LEAN_A = [[0, 0], [FU_DASH_MS, 10], [FU_UP_MS, 6], [FU_APEX_MS, -8], [FU_DIVE_MS, -12], [FU_HIT_MS, 16], [FU_RET0_MS, 10], [FU_RET1_MS, 0]];
+    const tiltT = (ms) => sgn * fuKeys(TILT_T, ms)[0];
+    const tiltA = (ms) => sgn * fuKeys(LEAN_A, ms)[0];
+    // 攻撃側の拳の位置（攻撃側の大きさに対する割合）
+    const FIST = [
+      [0, 0.30, 0.16], [FU_UP_MS - 20, 0.34, 0.20], [FU_UP_MS + 140, 0.30, -0.18], [FU_APEX_MS, 0.06, -0.38],
+      [FU_DIVE_MS, -0.08, -0.44], [FU_HIT_MS - 30, 0.20, 0.34], [FU_HIT_MS + 220, 0.20, 0.34],
+    ];
+    const F = (ms) => { const p = A(ms), k = fuKeys(FIST, ms); return { x: p.x + sgn * k[0] * aS, y: p.y + k[1] * aS }; };
+
+    return { S, aS, dS, sgn, ux, uy, M, P, D, Q, E, Tp, G, RT, A, T, F, tiltT, tiltA };
+  }
+
+  // 再生の直前に呼ばれる：スプライト自体（攻撃側・相手）をWeb Animationsで動かし、同じ plan を描画側へ渡す。
+  // translate / rotate は transform と独立なので、ヒット演出や反転表示と競合しない。
+  function flameUpperPre(layerEl, defSide /*, info */) {
+    const m = mfxMeasure(layerEl, defSide);
+    const plan = flameUpperPlan(m.a, m.d);
+    const dur = FU_RET1_MS + 60;
+    const N = Math.ceil(dur / 16);
+    const mk = (el, rest, posFn, rotFn) => {
+      if (!el || !el.animate) return;
+      const kfs = [];
+      for (let i = 0; i <= N; i++) {
+        const ms = dur * i / N, p = posFn(ms);
+        kfs.push({
+          offset: i / N, easing: 'linear',
+          translate: (p.x - rest.x).toFixed(1) + 'px ' + (p.y - rest.y).toFixed(1) + 'px',
+          rotate: rotFn(ms).toFixed(1) + 'deg',
+        });
+      }
+      try { el.animate(kfs, { duration: dur, easing: 'linear' }); } catch (e) { /* 動きは演出上の飾り。失敗しても本体には影響させない */ }
+    };
+    mk(m.a.img, plan.M, plan.A, plan.tiltA);
+    mk(m.d.img, plan.P, plan.T, plan.tiltT);
+    return { plan };
+  }
+
+  function spawnFlameUpperSpecial(particles, w, h, info) {
+    const TAU = Math.PI * 2;
+    const LITE = !!(window && window.__LITE);
+    const from = (info && info.from) || { x: w * 0.28, y: h * 0.68 };
+    const to = (info && info.to) || { x: w * 0.72, y: h * 0.32 };
+    const plan = (info && info.plan) || flameUpperPlan({ x: from.x, y: from.y, size: 150 }, { x: to.x, y: to.y, size: 120 });
+    const { S, aS, dS, sgn, ux, uy, M, P, D, Tp, G, A, T, F } = plan;
+
+    // 色（参考画像から）
+    const WHITE = '#ffffff', CREAM = '#fff6c8', PALE = '#ffec8a', YELLOW = '#ffe04a', GOLD = '#ffc830';
+    const ORANGE = '#ff8a1e', DEEP = '#ff5a14', RED = '#e0301a', CRIM = '#7a1030', ROSE = '#d03a5a';
+    const SKY = '#9fd8ff', ICE = '#e4f6ff';
+
+    const GK = 0.56;                                              // 地面（斜め見下ろし）の潰れ具合
+    const Rm = Math.min(172 * S, w * 0.3, h * 0.46);              // 叩きつけの輪の基準半径（画面からはみ出さない）
+    const SB = Math.min(S, 1.15);                                 // 爆発星・光の筋など「飾り」の大きさ係数（上限つき）
+    const Hh = { x: P.x - sgn * 4 * S, y: P.y + 4 * S };          // アッパーが当たる所（相手の下半身）
+    const HEAD = { x: P.x, y: P.y - 0.3 * dS };                   // 相手の頭（叩きつけの拳が当たる所）
+    const back = Math.atan2(-uy, -ux);                            // 攻撃側→相手の逆向き（炎が流れる方向）
+
+    const hx = (c) => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
+    const mixc = (c0, c1, k, a) => {
+      const A0 = hx(c0), B0 = hx(c1), q = clamp01(k);
+      return 'rgba(' + Math.round(A0[0] + (B0[0] - A0[0]) * q) + ',' + Math.round(A0[1] + (B0[1] - A0[1]) * q) + ',' +
+        Math.round(A0[2] + (B0[2] - A0[2]) * q) + ',' + a + ')';
+    };
+    const ground = (ctx, x, y, fn) => { ctx.save(); ctx.translate(x, y); ctx.scale(1, GK); fn(); ctx.restore(); };
+    const easeOutBackFU = (t) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+
+    // 時刻 s〜e(ms) だけ動く描画レイヤー。fn(ctx, 絶対ms, 0〜1)
+    const layer = (s, e, fn, blend) => {
+      const life = e - s;
+      particles.push({
+        delay: s, maxLife: life, blend: blend || 'source-over',
+        draw(ctx, t) { if (t >= 0.9999) return; fn(ctx, s + t * life, t); },
+      });
+    };
+    const shakeAt = (ms, amp, dur) => {
+      let done = false;
+      particles.push({
+        delay: ms, maxLife: 10,
+        update() {
+          if (done) return;
+          done = true;
+          const lay = document.getElementById('special-fx-layer');
+          const target = (lay && lay.parentElement) || lay;
+          if (target) screenShake(target, { ampPx: amp, durationMs: dur, freq: 30 });
+        },
+        draw() {},
+      });
+    };
+
+    // ---- 描画ヘルパー ----
+    function sparkle(ctx, x, y, size, alpha, color, rot) {
+      if (alpha <= 0.01 || size <= 0.3) return;
+      ctx.save();
+      ctx.translate(x, y); ctx.rotate(rot || 0);
+      const gr = ctx.createRadialGradient(0, 0, 0, 0, 0, size * 0.95);
+      gr.addColorStop(0, rgba(color, alpha * 0.55)); gr.addColorStop(1, rgba(color, 0));
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, 0, size * 0.95, 0, TAU); ctx.fill();
+      ctx.fillStyle = rgba(color, alpha);
+      ctx.beginPath();
+      ctx.moveTo(0, -size);
+      ctx.quadraticCurveTo(size * 0.1, -size * 0.1, size, 0);
+      ctx.quadraticCurveTo(size * 0.1, size * 0.1, 0, size);
+      ctx.quadraticCurveTo(-size * 0.1, size * 0.1, -size, 0);
+      ctx.quadraticCurveTo(-size * 0.1, -size * 0.1, 0, -size);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    function glow(ctx, x, y, r, color, alpha, core) {
+      if (alpha <= 0.01 || r <= 0.5) return;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, rgba(core || WHITE, alpha));
+      g.addColorStop(0.35, rgba(color, alpha * 0.55));
+      g.addColorStop(1, rgba(color, 0));
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    }
+    // 両端が細く中ほどが太い光の筋（tail→tip の向き ang）
+    function streak(ctx, x, y, ang, tail, tip, hw, c0, c1, alpha) {
+      if (alpha <= 0.01 || tip <= tail) return;
+      const c = Math.cos(ang), s = Math.sin(ang), nx = -s, ny = c, mid = (tail + tip) * 0.5;
+      const g = ctx.createLinearGradient(x + c * tail, y + s * tail, x + c * tip, y + s * tip);
+      g.addColorStop(0, rgba(c0, alpha)); g.addColorStop(1, rgba(c1, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(x + c * tail, y + s * tail);
+      ctx.lineTo(x + c * mid + nx * hw, y + s * mid + ny * hw);
+      ctx.lineTo(x + c * tip, y + s * tip);
+      ctx.lineTo(x + c * mid - nx * hw, y + s * mid - ny * hw);
+      ctx.closePath(); ctx.fill();
+    }
+    // 炎の舌（根元が太く、先が曲がって細くなる）
+    function tongue(ctx, x, y, ang, len, wd, c0, c1, alpha, bend) {
+      if (alpha <= 0.01 || len <= 1) return;
+      const c = Math.cos(ang), s = Math.sin(ang), nx = -s, ny = c;
+      const bx = x + c * len * 0.5 + nx * bend * len, by = y + s * len * 0.5 + ny * bend * len;
+      const tx = x + c * len + nx * bend * len * 1.5, ty = y + s * len + ny * bend * len * 1.5;
+      const g = ctx.createLinearGradient(x, y, tx, ty);
+      g.addColorStop(0, rgba(c0, alpha)); g.addColorStop(0.55, rgba(c1, alpha * 0.85)); g.addColorStop(1, rgba(c1, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(x + nx * wd, y + ny * wd);
+      ctx.quadraticCurveTo(bx + nx * wd * 0.8, by + ny * wd * 0.8, tx, ty);
+      ctx.quadraticCurveTo(bx - nx * wd * 0.8, by - ny * wd * 0.8, x - nx * wd, y - ny * wd);
+      ctx.closePath(); ctx.fill();
+    }
+    // 振り抜きの白い弧（攻撃側の向き sgn で左右反転）。aHead が先端、そこから span ぶん後ろへ尾が伸びる。
+    function swoosh(ctx, cx, cy, rx, ry, aHead, span, wmax, alpha, K) {
+      const pts = [];
+      for (let k = 0; k <= K; k++) { const a = aHead + span * (k / K); pts.push({ x: cx + sgn * Math.cos(a) * rx, y: cy + Math.sin(a) * ry }); }
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      const passes = [[2.0, 0, 0.26], [1.0, 1, 0.9], [0.4, 2, 0.98]];
+      for (let pi = 0; pi < passes.length; pi++) {
+        const ps = passes[pi];
+        for (let k = 0; k < K; k++) {
+          const q = k / K;
+          const taper = Math.pow(1 - q, 0.7) * Math.min(1, 0.35 + q * 5);
+          ctx.lineWidth = Math.max(0.6, wmax * ps[0] * taper);
+          const fade = alpha * (1 - 0.65 * q);
+          ctx.strokeStyle = ps[1] === 0 ? rgba(ORANGE, ps[2] * fade) : ps[1] === 1 ? mixc('#fff4b8', '#ffa838', q, ps[2] * fade) : rgba(WHITE, ps[2] * fade);
+          ctx.beginPath(); ctx.moveTo(pts[k].x, pts[k].y); ctx.lineTo(pts[k + 1].x, pts[k + 1].y); ctx.stroke();
+        }
+      }
+    }
+    // 両端が細い細い弧（三日月）。向き反転なしの素の楕円弧。
+    function thinArc(ctx, cx, cy, rx, ry, a0, span, wmax, color, alpha, K) {
+      ctx.lineCap = 'round';
+      for (let k = 0; k < K; k++) {
+        const u0 = k / K, u1 = (k + 1) / K, aa0 = a0 + span * u0, aa1 = a0 + span * u1;
+        ctx.lineWidth = Math.max(0.5, wmax * Math.pow(Math.sin(Math.PI * (k + 0.5) / K), 0.8));
+        ctx.strokeStyle = typeof color === 'function' ? color(u0, alpha) : rgba(color, alpha);
+        ctx.beginPath(); ctx.moveTo(cx + Math.cos(aa0) * rx, cy + Math.sin(aa0) * ry); ctx.lineTo(cx + Math.cos(aa1) * rx, cy + Math.sin(aa1) * ry); ctx.stroke();
+      }
+    }
+    // コミック調のギザギザ爆発星（seeds で尖りの長さ・角度が決まる）
+    function starburst(ctx, x, y, R, n, inner, rot, seeds, fill, rim, rimW, alpha) {
+      if (alpha <= 0.01 || R <= 1) return;
+      ctx.save();
+      ctx.translate(x, y); ctx.rotate(rot);
+      ctx.beginPath();
+      for (let i = 0; i < n * 2; i++) {
+        const sd = seeds[(i >> 1) % seeds.length], sd2 = seeds[((i >> 1) + 3) % seeds.length], tip = i % 2 === 0;
+        const a = (i / (n * 2)) * TAU + (sd - 0.5) * 0.16;
+        const rr = tip ? R * (0.82 + 0.34 * sd) : R * inner * (0.88 + 0.24 * sd2);
+        const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = fill; ctx.fill();
+      if (rimW > 0) { ctx.lineJoin = 'round'; ctx.lineWidth = rimW; ctx.strokeStyle = rim; ctx.stroke(); }
+      ctx.restore();
+    }
+    // 黄色いギザギザの刃（根元から先へ。叩きつけの輪の中を走る）
+    function dart(ctx, x, y, ang, L, W, alpha) {
+      if (alpha <= 0.01 || L < 2) return;
+      ctx.save();
+      ctx.translate(x, y); ctx.rotate(ang);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(L * 0.28, -W); ctx.lineTo(L * 0.42, -W * 0.25); ctx.lineTo(L * 0.7, -W * 0.7); ctx.lineTo(L, 0);
+      ctx.lineTo(L * 0.62, W * 0.35); ctx.lineTo(L * 0.36, W * 0.8); ctx.lineTo(L * 0.22, W * 0.2);
+      ctx.closePath();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#ffe32c'; ctx.fill();
+      ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(1, 1.8 * S); ctx.strokeStyle = 'rgba(255,150,22,0.9)'; ctx.stroke();
+      ctx.restore();
+    }
+    // 途中まで描くポリライン（ひび割れの成長用）
+    function strokePartial(ctx, pts, frac) {
+      let total = 0; const segs = [];
+      for (let k = 1; k < pts.length; k++) { const l = Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y); segs.push(l); total += l; }
+      let need = total * frac;
+      ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+      for (let k = 1; k < pts.length && need > 0; k++) {
+        const l = segs[k - 1];
+        if (need >= l) { ctx.lineTo(pts[k].x, pts[k].y); need -= l; }
+        else { const q = need / l; ctx.lineTo(pts[k - 1].x + (pts[k].x - pts[k - 1].x) * q, pts[k - 1].y + (pts[k].y - pts[k - 1].y) * q); need = 0; }
+      }
+      ctx.stroke();
+    }
+    const seedsOf = (n) => { const a = []; for (let i = 0; i < n; i++) a.push(Math.random()); return a; };
+
+    // ============================================================
+    // ①  踏み込み：攻撃側の足元と拳に炎が灯り、炎の尾を引いて相手の懐へ
+    // ============================================================
+    layer(0, 400, (ctx, ms) => {
+      const fade = 1 - easeInCubic(clamp01((ms - 200) / 200));
+      if (fade <= 0.01) return;
+      ctx.globalCompositeOperation = 'lighter';
+      const dm = Math.min(ms, FU_DASH_MS);
+      // 通った跡：足元から後ろへ流れる炎
+      for (let k = 0; k < 7; k++) {
+        const p = A(Math.max(0, dm - k * 22)), q = 1 - k / 7;
+        const fx = p.x, fy = p.y + 0.34 * aS;
+        glow(ctx, fx, fy, (30 - k * 2.5) * S, k % 2 ? ORANGE : GOLD, 0.5 * q * fade, CREAM);
+        tongue(ctx, fx, fy - 4 * S, back, (46 + 10 * q) * S * q, 9 * S * q + 2, PALE, DEEP, 0.8 * q * fade, 0.12 * Math.sin(ms * 0.04 + k));
+      }
+      // 拳の火球
+      const f = F(ms), fl = 0.85 + 0.15 * Math.sin(ms * 0.09);
+      glow(ctx, f.x, f.y, 36 * S * fl, ORANGE, 0.95 * fade, CREAM);
+      glow(ctx, f.x, f.y, 18 * S, YELLOW, 0.9 * fade, WHITE);
+      for (let k = 0; k < 3; k++) tongue(ctx, f.x, f.y, back + (k - 1) * 0.32, 52 * S * fl, 10 * S, PALE, DEEP, 0.85 * fade, 0.2 * (k - 1));
+      // 後ろへ流れる速度線
+      const p0 = A(dm);
+      for (let k = 0; k < 5; k++) {
+        const off = (k - 2) * 20 * S;
+        streak(ctx, p0.x - uy * off, p0.y + ux * off, back, 0, (70 + (k % 2) * 30) * S * clamp01(dm / 120), 1.6 * S, k % 2 ? WHITE : CREAM, ORANGE, 0.8 * fade * (dm < FU_DASH_MS ? 1 : 0.4));
+      }
+    });
+    // 踏み切りの足元：地面を蹴る橙の輪
+    layer(0, 420, (ctx, ms, t) => {
+      const e = easeOutCubic(t), a = 1 - t;
+      ctx.globalCompositeOperation = 'lighter';
+      ground(ctx, M.x, M.y + 0.38 * aS, () => {
+        ctx.lineWidth = Math.max(1, 5 * S * (1 - t));
+        ctx.strokeStyle = rgba(ORANGE, 0.8 * a);
+        ctx.beginPath(); ctx.arc(0, 0, 26 * S + 66 * S * e, 0, TAU); ctx.stroke();
+        ctx.lineWidth = Math.max(1, 2 * S);
+        ctx.strokeStyle = rgba(CREAM, 0.7 * a);
+        ctx.beginPath(); ctx.arc(0, 0, 22 * S + 56 * S * e, 0, TAU); ctx.stroke();
+      });
+    });
+
+    // ============================================================
+    // ②  アッパー：白い大きな弧が下から上へ走り、橙の輪が相手を包み、爆発星が弾ける（2枚目＋1枚目）
+    // ============================================================
+    const UARCS = [
+      { d: 0,  rx: 96,  ry: 108, a0: 2.55, a1: -0.95, span: 1.9, w: 16 },
+      { d: 40, rx: 124, ry: 136, a0: 2.75, a1: -1.25, span: 1.6, w: 11 },
+      { d: 80, rx: 76,  ry: 88,  a0: 2.35, a1: -0.70, span: 1.5, w: 9 },
+    ];
+    UARCS.forEach((U) => {
+      layer(FU_UP_MS - 30 + U.d, FU_UP_MS - 30 + U.d + 560, (ctx, ms, t) => {
+        const aHead = lerp(U.a0, U.a1, easeOutCubic(clamp01(t / 0.45)));
+        const fade = 1 - easeInCubic(clamp01((t - 0.5) / 0.5));
+        if (fade <= 0.01) return;
+        const len = Math.min(U.span, Math.max(0.25, (U.a0 - aHead) * 0.9 + 0.3));
+        ctx.globalCompositeOperation = 'lighter';
+        swoosh(ctx, P.x - sgn * 6 * S, P.y + 6 * S, U.rx * S, U.ry * S, aHead, len, U.w * S, fade, LITE ? 14 : 20);
+      });
+    });
+    // 相手を包む橙の輪（当たった瞬間から広がって消える）
+    layer(FU_UP_MS, FU_UP_MS + 540, (ctx, ms, t) => {
+      const e = easeOutCubic(clamp01(t / 0.5));
+      const a = 1 - easeInCubic(clamp01((t - 0.35) / 0.65));
+      if (a <= 0.01) return;
+      const rr = 84 * S * (0.45 + 0.8 * e), cy = P.y - 4 * S;
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineWidth = 18 * S * (1 - 0.5 * t); ctx.strokeStyle = rgba(ORANGE, 0.28 * a);
+      ctx.beginPath(); ctx.ellipse(P.x, cy, rr, rr * 0.92, -0.25, 0, TAU); ctx.stroke();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.lineWidth = Math.max(2, 8 * S * (1 - 0.55 * t)); ctx.strokeStyle = mixc('#ffb020', '#ff6a1a', t, 0.95 * a);
+      ctx.beginPath(); ctx.ellipse(P.x, cy, rr, rr * 0.92, -0.25, 0, TAU); ctx.stroke();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineWidth = Math.max(1, 3 * S); ctx.strokeStyle = rgba(PALE, 0.9 * a);
+      ctx.beginPath(); ctx.ellipse(P.x, cy, rr * 0.96, rr * 0.88, -0.25, 0, TAU); ctx.stroke();
+    });
+    // 拳が当たる所：白い閃光＋黄色い爆発星＋放射状の筋
+    const seedsU = seedsOf(12);
+    layer(FU_UP_MS - 10, FU_UP_MS + 380, (ctx, ms, t) => {
+      const pop = easeOutBackFU(clamp01(t / 0.22));
+      const a = 1 - easeInCubic(clamp01((t - 0.4) / 0.6));
+      if (a <= 0.01) return;
+      ctx.globalCompositeOperation = 'lighter';
+      glow(ctx, Hh.x, Hh.y, 120 * S * (0.5 + 0.5 * pop), WHITE, 0.55 * a, WHITE);
+      ctx.globalCompositeOperation = 'source-over';
+      starburst(ctx, Hh.x, Hh.y, 74 * SB * pop * (1 - 0.25 * t), 11, 0.46, 0.2 + t * 0.5, seedsU, '#ffe534', '#fff7b8', 3.5 * SB, a);
+    });
+    const uRays = [];
+    for (let k = 0; k < (LITE ? 10 : 15); k++) {
+      const a0 = (k / (LITE ? 10 : 15)) * TAU + rand(-0.12, 0.12);
+      uRays.push({ ang: a0, len: rand(60, 130) * (Math.sin(a0) < -0.3 ? 1.4 : 1), hw: rand(1.6, 3.2) });
+    }
+    layer(FU_UP_MS, FU_UP_MS + 400, (ctx, ms, t) => {
+      const e = easeOutCubic(clamp01(t / 0.5)), a = 1 - easeInCubic(clamp01((t - 0.4) / 0.6));
+      if (a <= 0.01) return;
+      ctx.globalCompositeOperation = 'lighter';
+      for (let k = 0; k < uRays.length; k++) {
+        const r = uRays[k];
+        streak(ctx, Hh.x + Math.cos(r.ang) * 20 * S, Hh.y + Math.sin(r.ang) * 20 * S, r.ang, 0, r.len * SB * e, r.hw * SB, k % 3 === 0 ? CREAM : YELLOW, ORANGE, a * 0.9);
+      }
+    });
+    // 赤い小さな火の粉（1枚目）：当たった所から四方へ
+    for (let k = 0; k < (LITE ? 8 : 14); k++) {
+      const ang = rand(0, TAU), sp = rand(120, 300) * S, dl = rand(0, 90), life = rand(520, 820), r = rand(1.6, 3.2) * S;
+      layer(FU_UP_MS + dl, FU_UP_MS + dl + life, (ctx, ms, t) => {
+        const a = 1 - easeInCubic(clamp01((t - 0.55) / 0.45));
+        if (a <= 0.01) return;
+        const ts = t * life / 1000, dr = (1 - Math.exp(-3 * ts)) / 3;
+        ctx.fillStyle = rgba(RED, a);
+        ctx.beginPath(); ctx.arc(Hh.x + Math.cos(ang) * sp * dr, Hh.y + Math.sin(ang) * sp * dr - 60 * S * ts + 280 * S * ts * ts, r, 0, TAU); ctx.fill();
+      });
+    }
+    shakeAt(FU_UP_MS, 8, 220);
+
+    // ============================================================
+    // ③  打ち上げられた相手を炎が包み、攻撃側は炎の足で跳び上がる
+    // ============================================================
+    layer(FU_UP_MS + 30, FU_APEX_MS + 220, (ctx, ms) => {
+      const fade = clamp01((ms - FU_UP_MS - 30) / 60) * (1 - easeInCubic(clamp01((ms - (FU_APEX_MS - 120)) / 340)));
+      if (fade <= 0.01) return;
+      const tp = T(ms);
+      ctx.globalCompositeOperation = 'lighter';
+      // 相手のまわりを渦を巻いて昇る炎
+      const NW = LITE ? 5 : 8;
+      for (let k = 0; k < NW; k++) {
+        const th = ms * 0.011 + (k / NW) * TAU;
+        const r = 0.36 * dS * (0.9 + 0.12 * Math.sin(ms * 0.02 + k));
+        const x = tp.x + Math.cos(th) * r, y = tp.y + 0.18 * dS + Math.sin(th) * r * 0.38 - (k % 3) * 12 * S;
+        const front = Math.sin(th) > 0 ? 1 : 0.55;
+        tongue(ctx, x, y, -Math.PI / 2 + 0.25 * Math.cos(th), (46 + (k % 3) * 12) * S * (0.75 + 0.25 * Math.sin(ms * 0.05 + k)), 10 * S, PALE, ORANGE, 0.85 * fade * front, 0.2 * Math.cos(th));
+      }
+      // 足元から下へ噴く炎（打ち上げる炎）
+      const fy = tp.y + 0.36 * dS;
+      for (let k = 0; k < 3; k++) {
+        const fl = 0.7 + 0.3 * Math.sin(ms * 0.07 + k * 2.1);
+        tongue(ctx, tp.x + (k - 1) * 18 * S, fy, Math.PI / 2 + (k - 1) * 0.2, 64 * S * fl, 14 * S, PALE, DEEP, 0.85 * fade, 0.1 * (k - 1));
+      }
+      glow(ctx, tp.x, fy, 40 * S, ORANGE, 0.5 * fade, CREAM);
+    });
+    layer(FU_UP_MS - 20, FU_APEX_MS + 200, (ctx, ms) => {
+      const fade = clamp01((ms - (FU_UP_MS - 20)) / 40) * (1 - easeInCubic(clamp01((ms - (FU_APEX_MS - 60)) / 240)));
+      if (fade <= 0.01) return;
+      const p = A(ms);
+      ctx.globalCompositeOperation = 'lighter';
+      const fx = p.x - sgn * 0.06 * aS, fy = p.y + 0.34 * aS;
+      for (let k = 0; k < 3; k++) {
+        const fl = 0.7 + 0.3 * Math.sin(ms * 0.07 + k * 2.1);
+        tongue(ctx, fx + (k - 1) * 14 * S, fy, Math.PI / 2 + (k - 1) * 0.18, (70 + (k % 2) * 14) * S * fl, 12 * S, PALE, DEEP, 0.9 * fade, 0.08 * Math.sin(ms * 0.03 + k));
+      }
+      glow(ctx, fx, fy, 38 * S, ORANGE, 0.6 * fade, CREAM);
+    });
+    // 跳び上がりの足元：地面に広がる炎の輪
+    layer(FU_UP_MS, FU_UP_MS + 460, (ctx, ms, t) => {
+      const e = easeOutCubic(t), a = 1 - easeInCubic(clamp01((t - 0.2) / 0.8));
+      if (a <= 0.01) return;
+      ctx.globalCompositeOperation = 'lighter';
+      ground(ctx, D.x, D.y + 0.38 * aS, () => {
+        const r = 100 * S * (0.3 + 0.7 * e);
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+        g.addColorStop(0, rgba('#ffd060', 0.6 * a)); g.addColorStop(0.6, rgba(ORANGE, 0.3 * a)); g.addColorStop(1, rgba(RED, 0));
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+        ctx.lineWidth = Math.max(1, 4 * S * (1 - t)); ctx.strokeStyle = rgba(GOLD, 0.9 * a);
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+      });
+    });
+
+    // ============================================================
+    // ④  空中で拳に炎を溜める：火球が育ち、細い黄色の三日月の弧が回る（1枚目）
+    // ============================================================
+    layer(FU_APEX_MS - 40, FU_DIVE_MS + 30, (ctx, ms) => {
+      const u = clamp01((ms - (FU_APEX_MS - 40)) / (FU_DIVE_MS - FU_APEX_MS + 40));
+      const f = F(ms), ap = A(ms);
+      ctx.globalCompositeOperation = 'lighter';
+      const rr = (16 + 34 * easeOutCubic(u)) * S * (0.92 + 0.08 * Math.sin(ms * 0.12));
+      glow(ctx, f.x, f.y, rr * 2.4, ORANGE, 0.55, CREAM);
+      glow(ctx, f.x, f.y, rr * 1.25, YELLOW, 0.92, WHITE);
+      for (let k = 0; k < 4; k++) {
+        tongue(ctx, f.x, f.y, -Math.PI / 2 + (k - 1.5) * 0.55 + 0.1 * Math.sin(ms * 0.03 + k), rr * 1.7 * (0.8 + 0.2 * Math.sin(ms * 0.06 + k * 1.7)), rr * 0.38, PALE, DEEP, 0.85, 0.18 * (k % 2 ? 1 : -1));
+      }
+      // 攻撃側を囲む細い三日月の弧（回りながら締まる）
+      for (let k = 0; k < 2; k++) {
+        const rot = ms * 0.007 * (k ? -1 : 1) + k * Math.PI;
+        const sc = 1 - 0.18 * u + 0.08 * k;
+        thinArc(ctx, ap.x, ap.y - 0.1 * aS, 96 * S * sc, 108 * S * sc, rot, 1.3, 3.6 * S, (q, al) => mixc('#fff6c0', '#ffd23a', q, al), 0.95 * clamp01(u * 2.5), 14);
+      }
+      // 拳へ収束する光の粒
+      for (let k = 0; k < 8; k++) {
+        const ph = (u * 1.7 + k / 8) % 1, ang = k * TAU / 8 + 0.4, r2 = (1 - ph) * 96 * S;
+        glow(ctx, f.x + Math.cos(ang) * r2, f.y + Math.sin(ang) * r2, 7 * S, k % 2 ? YELLOW : WHITE, 0.9 * Math.sin(Math.PI * ph) * clamp01(u * 3), WHITE);
+      }
+    });
+    // 溜め終わりのきらめき
+    layer(FU_DIVE_MS - 60, FU_DIVE_MS + 160, (ctx, ms, t) => {
+      const f = F(ms);
+      ctx.globalCompositeOperation = 'lighter';
+      sparkle(ctx, f.x, f.y, 62 * S * easeOutBackFU(clamp01(t / 0.4)) * (1 - 0.4 * t), 1 - easeInCubic(clamp01((t - 0.4) / 0.6)), WHITE, t * 1.6);
+    });
+
+    // ============================================================
+    // ⑤  真下へ急降下：炎の彗星が相手の頭を捉え、そのまま地面へ殴り落とす
+    // ============================================================
+    const dlines = [];
+    for (let k = 0; k < (LITE ? 8 : 13); k++) dlines.push({ ox: rand(-0.75, 0.75), len: rand(70, 140), ph: rand(0, 0.3), hw: rand(1.2, 2.2) });
+    layer(FU_DIVE_MS - 10, FU_HIT_MS + 30, (ctx, ms) => {
+      const f = F(ms), u = clamp01((ms - FU_DIVE_MS) / (FU_HIT_MS - FU_DIVE_MS));
+      ctx.globalCompositeOperation = 'lighter';
+      const tail = (90 + 150 * u) * SB;
+      streak(ctx, f.x, f.y, -Math.PI / 2, 0, tail, 15 * S, YELLOW, ORANGE, 0.95);
+      streak(ctx, f.x, f.y, -Math.PI / 2, 0, tail * 0.7, 7 * S, WHITE, YELLOW, 1);
+      glow(ctx, f.x, f.y, 54 * S, ORANGE, 0.95, CREAM);
+      glow(ctx, f.x, f.y, 26 * S, YELLOW, 1, WHITE);
+      for (let k = 0; k < 3; k++) tongue(ctx, f.x + (k - 1) * 12 * S, f.y, -Math.PI / 2 + (k - 1) * 0.25, 90 * S * (0.7 + 0.3 * Math.sin(ms * 0.08 + k)), 11 * S, PALE, DEEP, 0.8, 0.1 * (k - 1));
+      // 縦の速度線（上から下へ流れ落ちる）
+      for (let k = 0; k < dlines.length; k++) {
+        const L = dlines[k], q = easeInCubic(clamp01(u + L.ph));
+        const y = lerp(Tp.y - 130 * S, G.y + 10 * S, q);
+        streak(ctx, P.x + L.ox * 78 * S, y, -Math.PI / 2, 0, L.len * S, L.hw * S, k % 2 ? WHITE : CREAM, ORANGE, 0.85 * (1 - 0.5 * q));
+      }
+    });
+    // 拳が相手の頭を捉える瞬間（小さな爆発星）
+    const seedsC = seedsOf(10);
+    layer(FU_DIVE_MS - 20, FU_DIVE_MS + 190, (ctx, ms, t) => {
+      const tp = T(ms), pop = easeOutBackFU(clamp01(t / 0.3)), a = 1 - easeInCubic(clamp01((t - 0.45) / 0.55));
+      if (a <= 0.01) return;
+      ctx.globalCompositeOperation = 'lighter';
+      glow(ctx, tp.x, tp.y - 0.3 * dS, 76 * S, WHITE, 0.6 * a, WHITE);
+      ctx.globalCompositeOperation = 'source-over';
+      starburst(ctx, tp.x, tp.y - 0.3 * dS, 52 * SB * pop, 9, 0.48, 0.5 + t * 0.4, seedsC, '#ffe534', '#fff7b8', 3 * SB, a);
+    });
+    shakeAt(FU_DIVE_MS, 4, 160);
+
+    // ============================================================
+    // ⑥  叩きつけ（3枚目）：太い黄色の二重の輪／桃赤の円／黄色い刃／水色の弧／黒い破片／橙の尖った筋／頭上の爆発星
+    // ============================================================
+    const HIT = FU_HIT_MS;
+    // 輪の内側：桃赤色の煙のような円
+    const blobs = [];
+    for (let k = 0; k < 8; k++) blobs.push({ a: rand(0, TAU), r: rand(0.1, 0.72), s: rand(0.26, 0.5), light: Math.random() < 0.6, sp: rand(-0.5, 0.5) });
+    layer(HIT - 10, HIT + 880, (ctx, ms) => {
+      const u = ms - HIT, a = 1 - easeInCubic(clamp01((u - 340) / 540));
+      if (a <= 0.01) return;
+      const rr = Rm * (0.25 + 0.72 * easeOutCubic(clamp01((u + 10) / 150))) * (1 + 0.05 * clamp01(u / 600));
+      ground(ctx, G.x, G.y, () => {
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rr);
+        g.addColorStop(0, rgba('#ffd9bc', 0.92 * a)); g.addColorStop(0.3, rgba('#ff8f72', 0.88 * a));
+        g.addColorStop(0.75, rgba('#f0584c', 0.82 * a)); g.addColorStop(1, rgba('#ff8a78', 0.6 * a));
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU); ctx.fill();
+        ctx.save();
+        ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU); ctx.clip();
+        for (let k = 0; k < blobs.length; k++) {
+          const b = blobs[k], ang = b.a + b.sp * u / 600, bx = Math.cos(ang) * b.r * rr, by = Math.sin(ang) * b.r * rr, br = b.s * rr;
+          const bg = ctx.createRadialGradient(bx, by, 0, bx, by, br);
+          bg.addColorStop(0, b.light ? rgba('#ffe6d4', 0.42 * a) : rgba('#b83440', 0.34 * a)); bg.addColorStop(1, b.light ? rgba('#ffe6d4', 0) : rgba('#b83440', 0));
+          ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(bx, by, br, 0, TAU); ctx.fill();
+        }
+        ctx.restore();
+      });
+    });
+    // 太い黄色の二重の輪（外側は白く光り、内側に細い白の輪）
+    layer(HIT - 10, HIT + 920, (ctx, ms) => {
+      const u = ms - HIT, k = clamp01(u / 760);
+      const a = 1 - easeInCubic(clamp01((u - 470) / 450));
+      if (a <= 0.01) return;
+      const rr = Rm * (0.2 + 0.85 * easeOutCubic(clamp01((u + 10) / 260)));
+      ground(ctx, G.x, G.y, () => {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.lineWidth = 30 * S * (1 - 0.5 * k); ctx.strokeStyle = rgba('#ffdc3c', 0.3 * a);
+        ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU); ctx.stroke();
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.lineWidth = Math.max(2, 13 * S * (1 - 0.55 * k)); ctx.strokeStyle = rgba('#ffd21a', a);
+        ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU); ctx.stroke();
+        ctx.lineWidth = Math.max(1, 4.5 * S * (1 - 0.4 * k)); ctx.strokeStyle = rgba('#fff8c4', 0.95 * a);
+        ctx.beginPath(); ctx.arc(0, 0, rr * 1.005, 0, TAU); ctx.stroke();
+        ctx.lineWidth = Math.max(1, 2.6 * S); ctx.strokeStyle = rgba(WHITE, 0.95 * a);
+        ctx.beginPath(); ctx.arc(0, 0, rr * 0.925, 0, TAU); ctx.stroke();
+        ctx.lineWidth = Math.max(1, 2 * S); ctx.strokeStyle = rgba(YELLOW, 0.5 * a);
+        ctx.beginPath(); ctx.arc(0, 0, rr * 1.1, 0, TAU); ctx.stroke();
+      });
+    });
+    // 輪の中を走る黄色いギザギザの刃
+    const shards = [];
+    const NSH = LITE ? 14 : 22;
+    for (let k = 0; k < NSH; k++) shards.push({ a: (k / NSH) * TAU + rand(-0.2, 0.2), r0: rand(0.12, 0.62), L: rand(0.2, 0.42), W: rand(0.05, 0.09), dl: rand(0, 90), drift: rand(0.18, 0.5) });
+    layer(HIT - 5, HIT + 780, (ctx, ms) => {
+      const u = ms - HIT;
+      for (let k = 0; k < shards.length; k++) {
+        const s = shards[k], g = easeOutCubic(clamp01((u - s.dl) / 130));
+        if (g <= 0) continue;
+        const a = 1 - easeInCubic(clamp01((u - s.dl - 260) / 440));
+        if (a <= 0.01) continue;
+        const r = Rm * (s.r0 + s.drift * easeOutCubic(clamp01((u - s.dl) / 520)));
+        const ox = Math.cos(s.a), oy = Math.sin(s.a) * GK;
+        dart(ctx, G.x + ox * r, G.y + oy * r, Math.atan2(oy - 0.35, ox), Rm * s.L * g, Rm * s.W, a);
+      }
+    });
+    // 水色の細い弧（輪の中で回りながら消える）
+    const cres = [];
+    for (let k = 0; k < 5; k++) cres.push({ r: rand(0.42, 0.92), a0: rand(0, TAU), span: rand(0.5, 0.95), sp: rand(1.6, 3.0) * (k % 2 ? 1 : -1), w: rand(2.6, 4.4) });
+    layer(HIT, HIT + 580, (ctx, ms) => {
+      const u = ms - HIT, a = 1 - easeInCubic(clamp01((u - 120) / 460));
+      if (a <= 0.01) return;
+      ctx.globalCompositeOperation = 'lighter';
+      for (let k = 0; k < cres.length; k++) {
+        const c = cres[k], e = easeOutCubic(clamp01(u / 220));
+        thinArc(ctx, G.x, G.y - 4 * S, Rm * c.r * (0.5 + 0.5 * e), Rm * c.r * (0.5 + 0.5 * e) * GK, c.a0 + c.sp * u / 1000, c.span, c.w * S, (q, al) => mixc('#ffffff', '#8fd0ff', q, al), a * 0.95, 10);
+      }
+    });
+    // 橙の尖った筋（地面から斜め上へ突き上がる）
+    const risers = [];
+    for (let k = 0; k < (LITE ? 10 : 16); k++) {
+      const aa = rand(0, TAU), rr = Math.sqrt(Math.random()) * 0.8 * Rm;
+      const bx = G.x + Math.cos(aa) * rr, by = G.y + Math.sin(aa) * rr * GK;
+      risers.push({ bx, by, ang: -Math.PI / 2 + rand(-0.55, 0.55) + (bx - G.x) / Rm * 0.5, len: rand(110, 230) * S, hw: rand(2.4, 4.4) * S, dl: rand(0, 80) });
+    }
+    layer(HIT, HIT + 560, (ctx, ms) => {
+      const u = ms - HIT;
+      ctx.globalCompositeOperation = 'lighter';
+      for (let k = 0; k < risers.length; k++) {
+        const r = risers[k], e = easeOutCubic(clamp01((u - r.dl) / 150)), a = 1 - easeInCubic(clamp01((u - r.dl - 150) / 360));
+        if (a <= 0.01 || e <= 0) continue;
+        streak(ctx, r.bx, r.by, r.ang, 0, r.len * e, r.hw, k % 2 ? YELLOW : CREAM, ORANGE, a * 0.92);
+      }
+    });
+    // 地面のひび割れ（黄色く光る）
+    const cracks = [];
+    for (let i = 0; i < (LITE ? 6 : 9); i++) {
+      const a = (i / (LITE ? 6 : 9)) * TAU + rand(-0.22, 0.22), len = rand(80, 170) * S, segs = 3 + ((Math.random() * 3) | 0), pts = [{ x: 0, y: 0 }];
+      for (let k = 1; k <= segs; k++) { const aa = a + rand(-0.38, 0.38), rr = len * (k / segs); pts.push({ x: Math.cos(aa) * rr, y: Math.sin(aa) * rr }); }
+      cracks.push({ pts, dl: rand(0, 70) });
+    }
+    layer(HIT, HIT + 840, (ctx, ms) => {
+      const u = ms - HIT, a = 1 - easeInCubic(clamp01((u - 400) / 440));
+      if (a <= 0.01) return;
+      ctx.globalCompositeOperation = 'lighter';
+      ground(ctx, G.x, G.y, () => {
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        for (let i = 0; i < cracks.length; i++) {
+          const c = cracks[i], gr = easeOutCubic(clamp01((u - c.dl) / 190));
+          if (gr <= 0) continue;
+          const fl = 0.8 + 0.2 * Math.sin(u * 0.06 + i * 1.7);
+          ctx.lineWidth = 11 * S; ctx.strokeStyle = rgba(ORANGE, 0.34 * a * fl); strokePartial(ctx, c.pts, gr);
+          ctx.lineWidth = 4.2 * S; ctx.strokeStyle = rgba(YELLOW, 0.95 * a * fl); strokePartial(ctx, c.pts, gr);
+          ctx.lineWidth = 1.7 * S; ctx.strokeStyle = rgba(WHITE, a * fl); strokePartial(ctx, c.pts, gr);
+        }
+      });
+    });
+    // 輪の縁から噴き上がる炎
+    const NEF = LITE ? 8 : 13;
+    const eflames = [];
+    for (let k = 0; k < NEF; k++) {
+      const aa = (k / NEF) * TAU + rand(-0.15, 0.15);
+      eflames.push({ a: aa, r: rand(0.55, 0.92), ln: rand(70, 140), wd: rand(13, 22), dl: rand(0, 140), ph: rand(0, TAU) });
+    }
+    layer(HIT + 10, HIT + 800, (ctx, ms) => {
+      const u = ms - HIT;
+      ctx.globalCompositeOperation = 'lighter';
+      for (let k = 0; k < eflames.length; k++) {
+        const f = eflames[k], tt = clamp01((u - f.dl) / 620);
+        if (tt <= 0) continue;
+        const grow = easeOutCubic(clamp01(tt / 0.3)), die = 1 - easeInCubic(clamp01((tt - 0.5) / 0.5));
+        const fl = 0.78 + 0.22 * Math.sin(tt * 30 + f.ph);
+        tongue(ctx, G.x + Math.cos(f.a) * f.r * Rm, G.y + Math.sin(f.a) * f.r * Rm * GK, -Math.PI / 2 + Math.cos(f.a) * 0.18, f.ln * S * grow * fl * (0.6 + 0.4 * die), f.wd * S * (0.5 + 0.5 * die), PALE, DEEP, die * 0.9, 0.1 * Math.sin(tt * 12 + f.ph));
+      }
+    });
+    // 頭上の橙の爆発星（3枚目）＋白い閃光
+    const seedsH = seedsOf(12);
+    layer(HIT - 10, HIT + 460, (ctx, ms, t) => {
+      const u = ms - HIT, pop = easeOutBackFU(clamp01((u + 10) / 120));
+      const a = 1 - easeInCubic(clamp01((u - 200) / 260));
+      if (a <= 0.01) return;
+      ctx.globalCompositeOperation = 'lighter';
+      glow(ctx, G.x, G.y - 10 * S, 190 * S * (0.6 + 0.4 * pop), WHITE, 0.7 * (1 - easeOutCubic(clamp01(u / 260))), WHITE);
+      glow(ctx, HEAD.x, HEAD.y, 110 * SB * pop, ORANGE, 0.45 * a, CREAM);
+      ctx.globalCompositeOperation = 'source-over';
+      const R0 = 68 * SB * pop * (1 - 0.12 * clamp01(u / 400)), rot = 0.15 + t * 0.35;
+      starburst(ctx, HEAD.x, HEAD.y, R0, 11, 0.46, rot, seedsH, '#ffb418', '#fff3b0', 4 * SB, a);
+      starburst(ctx, HEAD.x, HEAD.y, R0 * 0.62, 11, 0.5, rot + 0.1, seedsH, '#ffe34a', '#ffe34a', 0, a * 0.95);
+    });
+    // 広がる細い衝撃輪
+    layer(HIT, HIT + 680, (ctx, ms, t) => {
+      const a = 1 - easeInCubic(clamp01((t - 0.2) / 0.8));
+      if (a <= 0.01) return;
+      const e = easeOutCubic(t);
+      ground(ctx, G.x, G.y, () => {
+        ctx.lineWidth = Math.max(1, 3 * S * (1 - t * 0.5)); ctx.strokeStyle = mixc('#ff6a30', '#d0281a', t, 0.85 * a);
+        ctx.beginPath(); ctx.arc(0, 0, Rm * (0.3 + 1.35 * e), 0, TAU); ctx.stroke();
+        ctx.lineWidth = Math.max(1, 1.6 * S); ctx.strokeStyle = rgba(YELLOW, 0.5 * a);
+        ctx.beginPath(); ctx.arc(0, 0, Rm * (0.25 + 1.2 * e), 0, TAU); ctx.stroke();
+      });
+    });
+    // 黒い破片
+    for (let k = 0; k < (LITE ? 8 : 15); k++) {
+      const aa = rand(0, TAU), rr = rand(0.1, 0.7) * Rm, bx = G.x + Math.cos(aa) * rr, by = G.y + Math.sin(aa) * rr * GK;
+      const vx = Math.cos(aa) * rand(60, 190) * S, vy = rand(-340, -140) * S, sz = rand(3, 7) * S, rot0 = rand(0, TAU), spin = rand(-9, 9), life = rand(520, 820), dl = rand(0, 90), dark = Math.random() < 0.6;
+      layer(HIT + dl, HIT + dl + life, (ctx, ms, t) => {
+        const a = 1 - easeInCubic(clamp01((t - 0.7) / 0.3));
+        if (a <= 0.01) return;
+        const ts = t * life / 1000, x = bx + vx * ts, y = by + vy * ts + 900 * S * ts * ts;
+        ctx.save(); ctx.translate(x, y); ctx.rotate(rot0 + spin * ts);
+        ctx.fillStyle = rgba(dark ? '#2a1810' : '#5a3424', a);
+        ctx.beginPath(); ctx.moveTo(-sz, -sz * 0.6); ctx.lineTo(sz * 0.9, -sz * 0.8); ctx.lineTo(sz, sz * 0.7); ctx.lineTo(-sz * 0.6, sz); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      });
+    }
+    // 赤い小さな火の粉（四方へ）
+    for (let k = 0; k < (LITE ? 8 : 14); k++) {
+      const ang = rand(0, TAU), sp = rand(150, 340) * S, dl = rand(0, 110), life = rand(520, 860), r = rand(1.6, 3.4) * S;
+      layer(HIT + dl, HIT + dl + life, (ctx, ms, t) => {
+        const a = 1 - easeInCubic(clamp01((t - 0.55) / 0.45));
+        if (a <= 0.01) return;
+        const ts = t * life / 1000, dr = (1 - Math.exp(-3 * ts)) / 3;
+        ctx.fillStyle = rgba(RED, a);
+        ctx.beginPath(); ctx.arc(G.x + Math.cos(ang) * sp * dr, G.y - 10 * S + Math.sin(ang) * sp * dr * 0.7 - 80 * S * ts + 260 * S * ts * ts, r, 0, TAU); ctx.fill();
+      });
+    }
+    // 暗い赤の煙（足元に低く広がる）
+    for (let k = 0; k < (LITE ? 4 : 6); k++) {
+      const aa = rand(0, TAU), dist = rand(0.2, 0.75) * Rm, r0 = rand(34, 60) * S, dl = rand(0, 120), col = k % 3 === 2 ? ROSE : CRIM;
+      layer(HIT + 40 + dl, HIT + 40 + dl + 700, (ctx, ms, t) => {
+        const e = easeOutCubic(clamp01(t / 0.6)), a = Math.sin(Math.PI * clamp01(t)) * 0.4;
+        if (a <= 0.01) return;
+        const x = G.x + Math.cos(aa) * dist * (0.6 + 0.4 * e), y = G.y + Math.sin(aa) * dist * GK * (0.6 + 0.4 * e) - 18 * S * e, r = r0 * (0.6 + 0.8 * e);
+        const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+        g.addColorStop(0, rgba(col, a)); g.addColorStop(0.6, rgba(col, a * 0.55)); g.addColorStop(1, rgba(col, 0));
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+      });
+    }
+    // 火の粉（上へ舞い上がりながらちらつく）
+    for (let k = 0; k < (LITE ? 14 : 26); k++) {
+      const a0 = rand(0, TAU), sp = rand(70, 250) * S, r = rand(1.6, 3.8) * S, dl = rand(0, 160), life = rand(620, 940), ph = rand(0, TAU);
+      const col = k % 3 === 0 ? YELLOW : (k % 3 === 1 ? ORANGE : DEEP), ox = rand(-0.5, 0.5) * Rm, oy = rand(-0.2, 0.2) * Rm;
+      layer(HIT + dl, HIT + dl + life, (ctx, ms, t) => {
+        const a = 1 - easeInCubic(clamp01((t - 0.45) / 0.55));
+        if (a <= 0.01) return;
+        const ts = t * life / 1000, dr = (1 - Math.exp(-3.4 * ts)) / 3.4;
+        ctx.globalCompositeOperation = 'lighter';
+        glow(ctx, G.x + ox + Math.cos(a0) * sp * dr, G.y + oy + Math.sin(a0) * sp * dr * 0.7 - 110 * S * ts, r * 3.2, col, 0.85 * a * (0.55 + 0.45 * Math.sin(t * 40 + ph)), WHITE);
+      });
+    }
+    // 叩きつけの余韻：足元に残る橙の光溜まり
+    layer(HIT, HIT + 900, (ctx, ms, t) => {
+      const a = 1 - easeInCubic(clamp01((t - 0.3) / 0.7));
+      if (a <= 0.01) return;
+      ctx.globalCompositeOperation = 'lighter';
+      ground(ctx, G.x, G.y, () => {
+        const r = Rm * 0.8 * (0.6 + 0.4 * easeOutCubic(clamp01(t / 0.4)));
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+        g.addColorStop(0, rgba('#ffd060', 0.45 * a)); g.addColorStop(0.55, rgba(ORANGE, 0.25 * a)); g.addColorStop(1, rgba(RED, 0));
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.fill();
+      });
+    });
+    shakeAt(HIT, 18, 440);
+  }
+
+  SPECIAL_PRE_PLAY[528] = flameUpperPre;
+  SPECIAL_SCENES[528] = spawnFlameUpperSpecial;
+  SPECIAL_DURATION_MS[528] = FU_END_MS;
+  if (FLIGHT_MOVE_IDS.indexOf(528) === -1) FLIGHT_MOVE_IDS.push(528);
+  // アッパーが当たる瞬間に淡い閃光 → 叩きつけの瞬間に白い大閃光と橙の余韻
+  SPECIAL_IMPACT_FX[528] = {
+    flashes: [
+      { color: '#fff3c4', peakAlpha: 0.3, durationMs: 200, delay: FU_UP_MS },
+      { color: '#ffffff', peakAlpha: 0.7, durationMs: 220, delay: FU_HIT_MS },
+      { color: '#ff9a2a', peakAlpha: 0.26, durationMs: 520, delay: FU_HIT_MS + 30 },
+    ],
+  };
+
+  // ============================================================
+  // ストレートフレア（attack529／ほのお・物理・威力100・命中100）専用演出
+  // 参考画像：攻撃側の足元で橙の炎の渦（白熱した芯・赤橙の縁）が巻き、透き通った泡の障壁が張られる。
+  //   そこから黄金色の巨大な炎の波動が相手へ一直線に飛ぶ。波動は分厚い炎の塊で、縁は橙→赤→桃色に染まり、
+  //   ギザギザの炎の舌が後ろへなびく。相手は波動に呑み込まれ、黄色い炎の柱に包まれる。
+  //   白い四芒星のきらめきと、赤桃色の小さな火の粉が散る。
+  // 構成：①炎の渦＋泡の障壁（溜め）→ ②放つ（泡が弾け、発射口に閃光）→ ③炎の波動が相手へ一直線に飛ぶ
+  //       → ④相手を呑み込む（炎の柱・爆発星・衝撃の輪）＝ダメージの瞬間 → ⑤火の粉の余韻
+  // 攻撃側は力を溜めて引き、放つ瞬間に突き出す。相手は着弾で押されて揺れる（スプライトを translate / rotate で動かす）。
+  // スプライトの動き（DOM）と描画（Canvas）は straightFlarePlan() の同じ関数から作るので、位置が必ず一致する。
+  //
+  // info = { from, to, scale, plan } ： plan は straightFlarePre() が作る（無ければ from/to から仮に作る）。
+  // ============================================================
+  const SF_CHARGE_MS = 480;   // 炎の渦を纏い、泡の障壁を張る（溜め）
+  const SF_FIRE_MS = 520;     // 波動を放つ
+  const SF_HIT_MS = 990;      // 波動が相手を呑み込む＝ダメージの瞬間
+  const SF_BURN_MS = 1500;    // 炎の柱が萎み始める
+  const SF_END_MS = 1900;
+
+  // 攻撃側(a)・相手(d)の {x,y,size} から、スプライトの動きと発射位置を作る。
+  function straightFlarePlan(a, d) {
+    const S = Math.max(0.6, Math.min(1.6, d.size / 120));
+    const aS = Math.max(60, a.size), dS = Math.max(60, d.size);
+    let ux = d.x - a.x, uy = d.y - a.y;
+    const dist = Math.hypot(ux, uy) || 1;
+    ux /= dist; uy /= dist;
+    const sgn = ux >= 0 ? 1 : -1;                               // 攻撃側が相手の左(+1)か右(-1)か
+    const M = { x: a.x, y: a.y }, P = { x: d.x, y: d.y };
+    const M0 = { x: M.x + ux * 0.36 * aS, y: M.y + uy * 0.36 * aS - 0.04 * aS };   // 波動の発射位置（攻撃側の前方）
+    // 攻撃側：[ms, 進行方向への前後(px), 傾き(deg)]。引いて溜め → 放つ瞬間に突き出す → 戻る
+    const KA = [[0, 0, 0], [SF_CHARGE_MS, -12 * S, -6], [SF_FIRE_MS, -14 * S, -7], [SF_FIRE_MS + 90, 20 * S, 5], [SF_HIT_MS, 9 * S, 2], [SF_HIT_MS + 440, 0, 0]];
+    // 相手：着弾で押され、揺れて戻る
+    const KT = [[0, 0, 0], [SF_HIT_MS, 0, 0], [SF_HIT_MS + 110, 24 * S, 9], [SF_HIT_MS + 420, 9 * S, 3], [SF_HIT_MS + 760, 0, 0]];
+    const A = (ms) => { const k = fuKeys(KA, ms); return { x: M.x + ux * k[0], y: M.y + uy * k[0] }; };
+    const T = (ms) => {
+      const k = fuKeys(KT, ms);
+      const sh = ms > SF_HIT_MS ? Math.sin((ms - SF_HIT_MS) * 0.07) * 3.5 * S * Math.pow(1 - clamp01((ms - SF_HIT_MS) / 700), 1.6) : 0;
+      return { x: P.x + ux * k[0] - uy * sh, y: P.y + uy * k[0] + ux * sh };
+    };
+    const tiltA = (ms) => sgn * fuKeys(KA, ms)[1];
+    const tiltT = (ms) => sgn * fuKeys(KT, ms)[1];
+    return { S, aS, dS, sgn, ux, uy, M, P, M0, A, T, tiltA, tiltT };
+  }
+
+  // 再生の直前に呼ばれる：スプライト自体（攻撃側・相手）をWeb Animationsで動かし、同じ plan を描画側へ渡す。
+  function straightFlarePre(layerEl, defSide /*, info */) {
+    const m = mfxMeasure(layerEl, defSide);
+    const plan = straightFlarePlan(m.a, m.d);
+    const dur = SF_HIT_MS + 800;
+    const N = Math.ceil(dur / 16);
+    const mk = (el, rest, posFn, rotFn) => {
+      if (!el || !el.animate) return;
+      const kfs = [];
+      for (let i = 0; i <= N; i++) {
+        const ms = dur * i / N, p = posFn(ms);
+        kfs.push({
+          offset: i / N, easing: 'linear',
+          translate: (p.x - rest.x).toFixed(1) + 'px ' + (p.y - rest.y).toFixed(1) + 'px',
+          rotate: rotFn(ms).toFixed(1) + 'deg',
+        });
+      }
+      try { el.animate(kfs, { duration: dur, easing: 'linear' }); } catch (e) { /* 動きは演出上の飾り。失敗しても本体には影響させない */ }
+    };
+    mk(m.a.img, plan.M, plan.A, plan.tiltA);
+    mk(m.d.img, plan.P, plan.T, plan.tiltT);
+    return { plan };
+  }
+
+  function spawnStraightFlareSpecial(particles, w, h, info) {
+    const TAU = Math.PI * 2;
+    const LITE = !!(window && window.__LITE);
+    const from = (info && info.from) || { x: w * 0.28, y: h * 0.68 };
+    const to = (info && info.to) || { x: w * 0.72, y: h * 0.32 };
+    const plan = (info && info.plan) || straightFlarePlan({ x: from.x, y: from.y, size: 150 }, { x: to.x, y: to.y, size: 120 });
+    const { S, aS, dS, ux, uy, P, M0, A, T } = plan;
+    const nx = -uy, ny = ux;                                      // 進行方向に直角な向き
+    const ang = Math.atan2(uy, ux);
+    const back = ang + Math.PI;                                   // 炎がなびく向き
+    const distMP = Math.hypot(P.x - M0.x, P.y - M0.y);
+    const SB = Math.min(S, 1.15);
+    const SW = Math.min(S, 1.3);                                  // 波動の太さ係数（上限つき）                                 // きらめき・火の粉など「飾り」の大きさ係数（上限つき）
+
+    // 色（参考画像から）：黄金の芯 → 橙 → 赤 → 桃色の縁
+    const WHITE = '#ffffff', CREAM = '#fff6c8', PALE = '#ffec8a', YELLOW = '#ffe04a', GOLD = '#ffc830';
+    const ORANGE = '#ff8a1e', DEEP = '#ff5a14', RED = '#e0301a', CRIM = '#7a1030', ROSE = '#e8487a';
+
+    const hx = (c) => [parseInt(c.slice(1, 3), 16), parseInt(c.slice(3, 5), 16), parseInt(c.slice(5, 7), 16)];
+    const mixc = (c0, c1, k, a) => {
+      const A0 = hx(c0), B0 = hx(c1), q = clamp01(k);
+      return 'rgba(' + Math.round(A0[0] + (B0[0] - A0[0]) * q) + ',' + Math.round(A0[1] + (B0[1] - A0[1]) * q) + ',' +
+        Math.round(A0[2] + (B0[2] - A0[2]) * q) + ',' + Math.max(0, a) + ')';
+    };
+    const ca = (c, a) => rgba(c, Math.max(0, Math.min(1, a)));
+    const easeOutBackSF = (t) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+    const ground = (ctx, x, y, fn) => { ctx.save(); ctx.translate(x, y); ctx.scale(1, 0.56); fn(); ctx.restore(); };
+
+    // 時刻 s〜e(ms) だけ動く描画レイヤー。fn(ctx, 絶対ms, 0〜1)
+    const layer = (s, e, fn, blend) => {
+      const life = e - s;
+      particles.push({
+        delay: s, maxLife: life, blend: blend || 'source-over',
+        draw(ctx, t) { if (t >= 0.9999) return; fn(ctx, s + t * life, t); },
+      });
+    };
+    const shakeAt = (ms, amp, dur) => {
+      let done = false;
+      particles.push({
+        delay: ms, maxLife: 10,
+        update() {
+          if (done) return;
+          done = true;
+          const lay = document.getElementById('special-fx-layer');
+          const target = (lay && lay.parentElement) || lay;
+          if (target) screenShake(target, { ampPx: amp, durationMs: dur, freq: 30 });
+        },
+        draw() {},
+      });
+    };
+
+    // ---- 描画ヘルパー ----
+    function glow(ctx, x, y, r, color, alpha, core) {
+      if (alpha <= 0.01 || r <= 0.5) return;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, ca(core || WHITE, alpha));
+      g.addColorStop(0.35, ca(color, alpha * 0.55));
+      g.addColorStop(1, ca(color, 0));
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    }
+    // 白い四芒星のきらめき
+    function sparkle(ctx, x, y, size, alpha, color, rot) {
+      if (alpha <= 0.01 || size <= 0.3) return;
+      ctx.save();
+      ctx.translate(x, y); ctx.rotate(rot || 0);
+      const gr = ctx.createRadialGradient(0, 0, 0, 0, 0, size * 0.95);
+      gr.addColorStop(0, ca(color, alpha * 0.55)); gr.addColorStop(1, ca(color, 0));
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, 0, size * 0.95, 0, TAU); ctx.fill();
+      ctx.fillStyle = ca(color, alpha);
+      ctx.beginPath();
+      ctx.moveTo(0, -size);
+      ctx.quadraticCurveTo(size * 0.1, -size * 0.1, size, 0);
+      ctx.quadraticCurveTo(size * 0.1, size * 0.1, 0, size);
+      ctx.quadraticCurveTo(-size * 0.1, size * 0.1, -size, 0);
+      ctx.quadraticCurveTo(-size * 0.1, -size * 0.1, 0, -size);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+    // 炎の舌（根元が太く、先が曲がって細くなる）
+    function tongue(ctx, x, y, a, len, wd, c0, c1, alpha, bend) {
+      if (alpha <= 0.01 || len <= 1) return;
+      const c = Math.cos(a), s = Math.sin(a), tx0 = -s, ty0 = c;
+      const bx = x + c * len * 0.5 + tx0 * bend * len, by = y + s * len * 0.5 + ty0 * bend * len;
+      const tx = x + c * len + tx0 * bend * len * 1.5, ty = y + s * len + ty0 * bend * len * 1.5;
+      const g = ctx.createLinearGradient(x, y, tx, ty);
+      g.addColorStop(0, ca(c0, alpha)); g.addColorStop(0.55, ca(c1, alpha * 0.85)); g.addColorStop(1, ca(c1, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(x + tx0 * wd, y + ty0 * wd);
+      ctx.quadraticCurveTo(bx + tx0 * wd * 0.8, by + ty0 * wd * 0.8, tx, ty);
+      ctx.quadraticCurveTo(bx - tx0 * wd * 0.8, by - ty0 * wd * 0.8, x - tx0 * wd, y - ty0 * wd);
+      ctx.closePath(); ctx.fill();
+    }
+    // 両端が細く中ほどが太い光の筋（tail→tip の向き a）
+    function streak(ctx, x, y, a, tail, tip, hw, c0, c1, alpha) {
+      if (alpha <= 0.01 || tip <= tail) return;
+      const c = Math.cos(a), s = Math.sin(a), tx0 = -s, ty0 = c, mid = (tail + tip) * 0.5;
+      const g = ctx.createLinearGradient(x + c * tail, y + s * tail, x + c * tip, y + s * tip);
+      g.addColorStop(0, ca(c0, alpha)); g.addColorStop(1, ca(c1, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(x + c * tail, y + s * tail);
+      ctx.lineTo(x + c * mid + tx0 * hw, y + s * mid + ty0 * hw);
+      ctx.lineTo(x + c * tip, y + s * tip);
+      ctx.lineTo(x + c * mid - tx0 * hw, y + s * mid - ty0 * hw);
+      ctx.closePath(); ctx.fill();
+    }
+    // 点列に沿った帯（幅は wf(0〜1)＝半幅）。両端が細い筋・三日月・渦の腕に使う。
+    function ribbon(ctx, pts, wf, fill, alpha) {
+      const n = pts.length;
+      if (n < 2 || alpha <= 0.01) return;
+      const Lp = [], Rp = [];
+      for (let i = 0; i < n; i++) {
+        const p0 = pts[Math.max(0, i - 1)], p1 = pts[Math.min(n - 1, i + 1)];
+        let tx = p1.x - p0.x, ty = p1.y - p0.y;
+        const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+        const wd = wf(i / (n - 1));
+        Lp.push({ x: pts[i].x - ty * wd, y: pts[i].y + tx * wd });
+        Rp.push({ x: pts[i].x + ty * wd, y: pts[i].y - tx * wd });
+      }
+      ctx.beginPath();
+      ctx.moveTo(Lp[0].x, Lp[0].y);
+      for (let i = 1; i < n; i++) ctx.lineTo(Lp[i].x, Lp[i].y);
+      for (let i = n - 1; i >= 0; i--) ctx.lineTo(Rp[i].x, Rp[i].y);
+      ctx.closePath();
+      ctx.globalAlpha = Math.min(1, alpha);
+      ctx.fillStyle = fill; ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    // コミック調のギザギザ爆発星
+    const STAR_SEEDS = []; for (let i = 0; i < 16; i++) STAR_SEEDS.push(Math.random());
+    function starburst(ctx, x, y, R, n, inner, rot, fill, rim, rimW, alpha) {
+      if (alpha <= 0.01 || R <= 1) return;
+      ctx.save();
+      ctx.translate(x, y); ctx.rotate(rot);
+      ctx.beginPath();
+      for (let i = 0; i < n * 2; i++) {
+        const sd = STAR_SEEDS[(i >> 1) % STAR_SEEDS.length], sd2 = STAR_SEEDS[((i >> 1) + 3) % STAR_SEEDS.length], tip = i % 2 === 0;
+        const a = (i / (n * 2)) * TAU + (sd - 0.5) * 0.16;
+        const rr = tip ? R * (0.82 + 0.34 * sd) : R * inner * (0.88 + 0.24 * sd2);
+        const px = Math.cos(a) * rr, py = Math.sin(a) * rr;
+        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.globalAlpha = Math.min(1, alpha);
+      ctx.fillStyle = fill; ctx.fill();
+      if (rimW > 0) { ctx.lineJoin = 'round'; ctx.lineWidth = rimW; ctx.strokeStyle = rim; ctx.stroke(); }
+      ctx.restore();
+    }
+
+    // ---- 炎の塊（tail→head の背骨に沿って太さ widthAt(u) の、縁がギザギザで揺らめく多角形）----
+    // 先の尖りは尾の方へなびかせ、縁は時間で揺らす。scale を変えて重ねると「橙の縁→黄→白熱の芯」の層になる。
+    function flameShape(ctx, ms, tail, head, widthAt, scale, seed, spd, c0, c1, alpha, rim, bendAmp, tongues, lean) {
+      const dx = head.x - tail.x, dy = head.y - tail.y, L = Math.hypot(dx, dy);
+      if (L < 4 || alpha <= 0.01) return;
+      const dX = dx / L, dY = dy / L, nX = -dY, nY = dX;
+      const K = tongues || (LITE ? 6 : 8);                        // 片側の炎の舌の数
+      const lw = lean === undefined ? 0.74 : lean;                // 谷の位置：0.74＝尾の方へなびく（波動）／0.26＝頭の方へ立ち昇る（炎の柱）
+      // 縁の頂点（舌の先）：u と太さ係数。先は時間でゆらゆら動く
+      const vs = [{ u: 0, k: 1 }];
+      for (let j = 0; j < K; j++) vs.push({ u: (j + 0.6) / K + 0.3 / K * noise1(j * 1.7 - ms * 0.012 * spd, seed), k: 1.16 });
+      vs.push({ u: 1, k: 1 });
+      const pt = (u, k, sg, sd) => {
+        const fl = 1 + 0.16 * noise1(u * 8 - ms * 0.017 * spd + sd, sd);
+        const off = (bendAmp || 0) * Math.sin(u * 4.2 + ms * 0.011 * spd + seed);
+        const wv = widthAt(u) * scale * k * fl * sg;
+        return { x: tail.x + dx * u + nX * (off + wv), y: tail.y + dy * u + nY * (off + wv) };
+      };
+      ctx.beginPath();
+      let p = pt(0, 1, 1, seed);
+      ctx.moveTo(p.x, p.y);
+      // 手前（＋側）：舌の先を頂点に、谷を後ろ寄りの制御点にして「尾の方へなびく」曲線の縁を作る
+      for (let j = 1; j < vs.length; j++) {
+        const c = pt(lerp(vs[j - 1].u, vs[j].u, lw), 0.5, 1, seed), q = pt(vs[j].u, vs[j].k, 1, seed);
+        ctx.quadraticCurveTo(c.x, c.y, q.x, q.y);
+      }
+      // 反対側（−側）を頭から尾へ戻る
+      for (let j = vs.length - 1; j >= 1; j--) {
+        const c = pt(lerp(vs[j - 1].u, vs[j].u, lw), 0.5, -1, seed * 2.3 + 40), q = pt(vs[j - 1].u, vs[j - 1].k, -1, seed * 2.3 + 40);
+        ctx.quadraticCurveTo(c.x, c.y, q.x, q.y);
+      }
+      ctx.closePath();
+      const gr = ctx.createLinearGradient(tail.x, tail.y, head.x, head.y);
+      gr.addColorStop(0, ca(c1, 0));
+      gr.addColorStop(0.3, ca(c1, alpha * 0.92));
+      gr.addColorStop(1, ca(c0, alpha));
+      ctx.fillStyle = gr; ctx.fill();
+      if (rim) { ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(1, 2.2 * S); ctx.strokeStyle = ca(rim, 0.7 * alpha); ctx.stroke(); }
+    }
+    // 重ねる層：[大きさ, 先の色, 根元の色, 濃さ, シード, 縁取り]
+    const STACK = [
+      [1.16, ORANGE, DEEP, 0.92, 0.0, ROSE],
+      [0.98, GOLD, ORANGE, 0.97, 1.7, null],
+      [0.78, YELLOW, GOLD, 0.98, 3.1, null],
+      [0.46, PALE, YELLOW, 0.95, 5.3, null],
+      [0.20, CREAM, PALE, 0.85, 7.9, null],
+    ];
+    function flameStack(ctx, ms, tail, head, widthAt, alpha, spd, bendAmp, seed0, tongues, lean) {
+      for (let i = 0; i < STACK.length; i++) {
+        const s = STACK[i];
+        flameShape(ctx, ms, tail, head, widthAt, s[0], s[4] + seed0, spd, s[1], s[2], s[3] * alpha, s[5], bendAmp, tongues, lean);
+      }
+    }
+
+    // ============================================================
+    // 炎の波動：発射位置 M0 から相手へ一直線。尾は発射位置に繋がったまま、着弾後に切れて流れ去る。
+    // ============================================================
+    const waveAt = (ms) => {
+      const t = clamp01((ms - SF_FIRE_MS) / (SF_HIT_MS - SF_FIRE_MS));
+      const k = 0.5 * t * t + 0.5 * t;                            // 少し加速しながら飛ぶ
+      const reach = Math.max(20, distMP - 0.1 * dS);
+      let hd = reach * k, post = 0;
+      if (ms > SF_HIT_MS) { post = clamp01((ms - SF_HIT_MS) / 460); hd = reach + easeOutCubic(post) * 0.85 * dS; }   // 相手を突き抜ける
+      const head = { x: M0.x + ux * hd, y: M0.y + uy * hd };
+      let tl = 0;
+      if (ms > SF_HIT_MS + 60) tl = easeInCubic(clamp01((ms - SF_HIT_MS - 60) / 400)) * hd;
+      const tail = { x: M0.x + ux * tl, y: M0.y + uy * tl };
+      const grow = 0.3 + 0.7 * easeOutCubic(t);
+      const wid = 74 * SW * grow * (1 + 0.28 * post);
+      const alpha = ms <= SF_HIT_MS + 120 ? 1 : 1 - easeInCubic(clamp01((ms - SF_HIT_MS - 120) / 380));
+      const widthAt = (u) => {
+        const base = 0.2 + 0.8 * Math.pow(u, 0.8);                  // 尾は細く、頭へ向けて太く
+        const cap = u > 0.86 ? Math.sqrt(Math.max(0, 1 - Math.pow((u - 0.86) / 0.14, 2))) : 1;   // 先端は丸く閉じる
+        return wid * base * cap;
+      };
+      return { head, tail, len: hd - tl, wid, alpha, t, post, widthAt };
+    };
+
+    function drawWave(ctx, ms) {
+      const g = waveAt(ms);
+      if (g.alpha <= 0.01 || g.len < 8) return;
+      const { head, tail, wid, alpha, widthAt } = g;
+      // 外側の光（桃赤）
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i <= 9; i++) {
+        const u = i / 9;
+        glow(ctx, lerp(tail.x, head.x, u), lerp(tail.y, head.y, u), widthAt(u) * 1.9 + 8 * S, i % 2 ? DEEP : ROSE, 0.34 * alpha * (0.4 + 0.6 * u), ORANGE);
+      }
+      // 炎の層
+      ctx.globalCompositeOperation = 'source-over';
+      flameStack(ctx, ms, tail, head, widthAt, alpha, 1, 7 * S, 0);
+      // 炎の渦（螺旋の筋）
+      ctx.globalCompositeOperation = 'lighter';
+      for (let r = 0; r < 2; r++) {
+        const pts = [], ph = r * Math.PI + 0.6;
+        for (let i = 0; i <= 18; i++) {
+          const u = i / 18;
+          const off = widthAt(u) * 0.7 * Math.sin(u * TAU * 1.1 + ph - ms * 0.017);
+          pts.push({ x: lerp(tail.x, head.x, u) + nx * off, y: lerp(tail.y, head.y, u) + ny * off });
+        }
+        ribbon(ctx, pts, (u) => (1.4 + 7 * Math.pow(Math.sin(Math.PI * u), 0.8)) * S, r === 1 ? CREAM : PALE, 0.62 * alpha);
+      }
+      // 先頭の波（三日月状の波頭）
+      const R = Math.max(14 * S, wid * 1.1);
+      const cc = { x: head.x - ux * R * 0.78, y: head.y - uy * R * 0.78 };
+      const span = 2.25;
+      const arcPts = (rr) => { const a = []; for (let i = 0; i <= 20; i++) { const th = ang - span / 2 + span * i / 20; a.push({ x: cc.x + Math.cos(th) * rr, y: cc.y + Math.sin(th) * rr }); } return a; };
+      ctx.globalCompositeOperation = 'source-over';
+      ribbon(ctx, arcPts(R * 1.05), (u) => 13 * S * Math.pow(Math.sin(Math.PI * u), 0.75) + 0.6, ORANGE, 0.95 * alpha);
+      ribbon(ctx, arcPts(R), (u) => 8.5 * S * Math.pow(Math.sin(Math.PI * u), 0.75) + 0.5, YELLOW, 0.97 * alpha);
+      ribbon(ctx, arcPts(R * 0.97), (u) => 3.6 * S * Math.pow(Math.sin(Math.PI * u), 0.75) + 0.4, WHITE, 0.95 * alpha);
+      ctx.globalCompositeOperation = 'lighter';
+      glow(ctx, head.x + ux * R * 0.15, head.y + uy * R * 0.15, R * 0.95, YELLOW, 0.5 * alpha, WHITE);
+    }
+
+    // ============================================================
+    // ①  溜め：炎の渦が巻き、泡の障壁が張られる
+    // ============================================================
+    // 炎の渦（螺旋の腕を重ねて回す。縁は赤橙、中は黄、芯は白）
+    function spiral(ctx, cx, cy, R, rot, alpha, wk) {
+      for (let arm = 0; arm < 2; arm++) {
+        const pts = [], K = 24;
+        for (let k = 0; k <= K; k++) {
+          const u = k / K, th = rot + arm * Math.PI + u * 4.6, r = R * (0.2 + 0.8 * Math.pow(u, 0.8));
+          pts.push({ x: cx + Math.cos(th) * r, y: cy + Math.sin(th) * r * 0.86 });
+        }
+        const prof = (u) => Math.pow(Math.sin(Math.PI * Math.pow(u, 0.75)), 0.8);
+        ribbon(ctx, pts, (u) => wk * 19 * S * prof(u) + 0.5, mixc(RED, DEEP, 0.4, 1), 0.9 * alpha);
+        ribbon(ctx, pts, (u) => wk * 14 * S * prof(u) + 0.4, ORANGE, 0.96 * alpha);
+        ribbon(ctx, pts, (u) => wk * 9 * S * prof(u) + 0.3, GOLD, 0.97 * alpha);
+        ribbon(ctx, pts, (u) => wk * 4.6 * S * prof(u) + 0.2, CREAM, 0.95 * alpha);
+      }
+    }
+    layer(0, SF_FIRE_MS + 340, (ctx, ms) => {
+      const c = A(ms), cx = c.x, cy = c.y + 0.13 * aS;
+      const grow = easeOutCubic(clamp01(ms / 300));
+      const fade = ms < SF_FIRE_MS ? 1 : 1 - easeInCubic(clamp01((ms - SF_FIRE_MS) / 340));
+      if (fade <= 0.01) return;
+      const burst = ms < SF_FIRE_MS ? 1 : 1 + 0.5 * easeOutCubic(clamp01((ms - SF_FIRE_MS) / 340));
+      const R = Math.min(0.56 * aS, 112 * S) * (0.55 + 0.45 * grow) * burst;
+      ctx.globalCompositeOperation = 'lighter';
+      glow(ctx, cx, cy, R * 1.3, DEEP, 0.42 * fade * grow, ORANGE);
+      ground(ctx, cx, cy + 0.24 * aS, () => {
+        ctx.lineWidth = Math.max(1, 4 * S);
+        ctx.strokeStyle = ca(ORANGE, 0.7 * fade * grow); ctx.beginPath(); ctx.arc(0, 0, R * 0.95, 0, TAU); ctx.stroke();
+        ctx.lineWidth = Math.max(1, 1.6 * S);
+        ctx.strokeStyle = ca(CREAM, 0.7 * fade * grow); ctx.beginPath(); ctx.arc(0, 0, R * 0.8, 0, TAU); ctx.stroke();
+      });
+      ctx.globalCompositeOperation = 'source-over';
+      const spin = ms * 0.0125;
+      spiral(ctx, cx, cy, R, spin, fade * grow, 1);
+      // 発射口に力が集まる
+      const mc = clamp01((ms - 180) / (SF_FIRE_MS - 180));
+      if (mc > 0) {
+        ctx.globalCompositeOperation = 'lighter';
+        glow(ctx, M0.x, M0.y, (8 + 40 * mc) * S, ORANGE, 0.8 * fade * mc, WHITE);
+        glow(ctx, M0.x, M0.y, (5 + 16 * mc) * S, YELLOW, 0.9 * fade * mc, WHITE);
+      }
+    });
+    // 渦へ吸い込まれる火の粉
+    const SUCK = [];
+    for (let i = 0; i < (LITE ? 10 : 18); i++) SUCK.push({ th: rand(0, TAU), ph: rand(0, 1), sp: rand(0.0013, 0.0021), col: [ROSE, ORANGE, GOLD, DEEP][i % 4] });
+    layer(40, SF_FIRE_MS + 40, (ctx, ms) => {
+      const c = A(ms), cx = c.x, cy = c.y + 0.05 * aS;
+      const R0 = Math.min(0.9 * aS, 150 * S);
+      const k0 = clamp01(ms / 160), k1 = 1 - clamp01((ms - SF_FIRE_MS + 80) / 120);
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < SUCK.length; i++) {
+        const sk = SUCK[i], q = (ms * sk.sp + sk.ph) % 1, r = R0 * (1 - easeInCubic(q)) * 0.95 + 4 * S;
+        const th = sk.th + q * 2.4;
+        glow(ctx, cx + Math.cos(th) * r, cy + Math.sin(th) * r * 0.86, (3 + 3 * (1 - q)) * SB, sk.col, 0.9 * Math.sin(Math.PI * q) * k0 * k1, CREAM);
+      }
+    });
+    // 泡の障壁（透き通った球。放つ瞬間に弾ける）
+    layer(0, SF_FIRE_MS + 260, (ctx, ms) => {
+      const c = A(ms), cx = c.x, cy = c.y + 0.04 * aS;
+      const pop = clamp01((ms - SF_FIRE_MS) / 220);
+      const al = 1 - pop;
+      if (al <= 0.01) return;
+      const Rb = 0.64 * aS * easeOutBackSF(clamp01(ms / 280)) * (1 + 0.22 * easeOutCubic(pop));
+      if (Rb < 4) return;
+      const gr = ctx.createRadialGradient(cx, cy, Rb * 0.5, cx, cy, Rb);
+      gr.addColorStop(0, 'rgba(255,255,255,0)');
+      gr.addColorStop(0.72, 'rgba(255,238,215,' + (0.1 * al).toFixed(3) + ')');
+      gr.addColorStop(1, 'rgba(255,255,255,' + (0.36 * al).toFixed(3) + ')');
+      ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(cx, cy, Rb, 0, TAU); ctx.fill();
+      const wg = ctx.createRadialGradient(cx, cy + Rb * 0.45, 0, cx, cy + Rb * 0.45, Rb * 0.9);
+      wg.addColorStop(0, 'rgba(255,150,50,' + (0.22 * al).toFixed(3) + ')'); wg.addColorStop(1, 'rgba(255,150,50,0)');
+      ctx.fillStyle = wg; ctx.beginPath(); ctx.arc(cx, cy, Rb, 0, TAU); ctx.fill();
+      ctx.lineWidth = Math.max(1, 2.2 * S); ctx.strokeStyle = 'rgba(255,255,255,' + (0.55 * al).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(cx, cy, Rb, 0, TAU); ctx.stroke();
+      ctx.lineCap = 'round';
+      ctx.lineWidth = Math.max(1.5, 4 * S); ctx.strokeStyle = 'rgba(255,255,255,' + (0.75 * al).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(cx, cy, Rb * 0.84, 3.55, 4.35); ctx.stroke();
+      ctx.lineWidth = Math.max(1, 2.4 * S); ctx.strokeStyle = 'rgba(255,230,200,' + (0.55 * al).toFixed(3) + ')';
+      ctx.beginPath(); ctx.arc(cx, cy, Rb * 0.84, 0.25, 0.65); ctx.stroke();
+    });
+
+    // ============================================================
+    // ②  放つ：泡が弾け、発射口に閃光と爆発星、前方へ光の筋
+    // ============================================================
+    layer(SF_FIRE_MS - 20, SF_FIRE_MS + 360, (ctx, ms, t) => {
+      const e = easeOutCubic(t), a = 1 - t;
+      ctx.globalCompositeOperation = 'lighter';
+      glow(ctx, M0.x, M0.y, (30 + 70 * e) * S, ORANGE, 0.9 * a, WHITE);
+      for (let k = 0; k < 9; k++) {
+        const aa = ang + (k - 4) * 0.2;
+        streak(ctx, M0.x, M0.y, aa, 8 * S, (50 + 90 * e) * S * (1 - 0.35 * Math.abs(k - 4) / 4), 2.2 * S, k % 2 ? WHITE : CREAM, ORANGE, 0.85 * a);
+      }
+      ctx.lineWidth = Math.max(1, 5 * S * a); ctx.strokeStyle = ca(PALE, 0.8 * a);
+      ctx.beginPath(); ctx.arc(M0.x, M0.y, (14 + 80 * e) * S, 0, TAU); ctx.stroke();
+      ctx.globalCompositeOperation = 'source-over';
+      starburst(ctx, M0.x, M0.y, (34 + 26 * e) * S, 11, 0.5, ang, mixc(YELLOW, WHITE, 1 - t * 1.4, 1), ca(ORANGE, 0.95), Math.max(1, 2.2 * S), 1 - easeInCubic(clamp01((t - 0.35) / 0.65)));
+    });
+    shakeAt(SF_FIRE_MS, 5, 220);
+
+    // ============================================================
+    // ③  炎の波動が相手へ一直線に飛ぶ
+    // ============================================================
+    layer(SF_FIRE_MS, SF_HIT_MS + 520, (ctx, ms) => drawWave(ctx, ms));
+
+    // 波動から後ろへなびく炎の舌
+    const SHED = [];
+    for (let i = 0; i < (LITE ? 18 : 34); i++) {
+      const tb = rand(SF_FIRE_MS + 30, SF_HIT_MS + 160);
+      const g = waveAt(Math.min(tb, SF_HIT_MS + 160)), u = rand(0.12, 1), side = rand(-1, 1);
+      const lat = side * g.widthAt(u) * 0.95;
+      SHED.push({
+        tb, life: rand(260, 460), side,
+        x0: lerp(g.tail.x, g.head.x, u) + nx * lat, y0: lerp(g.tail.y, g.head.y, u) + ny * lat,
+        len: rand(30, 62) * S, wd: rand(5, 10) * S, col: i % 3 === 0 ? PALE : i % 3 === 1 ? GOLD : ORANGE,
+      });
+    }
+    layer(SF_FIRE_MS, SF_HIT_MS + 640, (ctx, ms) => {
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < SHED.length; i++) {
+        const s = SHED[i], q = (ms - s.tb) / s.life;
+        if (q < 0 || q > 1) continue;
+        const dt = ms - s.tb;
+        const x = s.x0 + Math.cos(back) * 0.06 * dt + nx * s.side * 0.03 * dt;
+        const y = s.y0 + Math.sin(back) * 0.06 * dt + ny * s.side * 0.03 * dt;
+        const al = Math.pow(Math.sin(Math.PI * Math.min(1, q * 0.9 + 0.05)), 0.7);
+        tongue(ctx, x, y, back + s.side * 0.5, s.len * (0.45 + 0.55 * Math.sin(Math.PI * q) ** 0.5), s.wd * (1 - 0.5 * q), s.col, DEEP, 0.9 * al, 0.18 * s.side);
+      }
+    });
+
+    // ============================================================
+    // ④  着弾：相手を呑み込む炎の柱・爆発星・衝撃の輪（＝ダメージの瞬間）
+    // ============================================================
+    // 炎の舌（根元が太く、先へ細くなって曲がる涙形）。base から向き a へ len、半幅 wid、先の曲がり bend。
+    function teardrop(ctx, bx, by, a, len, wid, bend, cBase, cTip, alpha, rim) {
+      if (len < 3 || wid < 0.5 || alpha <= 0.01) return;
+      const c = Math.cos(a), s2 = Math.sin(a), tx = -s2, ty = c;
+      const px = (f, o) => ({ x: bx + c * len * f + tx * o, y: by + s2 * len * f + ty * o });
+      const tip = px(1, bend);
+      const L1 = px(0.3, wid * 1.25), L2 = px(0.7, wid * 0.55 + bend * 0.45);
+      const R1 = px(0.3, -wid * 1.25), R2 = px(0.7, -wid * 0.55 + bend * 0.45);
+      ctx.beginPath();
+      ctx.moveTo(bx + tx * wid * 0.85, by + ty * wid * 0.85);
+      ctx.bezierCurveTo(L1.x, L1.y, L2.x, L2.y, tip.x, tip.y);
+      ctx.bezierCurveTo(R2.x, R2.y, R1.x, R1.y, bx - tx * wid * 0.85, by - ty * wid * 0.85);
+      ctx.closePath();
+      const g = ctx.createLinearGradient(bx, by, tip.x, tip.y);
+      g.addColorStop(0, ca(cBase, alpha)); g.addColorStop(1, ca(cTip, alpha * 0.9));
+      ctx.fillStyle = g; ctx.fill();
+      if (rim) { ctx.lineJoin = 'round'; ctx.lineWidth = Math.max(1, 2 * S); ctx.strokeStyle = ca(rim, 0.65 * alpha); ctx.stroke(); }
+    }
+    // 柱を作る炎の舌の配置（中央ほど高く太い）
+    const NFL = LITE ? 7 : 9;
+    const FLAMES = [];
+    for (let i = 0; i < NFL; i++) {
+      const o = (i / (NFL - 1)) * 2 - 1;
+      FLAMES.push({ o, ph: rand(0, TAU), hh: 1 - 0.52 * Math.pow(Math.abs(o), 1.4), ww: 1 - 0.3 * Math.abs(o), lean: o * 0.5 + rand(-0.08, 0.08) });
+    }
+    FLAMES.sort((p, q) => Math.abs(q.o) - Math.abs(p.o));             // 外側から先に描く（中央が手前）
+    const FL_LAYERS = [                                                // [長さ, 太さ, 根元の色, 先の色, 縁取り]
+      [1.00, 1.00, ORANGE, DEEP, ROSE],
+      [0.88, 0.80, GOLD, ORANGE, null],
+      [0.70, 0.60, YELLOW, GOLD, null],
+      [0.46, 0.38, CREAM, PALE, null],
+    ];
+    const FEET = { x: P.x, y: P.y + 0.34 * dS };
+    const PL_END = SF_END_MS - 120;
+    layer(SF_HIT_MS - 50, PL_END, (ctx, ms) => {
+      const gt = easeOutCubic(clamp01((ms - (SF_HIT_MS - 40)) / 260));
+      const sh = 1 - easeInCubic(clamp01((ms - SF_BURN_MS) / (PL_END - SF_BURN_MS)));
+      const amt = gt * sh;
+      if (amt <= 0.01) return;
+      const c = T(ms);                                            // 押されて動く相手に合わせて柱も追従
+      const bx0 = c.x - P.x, by0 = c.y - P.y;
+      const fx = FEET.x + bx0, fy = FEET.y + by0;
+      const Hh = Math.max(0.5 * dS, Math.min(1.15 * dS, h * 0.5, fy - 6));   // 大きい相手でも画面の半分までに収める
+      // 足元の光だまりと炎の溜まり
+      ctx.globalCompositeOperation = 'lighter';
+      glow(ctx, fx, fy - 0.2 * dS, dS * 1.0 * amt, DEEP, 0.5 * sh, ORANGE);
+      ctx.globalCompositeOperation = 'source-over';
+      ground(ctx, fx, fy, () => {
+        const rr = 0.62 * dS * (0.5 + 0.5 * amt);
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, rr);
+        g.addColorStop(0, ca(YELLOW, 0.95 * amt)); g.addColorStop(0.6, ca(ORANGE, 0.85 * amt)); g.addColorStop(1, ca(DEEP, 0));
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, rr, 0, TAU); ctx.fill();
+      });
+      for (let i = 0; i < FLAMES.length; i++) {
+        const f = FLAMES[i];
+        const fk = 0.86 + 0.16 * Math.sin(ms * 0.014 + f.ph) + 0.06 * Math.sin(ms * 0.031 + f.ph * 2.1);
+        const len = Hh * f.hh * amt * fk;
+        const wd = 0.17 * dS * f.ww * (0.55 + 0.45 * amt);
+        const bend = wd * 1.3 * Math.sin(ms * 0.01 + f.ph * 1.7);
+        const a = -Math.PI / 2 + f.lean + 0.1 * Math.sin(ms * 0.008 + f.ph);
+        const bx = fx + f.o * 0.5 * dS, by = fy + 4 * S * Math.abs(f.o);
+        for (let k = 0; k < FL_LAYERS.length; k++) {
+          const ly = FL_LAYERS[k];
+          teardrop(ctx, bx, by, a, len * ly[0], wd * ly[1], bend * ly[0], ly[2], ly[3], Math.min(1, amt * 1.5), ly[4]);
+        }
+      }
+    });
+    // 足元に広がる輪（黄色い二重の輪・中は桃赤）
+    layer(SF_HIT_MS - 20, SF_HIT_MS + 640, (ctx, ms, t) => {
+      const e = easeOutCubic(t), a = 1 - t;
+      const Rm = Math.min(1.25 * dS, w * 0.3, h * 0.5) * (0.25 + 0.75 * e);
+      ctx.globalCompositeOperation = 'lighter';
+      ground(ctx, FEET.x, FEET.y, () => {
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, Rm);
+        g.addColorStop(0, ca(ORANGE, 0.55 * a)); g.addColorStop(0.7, ca(ROSE, 0.3 * a)); g.addColorStop(1, ca(DEEP, 0));
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, Rm, 0, TAU); ctx.fill();
+        ctx.lineWidth = Math.max(1, 7 * S * a); ctx.strokeStyle = ca(YELLOW, 0.9 * a);
+        ctx.beginPath(); ctx.arc(0, 0, Rm, 0, TAU); ctx.stroke();
+        ctx.lineWidth = Math.max(1, 3 * S * a); ctx.strokeStyle = ca(CREAM, 0.85 * a);
+        ctx.beginPath(); ctx.arc(0, 0, Rm * 0.82, 0, TAU); ctx.stroke();
+      });
+    });
+    // 爆発星と放射状の光の筋
+    layer(SF_HIT_MS - 20, SF_HIT_MS + 360, (ctx, ms, t) => {
+      const e = easeOutBackSF(clamp01(t / 0.3)), a = 1 - easeInCubic(clamp01((t - 0.3) / 0.5));
+      ctx.globalCompositeOperation = 'lighter';
+      glow(ctx, P.x, P.y, dS * (0.7 + 0.9 * easeOutCubic(t)), YELLOW, 0.8 * a, WHITE);
+      for (let k = 0; k < 12; k++) {
+        const aa = (k / 12) * TAU + 0.2 + (k % 2) * 0.1, L = (0.45 + 0.4 * (k % 3) / 2) * dS;
+        streak(ctx, P.x, P.y, aa, 0.2 * dS, 0.2 * dS + L * easeOutCubic(clamp01(t / 0.6)), 2.6 * S, k % 2 ? WHITE : CREAM, ORANGE, 0.85 * a);
+      }
+      ctx.lineWidth = Math.max(1, 6 * S * (1 - t)); ctx.strokeStyle = ca(PALE, 0.85 * a);
+      ctx.beginPath(); ctx.arc(P.x, P.y, dS * (0.2 + 1.3 * easeOutCubic(t)), 0, TAU); ctx.stroke();
+      ctx.globalCompositeOperation = 'source-over';
+      starburst(ctx, P.x, P.y - 0.05 * dS, 0.46 * dS * Math.max(0, e), 13, 0.5, 0.25, mixc(YELLOW, WHITE, 1 - t * 2, 1), ca(ORANGE, 0.95), Math.max(1.5, 2.2 * S), a * 0.7);
+    });
+    shakeAt(SF_HIT_MS, 14, 460);
+
+    // ============================================================
+    // ⑤  きらめき（白い四芒星）と火の粉（赤桃色の小さな光）
+    // ============================================================
+    const SPK = [];
+    for (let i = 0; i < (LITE ? 9 : 16); i++) {
+      const tb = SF_FIRE_MS + 60 + Math.random() * (SF_HIT_MS - SF_FIRE_MS + 420);
+      let x, y;
+      if (tb <= SF_HIT_MS) {
+        const g = waveAt(tb), u = rand(0.25, 1), lat = rand(-1, 1) * Math.max(g.wid * 1.3, 26 * S);
+        x = lerp(g.tail.x, g.head.x, u) + nx * lat; y = lerp(g.tail.y, g.head.y, u) + ny * lat;
+      } else {
+        x = P.x + rand(-0.75, 0.75) * dS; y = P.y + rand(-0.7, 0.55) * dS;
+      }
+      SPK.push({ tb, life: rand(320, 580), x, y, size: rand(7, 16) * SB, rot: rand(0, 1.5), col: i % 3 === 0 ? PALE : WHITE });
+    }
+    layer(SF_FIRE_MS, SF_END_MS, (ctx, ms) => {
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < SPK.length; i++) {
+        const s = SPK[i], q = (ms - s.tb) / s.life;
+        if (q < 0 || q > 1) continue;
+        const k = Math.sin(Math.PI * q);
+        sparkle(ctx, s.x, s.y, s.size * (0.45 + 0.55 * k), k, s.col, s.rot + q * 0.6);
+      }
+    });
+    const EMB = [];
+    for (let i = 0; i < (LITE ? 24 : 46); i++) {
+      const tb = rand(SF_FIRE_MS, SF_END_MS - 520), life = rand(420, 900);
+      let x, y, vx, vy;
+      if (tb < SF_HIT_MS) {
+        const g = waveAt(tb), u = rand(0.1, 1), lat = rand(-1, 1) * g.widthAt(u) * 1.1;
+        x = lerp(g.tail.x, g.head.x, u) + nx * lat; y = lerp(g.tail.y, g.head.y, u) + ny * lat;
+        const sp = rand(0.03, 0.1);
+        vx = Math.cos(back) * sp + nx * lat * 0.0008; vy = Math.sin(back) * sp + ny * lat * 0.0008 - 0.02;
+      } else {
+        x = P.x + rand(-0.4, 0.4) * dS; y = P.y + rand(-0.2, 0.4) * dS;
+        const a = rand(0, TAU), sp = rand(0.08, 0.28) * S;
+        vx = Math.cos(a) * sp; vy = Math.sin(a) * sp * 0.8 - 0.1;
+      }
+      EMB.push({ tb, life, x, y, vx, vy, r: rand(2.2, 5.2) * SB, col: [ROSE, DEEP, ORANGE, GOLD, ROSE][i % 5] });
+    }
+    layer(SF_FIRE_MS, SF_END_MS, (ctx, ms) => {
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < EMB.length; i++) {
+        const e = EMB[i], q = (ms - e.tb) / e.life;
+        if (q < 0 || q > 1) continue;
+        const dt = ms - e.tb, damp = 1 - 0.5 * q;
+        glow(ctx, e.x + e.vx * dt * damp, e.y + e.vy * dt * damp - 0.012 * dt * q, e.r * (1.3 - 0.6 * q), e.col, 0.95 * Math.pow(Math.sin(Math.PI * q), 0.6), CREAM);
+      }
+    });
+  }
+
+  SPECIAL_PRE_PLAY[529] = straightFlarePre;
+  SPECIAL_SCENES[529] = spawnStraightFlareSpecial;
+  SPECIAL_DURATION_MS[529] = SF_END_MS;
+  if (FLIGHT_MOVE_IDS.indexOf(529) === -1) FLIGHT_MOVE_IDS.push(529);
+  // 放つ瞬間に淡い閃光 → 波動が相手を呑み込む瞬間に白い大閃光と橙の余韻（揺れは spawn 側で時刻どおりに起こす）
+  SPECIAL_IMPACT_FX[529] = {
+    flashes: [
+      { color: '#fff3c4', peakAlpha: 0.26, durationMs: 220, delay: SF_FIRE_MS },
+      { color: '#ffffff', peakAlpha: 0.62, durationMs: 220, delay: SF_HIT_MS },
+      { color: '#ff9a2a', peakAlpha: 0.28, durationMs: 520, delay: SF_HIT_MS + 30 },
+    ],
+  };
+
+  // ============================================================
+  // レイジングソウル（attack530／ほのお・物理・威力60・命中100）専用演出
+  // 参考画像3枚：①攻撃側が回転しながら円弧の炎を振り抜く（先頭は紫・青、芯は白〜黄、外は橙〜赤。火の舌・赤い細線・金の筋）
+  //   ②相手の位置に深紅の四芒星＋黄白色の光線が放射状に走る → ③黄橙の巨大な火球が膨らみ、ギザギザの閃光・黒赤の破片・
+  //   足元の青い輪・淡い金色の衝撃波が広がる。
+  // 構成：溜め(渦) → 回転斬り → 四芒星と光線＝ダメージの瞬間 → 爆発 → 火の粉。スプライトの動きと描画は ragingSoulPlan() で一致させる。
+  // ============================================================
+  const RS_SPIN_S = 460, RS_SPIN_E = 940, RS_HIT_MS = 960, RS_BOOM_MS = 1100, RS_END_MS = 2300;
+
+  function ragingSoulPlan(a, d) {
+    const S = Math.max(0.6, Math.min(1.6, d.size / 120));
+    const aS = Math.max(60, a.size), dS = Math.max(60, d.size);
+    let ux = d.x - a.x, uy = d.y - a.y;
+    const dist = Math.hypot(ux, uy) || 1; ux /= dist; uy /= dist;
+    const sgn = ux >= 0 ? 1 : -1;
+    const M = { x: a.x, y: a.y }, P = { x: d.x, y: d.y };
+    const KA = [[0, 0], [RS_SPIN_S, -14 * S], [RS_SPIN_E - 80, -4 * S], [RS_SPIN_E + 60, 30 * S], [RS_HIT_MS + 420, 8 * S], [RS_HIT_MS + 800, 0]];
+    const KT = [[0, 0, 0], [RS_HIT_MS, 0, 0], [RS_HIT_MS + 110, 26 * S, 10], [RS_HIT_MS + 450, 8 * S, 3], [RS_HIT_MS + 800, 0, 0]];
+    const A = (ms) => { const k = fuKeys(KA, ms)[0]; return { x: M.x + ux * k, y: M.y + uy * k }; };
+    const T = (ms) => {
+      const k = fuKeys(KT, ms)[0];
+      const sh = ms > RS_HIT_MS ? Math.sin((ms - RS_HIT_MS) * 0.07) * 3.5 * S * Math.pow(1 - clamp01((ms - RS_HIT_MS) / 700), 1.6) : 0;
+      return { x: P.x + ux * k - uy * sh, y: P.y + uy * k + ux * sh };
+    };
+    const spin = (ms) => -sgn * 720 * easeInOutSine(clamp01((ms - RS_SPIN_S) / (RS_SPIN_E - RS_SPIN_S)));   // 攻撃側が2回転
+    const tiltT = (ms) => sgn * fuKeys(KT, ms)[1];
+    return { S, aS, dS, sgn, ux, uy, M, P, A, T, spin, tiltT };
+  }
+
+  function ragingSoulPre(layerEl, defSide) {
+    const m = mfxMeasure(layerEl, defSide);
+    const plan = ragingSoulPlan(m.a, m.d);
+    const dur = RS_HIT_MS + 820, N = Math.ceil(dur / 16);
+    const mk = (el, rest, posFn, rotFn) => {
+      if (!el || !el.animate) return;
+      const kfs = [];
+      for (let i = 0; i <= N; i++) {
+        const ms = dur * i / N, p = posFn(ms);
+        kfs.push({ offset: i / N, easing: 'linear', translate: (p.x - rest.x).toFixed(1) + 'px ' + (p.y - rest.y).toFixed(1) + 'px', rotate: rotFn(ms).toFixed(1) + 'deg' });
+      }
+      try { el.animate(kfs, { duration: dur, easing: 'linear' }); } catch (e) { /* 動きは飾り。失敗しても本体に影響させない */ }
+    };
+    mk(m.a.img, plan.M, plan.A, plan.spin);
+    mk(m.d.img, plan.P, plan.T, plan.tiltT);
+    return { plan };
+  }
+
+  function spawnRagingSoulSpecial(particles, w, h, info) {
+    const TAU = Math.PI * 2, LITE = !!(window && window.__LITE);
+    const from = (info && info.from) || { x: w * 0.28, y: h * 0.68 };
+    const to = (info && info.to) || { x: w * 0.72, y: h * 0.32 };
+    const plan = (info && info.plan) || ragingSoulPlan({ x: from.x, y: from.y, size: 150 }, { x: to.x, y: to.y, size: 120 });
+    const { S, aS, dS, sgn, P, A } = plan;
+    const ca = (c, a) => rgba(c, Math.max(0, Math.min(1, a)));
+    const BM = RS_BOOM_MS;
+
+    const layer = (s, e, fn, blend) => {
+      const life = e - s;
+      particles.push({ delay: s, maxLife: life, blend: blend || 'source-over', draw(ctx, t) {
+        if (t >= 0.9999) return;
+        ctx.save();
+        try { fn(ctx, s + t * life, t); }
+        catch (e) { if (!layer.warned) { layer.warned = true; console.warn('[レイジングソウル演出] 描画エラーを無視して続行:', e); } }   // 例外で演出ループが止まり、技が終わらずフリーズするのを防ぐ
+        ctx.restore();
+      } });
+    };
+    const shakeAt = (ms, amp, dur) => {
+      let done = false;
+      particles.push({ delay: ms, maxLife: 10, update() {
+        if (done) return; done = true;
+        const lay = document.getElementById('special-fx-layer');
+        const target = (lay && lay.parentElement) || lay;
+        if (target) screenShake(target, { ampPx: amp, durationMs: dur, freq: 30 });
+      }, draw() {} });
+    };
+    const glow = (ctx, x, y, r, col, al) => {
+      if (al <= 0.01 || r <= 0.5) return;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, ca('#ffffff', al)); g.addColorStop(0.35, ca(col, al * 0.55)); g.addColorStop(1, ca(col, 0));
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    };
+    // 中央が太く両端が細い帯（点列 pts、半幅 wf(0〜1)）
+    const ribbon = (ctx, pts, wf, fill, al) => {
+      const n = pts.length; if (n < 2 || al <= 0.01) return;
+      const L = [], R = [];
+      for (let i = 0; i < n; i++) {
+        const p0 = pts[Math.max(0, i - 1)], p1 = pts[Math.min(n - 1, i + 1)];
+        let tx = p1.x - p0.x, ty = p1.y - p0.y; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+        const wd = wf(i / (n - 1));
+        L.push({ x: pts[i].x - ty * wd, y: pts[i].y + tx * wd }); R.push({ x: pts[i].x + ty * wd, y: pts[i].y - tx * wd });
+      }
+      ctx.beginPath(); ctx.moveTo(L[0].x, L[0].y);
+      for (let i = 1; i < n; i++) ctx.lineTo(L[i].x, L[i].y);
+      for (let i = n - 1; i >= 0; i--) ctx.lineTo(R[i].x, R[i].y);
+      ctx.closePath(); ctx.globalAlpha = Math.min(1, al); ctx.fillStyle = fill; ctx.fill(); ctx.globalAlpha = 1;
+    };
+    const arcPts = (cx, cy, R, a0, a1, n, tilt, sq) => {
+      const pts = [], ct = Math.cos(tilt), st = Math.sin(tilt);
+      for (let i = 0; i <= n; i++) {
+        const an = lerp(a0, a1, n ? i / n : 0), ex = Math.cos(an) * R, ey = Math.sin(an) * R * sq;
+        pts.push({ x: cx + ex * ct - ey * st, y: cy + ex * st + ey * ct });
+      }
+      return pts;
+    };
+    // 根元が太く先が細い光線（中心から放射）
+    const beam = (ctx, x, y, a, len, hw, col, al) => {
+      if (len < 2 || al <= 0.01) return;
+      const c = Math.cos(a), s = Math.sin(a);
+      const g = ctx.createLinearGradient(x, y, x + c * len, y + s * len);
+      g.addColorStop(0, ca('#ffffff', al)); g.addColorStop(0.3, ca(col, al)); g.addColorStop(1, ca(col, 0));
+      ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x, y);
+      ctx.lineTo(x + c * len * 0.2 - s * hw, y + s * len * 0.2 + c * hw); ctx.lineTo(x + c * len, y + s * len);
+      ctx.lineTo(x + c * len * 0.2 + s * hw, y + s * len * 0.2 - c * hw); ctx.closePath(); ctx.fill();
+    };
+    const tongue = (ctx, x, y, a, len, wd, c0, c1, al) => {
+      if (al <= 0.01) return;
+      const c = Math.cos(a), s = Math.sin(a), nx = -s, ny = c;
+      const g = ctx.createLinearGradient(x, y, x + c * len, y + s * len);
+      g.addColorStop(0, ca(c0, al)); g.addColorStop(1, ca(c1, 0));
+      ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x + nx * wd, y + ny * wd);
+      ctx.quadraticCurveTo(x + c * len * 0.5 + nx * wd * 0.6 + nx * len * 0.18, y + s * len * 0.5 + ny * wd * 0.6 + ny * len * 0.18, x + c * len + nx * len * 0.3, y + s * len + ny * len * 0.3);
+      ctx.quadraticCurveTo(x + c * len * 0.5 - nx * wd * 0.6, y + s * len * 0.5 - ny * wd * 0.6, x - nx * wd, y - ny * wd);
+      ctx.closePath(); ctx.fill();
+    };
+
+    // ---- ①溜め：攻撃側へ火花が渦を巻いて集まり、紫橙のオーラが膨らむ ----
+    const SPK = []; for (let i = 0; i < (LITE ? 14 : 24); i++) SPK.push({ a: rand(0, TAU), r0: rand(1.0, 1.6), tb: rand(0, 300), c: ['#ffd24a', '#ff7a2a', '#d060ff', '#fff2b0'][i % 4] });
+    layer(0, RS_SPIN_E, (ctx, ms) => {
+      const c = A(ms), q = clamp01(ms / RS_SPIN_S);
+      ctx.globalCompositeOperation = 'lighter';
+      glow(ctx, c.x, c.y, aS * (0.45 + 0.5 * q), '#ff7a1e', 0.7 * q);
+      glow(ctx, c.x, c.y, aS * (0.3 + 0.4 * q), '#b050ff', 0.45 * q);
+      for (const p of SPK) {
+        const k = clamp01((ms - p.tb) / (RS_SPIN_S + 100 - p.tb)); if (k <= 0 || k >= 1) continue;
+        const r = p.r0 * aS * (1 - easeInCubic(k)) * 0.8, an = p.a + k * 2.4 * sgn;
+        const x = c.x + Math.cos(an) * r, y = c.y + Math.sin(an) * r * 0.65;
+        glow(ctx, x, y, 5 * S, p.c, 0.9 * Math.sin(Math.PI * k));
+      }
+    });
+
+    // ---- ②回転斬り：円弧の炎（先頭＝紫・青／芯＝白〜黄／外＝橙〜赤）＋火の舌・赤い細線・金の筋 ----
+    layer(RS_SPIN_S - 30, RS_SPIN_E + 220, (ctx, ms) => {
+      const c = A(ms), q = clamp01((ms - RS_SPIN_S) / (RS_SPIN_E - RS_SPIN_S));
+      const al = ms < RS_SPIN_E ? 1 : 1 - clamp01((ms - RS_SPIN_E) / 220);
+      const R = aS * 0.68, tilt = -0.3 * sgn, W = aS * 0.17;
+      const head = -1.2 * sgn + sgn * TAU * 1.3 * easeInOutSine(q), span = TAU * 0.8 * clamp01(q * 3 + 0.05);
+      const tail = head - sgn * span;
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.lineWidth = aS * 0.2; ctx.strokeStyle = ca('#ffffff', 0.1 * al);                // 淡い風の輪
+      ctx.beginPath(); ctx.ellipse(c.x, c.y, R * (1.25 + 0.3 * q), R * (1.25 + 0.3 * q) * 0.6, tilt, 0, TAU); ctx.stroke();
+      const LY = [['#7a5cff', 1.14, 0.5, 2.2], ['#ff3ea0', 1.07, 0.8, 1.8], ['#ff3a1a', 1.0, 1.0, 1.4], ['#ff8a1e', 0.96, 0.82, 1.2], ['#ffe04a', 0.92, 0.58, 1.0], ['#ffffff', 0.9, 0.2, 0.9]];
+      ctx.globalCompositeOperation = 'source-over';
+      for (const l of LY) ribbon(ctx, arcPts(c.x, c.y, R * l[1], tail, head, LITE ? 24 : 40, tilt, 0.6), (u) => 1 + W * l[2] * Math.pow(u, l[3]), l[0], 0.95 * al);
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 9; i++) {                                                          // 外へなびく火の舌
+        const u = 0.35 + 0.6 * i / 8, an = lerp(tail, head, u) + noise1(i * 3 + ms * 0.012, 5) * 0.06;
+        const p = arcPts(c.x, c.y, R * 1.14, an, an, 0, tilt, 0.6)[0];
+        tongue(ctx, p.x, p.y, Math.atan2(p.y - c.y, p.x - c.x) - sgn * 0.7, aS * (0.16 + 0.1 * u), aS * 0.045, '#ffd24a', '#ff3a1a', 0.9 * al);
+      }
+      ribbon(ctx, arcPts(c.x, c.y, R * 1.38, head - sgn * 1.7, head, 20, tilt + 0.1 * sgn, 0.7), (u) => 2.2 * S * u, '#ff3a2a', 0.85 * al);   // 赤い細い弧
+      for (let i = 0; i < 4; i++) {                                                          // 金の筋
+        const an = head - sgn * (0.5 + i * 0.55), p = arcPts(c.x, c.y, R * 1.5, an, an, 0, tilt, 0.6)[0];
+        beam(ctx, p.x, p.y, an + sgn * Math.PI * 0.5, aS * 0.55, 2.4 * S, '#ffd24a', 0.7 * al);
+      }
+    });
+
+    // ---- ③ダメージの瞬間：深紅の四芒星＋放射状の光線 ----
+    const BEAMS = [], nb = LITE ? 12 : 18;
+    for (let i = 0; i < nb; i++) BEAMS.push({ a: (i / nb) * TAU + rand(-0.17, 0.17), len: rand(0.5, 1.15) * Math.max(w, h) * (i % 3 === 0 ? 1 : 0.7), hw: rand(3, 9) * S, dl: rand(0, 70), c: i % 4 === 3 ? '#cfe6ff' : (i % 2 ? '#fff2b0' : '#ffd24a') });
+    layer(RS_HIT_MS, RS_HIT_MS + 620, (ctx, ms) => {
+      const t = ms - RS_HIT_MS, fade = 1 - easeInCubic(clamp01((t - 220) / 400));
+      ctx.globalCompositeOperation = 'lighter';
+      glow(ctx, P.x, P.y, dS * (0.5 + 0.5 * clamp01(t / 160)), '#ffd24a', 0.9 * fade);
+      for (const b of BEAMS) beam(ctx, P.x, P.y, b.a, b.len * easeOutCubic(clamp01((t - b.dl) / 170)), b.hw * (0.5 + 0.5 * fade), b.c, fade);
+    }, 'lighter');
+    layer(RS_HIT_MS, RS_HIT_MS + 520, (ctx, ms) => {
+      const t = ms - RS_HIT_MS, bk = 1.70158, e = clamp01(t / 150) - 1;
+      const R = dS * 0.9 * (1 + (bk + 1) * e * e * e + bk * e * e) * (1 - easeInCubic(clamp01((t - 250) / 260)));
+      if (R <= 2) return;
+      ctx.save(); ctx.translate(P.x, P.y); ctx.rotate(0.2); ctx.beginPath();
+      for (let i = 0; i < 4; i++) {
+        const a0 = i * Math.PI / 2, a1 = a0 + Math.PI / 2;
+        ctx.lineTo(Math.cos(a0) * R, Math.sin(a0) * R);
+        ctx.quadraticCurveTo(Math.cos((a0 + a1) / 2) * R * 0.1, Math.sin((a0 + a1) / 2) * R * 0.1, Math.cos(a1) * R, Math.sin(a1) * R);
+      }
+      ctx.closePath();
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+      g.addColorStop(0, '#ff5a50'); g.addColorStop(0.45, '#c8102e'); g.addColorStop(1, '#6a0a22');
+      ctx.fillStyle = g; ctx.fill();
+      ctx.lineJoin = 'round'; ctx.lineWidth = 8 * S; ctx.strokeStyle = ca('#ffd860', 0.95); ctx.stroke();
+      ctx.lineWidth = 2.5 * S; ctx.strokeStyle = ca('#fffbe0', 0.95); ctx.stroke(); ctx.restore();
+    });
+
+    // ---- ④爆発：足元の青い輪・淡い金の衝撃波・黄橙の火球（ギザギザの閃光つき）・黒赤の破片 ----
+    layer(BM, BM + 900, (ctx, ms, t) => {
+      const r = dS * (0.45 + 0.85 * easeOutCubic(t)), al = 1 - easeInCubic(t);
+      ctx.save(); ctx.translate(P.x, P.y + dS * 0.3); ctx.scale(1, 0.4);
+      ctx.lineWidth = 12 * S * (1 - 0.6 * t); ctx.strokeStyle = ca('#32b4ff', 0.9 * al);
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, TAU); ctx.stroke();
+      ctx.lineWidth = 4 * S; ctx.strokeStyle = ca('#d8f4ff', 0.9 * al); ctx.stroke(); ctx.restore();
+    }, 'lighter');
+    layer(BM, BM + 760, (ctx, ms, t) => {
+      const r = dS * (0.55 + 1.2 * easeOutCubic(t)), al = 1 - easeInCubic(t);
+      const g = ctx.createRadialGradient(P.x, P.y, r * 0.6, P.x, P.y, r);
+      g.addColorStop(0, ca('#ffe9a0', 0)); g.addColorStop(0.85, ca('#ffe9a0', 0.3 * al)); g.addColorStop(1, ca('#fff6d0', 0.85 * al));
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(P.x, P.y, r, 0, TAU); ctx.fill();
+      ctx.lineWidth = 6 * S * (1 - t) + 1; ctx.strokeStyle = ca('#fff3b8', 0.8 * al); ctx.stroke();
+    });
+    const SPIKES = []; for (let i = 0; i < (LITE ? 14 : 22); i++) SPIKES.push({ a: (i / (LITE ? 14 : 22)) * TAU + rand(-0.1, 0.1), l: rand(1.2, 1.85), w: rand(0.06, 0.12), c: i % 3 ? '#fff1a0' : '#ffd23c' });
+    layer(BM - 40, BM + 980, (ctx, ms) => {
+      const k = clamp01((ms - BM + 40) / 200), fade = 1 - easeInCubic(clamp01((ms - BM - 400) / 580));
+      const R = dS * 0.62 * (0.55 + 0.5 * easeOutCubic(k)) * (1 + 0.1 * clamp01((ms - BM) / 900));
+      for (const s of SPIKES) {
+        ctx.fillStyle = ca(s.c, 0.95 * fade); ctx.beginPath();
+        ctx.moveTo(P.x + Math.cos(s.a - s.w) * R * 0.85, P.y + Math.sin(s.a - s.w) * R * 0.85 * 0.9);
+        ctx.lineTo(P.x + Math.cos(s.a) * R * s.l * k, P.y + Math.sin(s.a) * R * s.l * k * 0.9);
+        ctx.lineTo(P.x + Math.cos(s.a + s.w) * R * 0.85, P.y + Math.sin(s.a + s.w) * R * 0.85 * 0.9); ctx.closePath(); ctx.fill();
+      }
+      const g = ctx.createRadialGradient(P.x, P.y, 0, P.x, P.y, R);
+      g.addColorStop(0, ca('#ffffff', 1)); g.addColorStop(0.35, ca('#fff3a0', 1)); g.addColorStop(0.78, ca('#ffc23a', 1)); g.addColorStop(1, ca('#ff9a1a', 1));
+      ctx.globalAlpha = fade; ctx.fillStyle = g; ctx.beginPath();
+      for (let i = 0; i < 18; i++) {
+        const a = (i / 18) * TAU, rr = R * (1 + 0.05 * noise1(i * 2 + ms * 0.01, 3));
+        i ? ctx.lineTo(P.x + Math.cos(a) * rr, P.y + Math.sin(a) * rr * 0.92) : ctx.moveTo(P.x + Math.cos(a) * rr, P.y + Math.sin(a) * rr * 0.92);
+      }
+      ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'lighter'; glow(ctx, P.x, P.y, R * 0.8, '#ffffff', 0.8 * fade);
+    });
+    const DB = []; for (let i = 0; i < (LITE ? 8 : 14); i++) DB.push({ a: rand(-3.0, -0.14), sp: rand(0.2, 0.55) * S, sz: rand(0.07, 0.16) * dS, c: pick(['#14101e', '#2a1a3a', '#b01a28', '#3a3f78']), r: rand(0, TAU), vr: rand(-0.012, 0.012), sx: rand(-0.3, 0.3) * dS, sy: rand(0.1, 0.35) * dS });
+    layer(BM, BM + 1000, (ctx, ms) => {
+      const dt = ms - BM, al = 1 - easeInCubic(clamp01((dt - 600) / 400));
+      for (const d of DB) {
+        const x = P.x + d.sx + Math.cos(d.a) * d.sp * dt, y = P.y + d.sy + Math.sin(d.a) * d.sp * dt + 0.00035 * dt * dt, r = d.r + d.vr * dt;
+        ctx.save(); ctx.translate(x, y); ctx.rotate(r); ctx.globalAlpha = al; ctx.fillStyle = d.c; ctx.beginPath();
+        ctx.moveTo(-d.sz, -d.sz * 0.3); ctx.lineTo(d.sz * 0.2, -d.sz * 0.7); ctx.lineTo(d.sz, d.sz * 0.2); ctx.lineTo(-d.sz * 0.4, d.sz * 0.6);
+        ctx.closePath(); ctx.fill(); ctx.restore();
+      }
+    });
+
+    // ---- ⑤火の粉の余韻 ----
+    const EMB = []; for (let i = 0; i < (LITE ? 16 : 30); i++) EMB.push({ tb: rand(BM, RS_END_MS - 600), life: rand(450, 900), x: P.x + rand(-0.5, 0.5) * dS, y: P.y + rand(-0.3, 0.4) * dS, vx: rand(-0.12, 0.12), vy: rand(-0.2, -0.03), r: rand(2, 5) * S, c: ['#ffd24a', '#ff8a1e', '#ff5a14', '#fff2b0'][i % 4] });
+    layer(BM, RS_END_MS, (ctx, ms) => {
+      ctx.globalCompositeOperation = 'lighter';
+      for (const e of EMB) { const q = (ms - e.tb) / e.life; if (q < 0 || q > 1) continue; glow(ctx, e.x + e.vx * (ms - e.tb), e.y + e.vy * (ms - e.tb), e.r * (1.3 - 0.6 * q), e.c, 0.95 * Math.sin(Math.PI * q)); }
+    });
+
+    shakeAt(RS_HIT_MS, 12 * S, 260);
+    shakeAt(BM, 16 * S, 460);
+  }
+
+  SPECIAL_PRE_PLAY[530] = ragingSoulPre;
+  SPECIAL_SCENES[530] = spawnRagingSoulSpecial;
+  SPECIAL_DURATION_MS[530] = RS_END_MS;
+  if (FLIGHT_MOVE_IDS.indexOf(530) === -1) FLIGHT_MOVE_IDS.push(530);
+  // 回転斬りの瞬間に淡い橙の閃光 → 四芒星の瞬間に白い大閃光 → 爆発で黄橙の余韻
+  SPECIAL_IMPACT_FX[530] = {
+    flashes: [
+      { color: '#ffb04a', peakAlpha: 0.2, durationMs: 260, delay: RS_SPIN_S + 200 },
+      { color: '#ffffff', peakAlpha: 0.7, durationMs: 220, delay: RS_HIT_MS },
+      { color: '#ffc23a', peakAlpha: 0.32, durationMs: 560, delay: RS_BOOM_MS },
+    ],
+  };
+
   function playSpecialTypeEffect(wrapEl, moveId, defSide) {
   // フレアドライブは「ポケモンの画像そのものが移動する」専用演出を使う
   if (moveId === 123) {
@@ -28489,7 +30851,15 @@ const spawn = SPECIAL_SCENES[moveId];
     const duration = SPECIAL_DURATION_MS[moveId] || 1600;
     // 飛翔演出が要る技だけ、攻撃側→防御側の座標を実測して spawn の第4引数に渡す。
     // 既存の spawn 関数（インフェルノ等）は第4引数を無視するので影響しない。
-    const info = FLIGHT_MOVE_IDS.indexOf(moveId) !== -1 ? measureAttackVector(wrapEl, defSide) : null;
+    let info = FLIGHT_MOVE_IDS.indexOf(moveId) !== -1 ? measureAttackVector(wrapEl, defSide) : null;
+    // 前処理を持つ技（フレイムアッパー等）：スプライトを動かし、動きの計画を info.plan として描画側へ渡す。
+    const preFn = SPECIAL_PRE_PLAY[moveId];
+    if (preFn) {
+      try {
+        const extra = preFn(wrapEl, defSide, info);
+        if (extra) info = Object.assign({ from: { x: w * 0.28, y: h * 0.68 }, to: { x: w * 0.72, y: h * 0.32 }, scale: 1 }, info || {}, extra);
+      } catch (e) { console.warn('[TypeFX] 前処理に失敗', moveId, e); }
+    }
     return runParticleScene({
       canvas: { getContext: () => ctx, width: w, height: h },
       durationMs: duration,
