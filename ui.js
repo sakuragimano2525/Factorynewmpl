@@ -255,6 +255,30 @@ const MOVE_COND_DEFS = {
   534: [['', 'このバトル中、自分と味方は地脈の倍率が 1つ:1.5倍・2つ目から+1倍 になり、上限がなくなる', '（ターン無限）'],   // 大地共鳴
         ['t:geomat', '自分と味方は毎ターン、チャージが溜まる']],
   535: [['', 'このバトル中、自分と味方のはかいこうせんが、いわタイプになり威力1.5倍になる', 'ファセットグロース・ガイアキューブ・ジオ・バスターで消費するチャージが、今あるチャージの半分になる', '（ターン無限）']],   // ブーストスキャン
+  // ---- 水流の技（あめ中に使うと回避率+1／ゆき中は素早さ+1／メロディーフィールド中は攻撃と特攻+1） ----
+  536: [['', '自分の攻撃と特攻の高い方で攻撃する（斬る技・急所に当たりやすい）', '攻撃後、相手に水流を1付与する'],   // 漣
+        ['自分に聖炎・水流・地脈・風息の印がある時', '先にそれらを全て水流に変えて、相手に付与してから攻撃する（水流1の付与も行う）'],
+        ['w:rain', '自分の回避率が1段階上がる'], ['w:snow', '自分の素早さが1段階上がる'], ['t:melody', '自分の攻撃と特攻が1段階上がる']],
+  537: [['', '自分の攻撃と特攻の高い方で攻撃する（斬る技・急所に当たりやすい）', '攻撃後、相手に水流を1付与する'],   // 龍薙閃
+        ['自分か相手にチャージが1以上ある時', '必ず急所に当たる'],
+        ['w:rain', '自分の回避率が1段階上がる'], ['w:snow', '自分の素早さが1段階上がる'], ['t:melody', '自分の攻撃と特攻が1段階上がる']],
+  538: [['', '自分の攻撃と特攻の高い方で攻撃する（斬る技・急所に当たりやすい）', '最大15回、外れるまで攻撃する', '攻撃後、当たった回数分のチャージを得る'],   // 連段滝
+        ['自分に印がある時', '攻撃後、印を全て消費して、消費した数×5のチャージを得る'],
+        ['w:rain', '自分の回避率が1段階上がる'], ['w:snow', '自分の素早さが1段階上がる'], ['t:melody', '自分の攻撃と特攻が1段階上がる']],
+  539: [['', '自分の攻撃と特攻の高い方で攻撃する', '攻撃を受けた相手は、印を相手に付与できるわざ（変化技以外）が使えなくなる'],   // 龍薙閃・蛟噛
+        ['自分のチャージが1以上の時', 'チャージを全て消費して、1つにつき威力+20してから攻撃する'],
+        ['w:rain', '自分の回避率が1段階上がる'], ['w:snow', '自分の素早さが1段階上がる'], ['t:melody', '自分の攻撃と特攻が1段階上がる']],
+  540: [['', 'このバトル中、自分と味方は相手に水流を付与する時、付与量がさらに+1される', '天候があめの時は、さらに+1される', '（ターン無限）'],   // 蛟龍の型
+        ['w:rain', '自分の回避率が1段階上がる'], ['w:snow', '自分の素早さが1段階上がる'], ['t:melody', '自分の攻撃と特攻が1段階上がる']],
+  541: [['', 'このバトル中、水流が付与されている相手ポケモンは、使うわざの優先度が全て1下がる', '（ターン無限）'],   // 引波の型
+        ['w:rain', '自分の回避率が1段階上がる'], ['w:snow', '自分の素早さが1段階上がる'], ['t:melody', '自分の攻撃と特攻が1段階上がる']],
+  542: [['', 'このバトル中、自分と味方の斬る技（きれあじ対象）は、水流を+1追加で付与し、威力が1.5倍になる（きれあじ特性とは重複する）', '斬る技が急所に当たると、自分の素早さと命中率が2段階上がる', '（ターン無限）'],   // 滝斬の型
+        ['w:rain', '自分の回避率が1段階上がる'], ['w:snow', '自分の素早さが1段階上がる'], ['t:melody', '自分の攻撃と特攻が1段階上がる']],
+  543: [['', '天候をあめにして、このバトル中、書き換えられない永続のあめにする', 'あめが、ゆきの効果（氷の防御1.5倍・アイスブレイクなど）も持つようになる'],   // 無窮水天
+        ['すでに天候があめの時', '自分のチャージが50溜まる'],
+        ['w:rain', '自分の回避率が1段階上がる'], ['w:snow', '自分の素早さが1段階上がる'], ['t:melody', '自分の攻撃と特攻が1段階上がる']],
+  544: [['', 'このバトル中、自分と味方の連続技の最大回数が+1される', 'トリプルアクセルやテレキネシスなど、全ての連続技が対象', '（ターン無限）'],   // 漣撃の型
+        ['w:rain', '自分の回避率が1段階上がる'], ['w:snow', '自分の素早さが1段階上がる'], ['t:melody', '自分の攻撃と特攻が1段階上がる']],
 };
 
 function condLabelText(c) {
@@ -1590,7 +1614,8 @@ function getFieldContinueMessages() {
   const msgs = [];
   if (battleField.weather && battleField.weather !== 'none' && battleField.weatherTurns > 0) {
     const name = WEATHER_JP[battleField.weather] || battleField.weather;
-    msgs.push({ text: `${name}が　あと${battleField.weatherTurns}ターン　つづいている！`, weatherFx: battleField.weather });
+    // 無窮水天(543)：永続のあめはターン数を数えない
+    msgs.push({ text: battleField.mukyuSuiten ? `${name}が　永遠に　つづいている！` : `${name}が　あと${battleField.weatherTurns}ターン　つづいている！`, weatherFx: battleField.weather });
   }
   if (battleField.terrain && battleField.terrain !== 'none' && battleField.terrainTurns > 0) {
     const name = TERRAIN_JP[battleField.terrain] || battleField.terrain;
@@ -5013,7 +5038,9 @@ function renderWatchField() {
   const chips = [];
 
   if (battleField.weather && battleField.weather !== 'none') {
-    chips.push(`${WEATHER_JP[battleField.weather] || battleField.weather} ${battleField.weatherTurns}ターン`);
+    chips.push(battleField.mukyuSuiten
+      ? `${WEATHER_JP[battleField.weather] || battleField.weather} 永続（無窮水天：書き換え不可・ゆきの効果も持つ）`
+      : `${WEATHER_JP[battleField.weather] || battleField.weather} ${battleField.weatherTurns}ターン`);
   }
   if (battleField.terrain && battleField.terrain !== 'none') {
     chips.push(`${TERRAIN_JP[battleField.terrain] || battleField.terrain} ${battleField.terrainTurns}ターン`);
@@ -5045,6 +5072,23 @@ function renderWatchField() {
   if (poke && poke.seien > 0) {
     const seienMult = 1.5 + 0.5 * poke.seien;
     chips.push(watchIconChip('sein', `聖炎 ${poke.seien}（ほのお・ドラゴン・かくとうから${seienMult}倍）`));
+  }
+  if (poke && poke.suiryu > 0) {
+    const suiryuMult = 1 + 0.5 * poke.suiryu;
+    chips.push(watchIconChip('suiryu', `水流 ${poke.suiryu}（みず・こおり・サウンドのポケモン／わざから${suiryuMult}倍）`));
+  }
+  if (poke && poke.kamikamiSealed) {
+    chips.push(watchIconChip('suiryu', `蛟噛（印を付与する攻撃わざが使えない）`));
+  }
+  {
+    const mz = watchSelectedSide === 'self' ? battleField.mizuchiStancePlayer : battleField.mizuchiStanceCpu;
+    if (mz) chips.push(watchIconChip('suiryu', `蛟龍の型（水流の付与+1／あめの時さらに+1）`));
+    const hk = watchSelectedSide === 'self' ? battleField.hikinamiStancePlayer : battleField.hikinamiStanceCpu;
+    if (hk) chips.push(watchIconChip('suiryu', `引波の型（水流が付与された相手は優先度-1）`));
+    const tk = watchSelectedSide === 'self' ? battleField.takigiriStancePlayer : battleField.takigiriStanceCpu;
+    if (tk) chips.push(watchIconChip('suiryu', `滝斬の型（斬る技は水流+1・威力1.5倍／急所で素早さ・命中+2）`));
+    const rk = watchSelectedSide === 'self' ? battleField.rengekiStancePlayer : battleField.rengekiStanceCpu;
+    if (rk) chips.push(watchIconChip('suiryu', `漣撃の型（連続技の最大回数+1）`));
   }
   {
     const wb = watchSelectedSide === 'self' ? battleField.wideBloomPlayer : battleField.wideBloomCpu;
@@ -5464,7 +5508,7 @@ function partyListItemHtml(p, idx) {
         <div class="pli-hpbar-outer"><div class="pli-hpbar-inner" style="width:${ratio * 100}%; background:${hpBarColor(ratio)};"></div></div>
         <div class="pli-hp-text">${p.currentHp}/${p.maxHp}</div>
         ${isActive ? '<div class="pli-active-tag">たたかっている</div>' : statusTag}
-        <div class="pli-hp-text" style="font-size:8.5px;color:var(--accent-b);"><img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.energyStacks || 0} <img src="./timy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.chimyaku || 0} <img src="./kaze.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.kaze || 0} <img src="./sein.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.seien || 0}</div>
+        <div class="pli-hp-text" style="font-size:8.5px;color:var(--accent-b);"><img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.energyStacks || 0} <img src="./timy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.chimyaku || 0} <img src="./kaze.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.kaze || 0} <img src="./sein.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.seien || 0} <img src="./suiryu.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">: ${p.suiryu || 0}</div>
       </div>
     </button>
   `;
@@ -5944,7 +5988,7 @@ function waitForPlayerAction() {
 
 function updateFieldDisplay() {
   state.weather = battleField.weather !== 'none'
-    ? { label: `${WEATHER_JP[battleField.weather]}（残り${battleField.weatherTurns}ターン）` }
+    ? { label: battleField.mukyuSuiten ? `${WEATHER_JP[battleField.weather]}（永続）` : `${WEATHER_JP[battleField.weather]}（残り${battleField.weatherTurns}ターン）` }
     : null;
   state.terrain = battleField.terrain !== 'none'
     ? { label: `${TERRAIN_JP[battleField.terrain]}（残り${battleField.terrainTurns}ターン）` }
@@ -6843,6 +6887,8 @@ function resetPokeForBattle(poke) {
   poke.chimyaku = 0;
   poke.kaze = 0;
   poke.seien = 0;
+  poke.suiryu = 0;
+  poke.kamikamiSealed = false;
   poke.seienSkillWarmed = false;
   poke.everHadCharge = false;
   poke.bonusMove = null;
@@ -8483,6 +8529,7 @@ function buildTurnEndPayload() {
     // ゲスト画面のbattleFieldが一切更新されない不具合があったため同期する。
     fieldWeather: battleField.weather,
     fieldWeatherTurns: battleField.weatherTurns,
+    fieldMukyuSuiten: !!battleField.mukyuSuiten,
     fieldTerrain: battleField.terrain,
     fieldTerrainTurns: battleField.terrainTurns,
     // リフレクター・ひかりのかべ・おいかぜ・トリックルーム（場全体の状態）。
@@ -9292,6 +9339,7 @@ async function handleGuestEvent(ev) {
     if (ev.fieldWeather !== undefined) {
       battleField.weather = ev.fieldWeather;
       battleField.weatherTurns = ev.fieldWeatherTurns || 0;
+      battleField.mukyuSuiten = !!ev.fieldMukyuSuiten;
     }
     if (ev.fieldTerrain !== undefined) {
       battleField.terrain = ev.fieldTerrain;
