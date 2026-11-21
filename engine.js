@@ -1300,11 +1300,11 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 115,
     "baseStats": {
       "hp": 80,
-      "atk": 175,
-      "def": 115,
+      "atk": 185,
+      "def": 105,
       "spa": 30,
       "spd": 105,
-      "spe": 75
+      "spe": 145
     }
   },
   "15": {
@@ -2110,7 +2110,7 @@ const MEGA_EVOLUTION_DATA = {
     "ability": 70,
     "baseStats": {
       "hp": 72,
-      "atk": 165,
+      "atk": 185,
       "def": 140,
       "spa": 24,
       "spd": 106,
@@ -2122,7 +2122,7 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "dragon",
     "ability": 88,
     "baseStats": {
-      "hp": 70,
+      "hp": 100,
       "atk": 80,
       "def": 90,
       "spa": 160,
@@ -2200,7 +2200,7 @@ const MEGA_EVOLUTION_DATA = {
     "type2": "dark",
     "ability": 142,
     "baseStats": {
-      "hp": 72,
+      "hp": 82,
       "atk": 155,
       "def": 107,
       "spa": 153,
@@ -3343,6 +3343,8 @@ function createRandomPokemon(speciesId, level = 100, shinyPercent = 5) {
     chimyaku: 0,           // 地脈（0〜3）：付与されると、カリブレーション持ち・じめん/いわタイプから受けるダメージが増える
     kaze: 0,               // 風息（上限なし）：付与されると、むし/ひこう/くさタイプから受けるダメージが増える
     seien: 0,              // 聖炎（上限なし）：付与されると、ほのお/ドラゴン/かくとうタイプから受けるダメージが増える
+    suiryu: 0,             // 水流（上限なし）：付与されると、みず/こおり/サウンドのポケモン・わざから受けるダメージが増える
+    kamikamiSealed: false, // 龍薙閃・蛟噛(539)を受けた：印を相手に付与できる攻撃技が使えなくなる（交代で解除）
     seienSkillWarmed: false, // スキルウォーマー(532)：このバトル中、初めて聖炎を付与された時の能力ダウンを既に受けたか
     everHadCharge: false,  // このバトル中にチャージを1以上獲得したことがあるか（キャンバス拡張の わざ5 の条件）
     bonusMove: null,       // キャンバス拡張で増える「わざ5」（技オブジェクト。無ければnull）
@@ -3424,7 +3426,7 @@ const TYPE_EFFECTIVENESS_OVERRIDE_MOVES = {
 
 // 高確率急所技（技自体の性質による急所ランク+1補正。きあいだめ等の蓄積とは別枠で、
 // 使用したそのターンのみ加算される）。
-const HIGH_CRIT_MOVES = new Set([23,125,143,152,163,182,183,204,249,406,264,266,281,303,328,387,521,524]);
+const HIGH_CRIT_MOVES = new Set([23,125,143,152,163,182,183,204,249,406,264,266,281,303,328,387,521,524,536,537,538]);
 
 function getTypeEffectiveness(atkType, defType1, defType2, moveId) {
   const override = moveId != null ? TYPE_EFFECTIVENESS_OVERRIDE_MOVES[moveId] : null;
@@ -3668,7 +3670,7 @@ function hasMajorStatus(poke) {
 function effectiveSpeed(poke, opp) {
   let spe = poke.stats.spe * rankMultiplier(poke.ranks.spe);
   const weatherKey = WEATHER_SPEED_BOOST_ABILITY[poke.ability];
-  if (weatherKey && battleField.weather === weatherKey && !isNotenkiActive(poke, opp)) spe *= 2;
+  if (weatherKey && (battleField.weather === weatherKey || (weatherKey === 'snow' && weatherHasSnowEffect(battleField.weather))) && !isNotenkiActive(poke, opp)) spe *= 2;
   if (poke.ability === ABILITY.HAYAASHI && hasMajorStatus(poke)) spe *= 1.5;
   const tailwindTurns = poke.side === 'player' ? battleField.tailwindPlayer : battleField.tailwindCpu;
   if (tailwindTurns > 0) spe *= 2;
@@ -3690,7 +3692,7 @@ const TYPE_ABSORB_ABILITY_TYPE = {
   [ABILITY.SOUSHOKU]: 'grass',
 };
 
-const KIRU_MOVE_IDS = [1,23,45,68,150,152,168,183,187,247,266,281,32,328,387,389,406,521];
+const KIRU_MOVE_IDS = [1,23,45,68,150,152,168,183,187,247,266,281,32,328,387,389,406,521,536,537,538]; // 536漣・537龍薙閃・538連段滝も斬る技（きれあじ対象）
 const KAMU_MOVE_IDS = [24,25,28,124,61,261,222,284,206,348];
 const HADOU_MOVE_IDS = [504,117,218,334,32,54,112,352,376,394,501,522,524];
 const KOBUSHI_MOVE_IDS = [461,62,84,102,106,107,117,122,164,223,226,250,324,327,527,528]; // 527マーシャルヒーツ・528フレイムアッパーも対象
@@ -3707,6 +3709,8 @@ const MULTI_HIT_MOVES = {
   // フリーダムペイント：最大6回、外れるまで攻撃。当たるたびに相手へ風息を1付与（ワイドブルームの+1は1発目のみ）
   523: { maxHits: 6, minHits: 6, fixed: true,  powerStep: 0, basePower: 20 },
   189: { maxHits: 5, minHits: 2, fixed: false, powerStep: 0, basePower: 25 },
+  // 連段滝：最大15回、外れるまで攻撃（威力は毎回同じ）。当たった回数分のチャージを得る
+  538: { maxHits: 15, minHits: 15, fixed: true, powerStep: 0, basePower: 20 },
 };
 
 // ---- 地脈（チャージの別版：相手に付与するスタック） ----
@@ -3797,7 +3801,7 @@ const KAZE_CANVAS_ID = 526;          // キャンバス拡張
 // グラスフィールド中に使うと自分の素早さが2段階上がる技
 const GRASSY_SPEED_UP_MOVE_IDS = [521, 522, 523, 524, 525, 526];
 // 「自分の攻撃と特攻の高い方」で攻撃する（物理／特殊が切り替わる）技
-const HIGHER_STAT_MOVE_IDS = [521, 522, 523, 524, 527, 528, 529, 530]; // 527〜530は聖炎の攻撃技
+const HIGHER_STAT_MOVE_IDS = [521, 522, 523, 524, 527, 528, 529, 530, 536, 537, 538, 539]; // 527〜530は聖炎の攻撃技、536〜539は水流の攻撃技
 
 // 風息によるダメージ倍率（n=0なら1倍）。1つ:1.5倍、以降1つにつき+0.5倍。
 function kazeDamageMult(n) {
@@ -3909,6 +3913,118 @@ function convertMarksToSeien(defender, logFn) {
   return gain;
 }
 
+// ---- 水流（聖炎・地脈・風息とほぼ同じ仕組みの、相手に付与するスタック。上限なし） ----
+// 漣(536)・龍薙閃(537)などで相手に付与する。
+// 水流を付与されたポケモンは、みず／こおり／サウンドタイプのポケモン、またはそのタイプのわざから受けるダメージが
+// 1つ:1.5倍、2つ目から1つにつき+0.5倍（2つ:2倍 / 3つ:2.5倍 …）になる。
+const SUIRYU_ICON_HTML = '<img src="./suiryu.png" class="inline-stat-icon" onerror="this.style.visibility=\'hidden\'">';
+const SUIRYU_SOURCE_TYPES = ['water', 'ice', 'sound'];
+const SUIRYU_SAZANAMI_ID = 536;        // 漣
+const SUIRYU_RYUNAGISEN_ID = 537;      // 龍薙閃
+const SUIRYU_RENDANTAKI_ID = 538;      // 連段滝
+const SUIRYU_MIZUCHIKAMI_ID = 539;     // 龍薙閃・蛟噛
+const SUIRYU_MIZUCHI_STANCE_ID = 540;  // 蛟龍の型
+const SUIRYU_HIKINAMI_STANCE_ID = 541; // 引波の型
+const SUIRYU_TAKIGIRI_STANCE_ID = 542; // 滝斬の型
+const SUIRYU_MUKYU_SUITEN_ID = 543;    // 無窮水天
+const SUIRYU_RENGEKI_STANCE_ID = 544;  // 漣撃の型
+// 水流の技（536〜544）すべて：あめ→回避率+1／ゆき→素早さ+1／メロディーフィールド→攻撃・特攻+1
+const SUIRYU_MOVE_IDS = [536, 537, 538, 539, 540, 541, 542, 543, 544];
+// 「印を相手に付与できるわざ」（龍薙閃・蛟噛を受けると、変化技以外はこれらが使えなくなる）
+const MARK_GRANT_MOVE_IDS = [209, 217, 219, 310, 521, 522, 523, 524, 527, 528, 529, 530, 536, 537, 538];
+
+// 水流によるダメージ倍率（n=0なら1倍）。1つ:1.5倍、以降1つにつき+0.5倍。
+function suiryuDamageMult(n) {
+  n = n || 0;
+  return n > 0 ? 1 + 0.5 * n : 1;
+}
+
+// 蛟龍の型(540)／引波の型(541)／滝斬の型(542)／漣撃の型(544)：このバトル中ずっと続く、サイドごとの効果
+function hasMizuchiStance(poke) { return _sideFlag(poke, 'mizuchiStancePlayer', 'mizuchiStanceCpu'); }
+function hasHikinamiStance(poke) { return _sideFlag(poke, 'hikinamiStancePlayer', 'hikinamiStanceCpu'); }
+function hasTakigiriStance(poke) { return _sideFlag(poke, 'takigiriStancePlayer', 'takigiriStanceCpu'); }
+function hasRengekiStance(poke) { return _sideFlag(poke, 'rengekiStancePlayer', 'rengekiStanceCpu'); }
+
+// 水流を amount 増やす（付与の元は問わない基本処理）
+function addSuiryu(poke, amount, logFn) {
+  if (!poke || poke.fainted || !(amount > 0)) return;
+  poke.suiryu = (poke.suiryu || 0) + amount;
+  if (logFn) logFn(`${poke.species.name}に${SUIRYU_ICON_HTML}水流が${amount}付与された！（現在${poke.suiryu}）`);
+}
+
+// attacker が defender に水流を付与する。
+// 蛟龍の型(540)中は付与量+1、さらに天候があめ（ノーてんき無効）なら+1。bonus=false で追加分を付けない。
+function grantSuiryu(attacker, defender, amount, logFn, bonus) {
+  if (!defender || defender.fainted || !(amount > 0)) return 0;
+  let total = amount;
+  if (bonus !== false && hasMizuchiStance(attacker)) {
+    total += 1;
+    if (getAttackWeather(attacker, defender) === 'rain') total += 1;
+  }
+  addSuiryu(defender, total, logFn);
+  return total;
+}
+
+// 水流ダメージ増加の発動源か（みず／こおり／サウンドタイプのポケモン、またはそのタイプのわざ）
+function isSuiryuSource(attacker, moveType) {
+  if (!attacker) return false;
+  if (moveType && SUIRYU_SOURCE_TYPES.includes(moveType)) return true;
+  const types = getEffectiveTypes(attacker);
+  return types.some((t) => SUIRYU_SOURCE_TYPES.includes(t));
+}
+
+// 自分に着いている印（聖炎・水流・地脈・風息）の合計数
+function countOwnMarks(poke) {
+  if (!poke) return 0;
+  return (poke.seien || 0) + (poke.suiryu || 0) + (poke.chimyaku || 0) + (poke.kaze || 0);
+}
+
+// 自分の印を全て消費して、その数を返す（ログは呼び出し側で出す）
+function consumeAllOwnMarks(poke) {
+  const n = countOwnMarks(poke);
+  if (poke) { poke.seien = 0; poke.suiryu = 0; poke.chimyaku = 0; poke.kaze = 0; }
+  return n;
+}
+
+// ---- 無窮水天(543)：天候があめで固定され（このバトル中書き換え不可）、あめがゆきの特性も持つ ----
+// 'snow' の効果が発動する天候か。ゆき、または無窮水天で永続化したあめ。
+function weatherHasSnowEffect(weather) {
+  return weather === 'snow' || (weather === 'rain' && !!battleField.mukyuSuiten);
+}
+
+// 水流の技（536〜544）を使った時の天候・フィールドボーナス
+//  あめ：自分の回避率+1 ／ ゆき：自分の素早さ+1 ／ メロディーフィールド：自分の攻撃と特攻+1
+// （無窮水天中のあめは、あめとゆきの両方が発動する。ノーてんきなら天候の効果は無し）
+function applySuiryuMoveFieldBonus(attacker, defender, logFn) {
+  const w = getAttackWeather(attacker, defender);
+  if (w === 'rain') applyRankChange(attacker, [100, 0, 0, 0, 0, 0, 0, 1], logFn);
+  if (weatherHasSnowEffect(w)) applyRankChange(attacker, [100, 0, 0, 0, 0, 1, 0, 0], logFn);
+  if (battleField.terrain === 'melody') applyRankChange(attacker, [100, 1, 0, 1, 0, 0, 0, 0], logFn);
+}
+
+// 滝斬の型(542)：斬る技が急所に当たった時、自分の素早さと命中率が2段階上がる
+function applyTakigiriCritBonus(attacker, move, isCrit, logFn) {
+  if (!isCrit || !attacker || attacker.fainted || !KIRU_MOVE_IDS.includes(move.id) || !hasTakigiriStance(attacker)) return;
+  logFn(`${attacker.species.name}は　滝斬の型で　勢いづいた！`);
+  applyRankChange(attacker, [100, 0, 0, 0, 0, 2, 2, 0], logFn);
+}
+
+// 漣(536)：自分の印（聖炎・水流・地脈・風息）を全て水流に変え、相手に付与する（先にまとめて付与してから攻撃）。
+// 印が無ければ 0 を返す。「付与」なので蛟龍の型の追加分は乗る。extra は一緒に付与する水流（漣の通常の+1など）。
+function convertOwnMarksToSuiryuAndGrant(attacker, defender, extra, logFn) {
+  const n = countOwnMarks(attacker);
+  if (n <= 0) return 0;
+  const parts = [];
+  if ((attacker.seien || 0) > 0) parts.push(`${SEIEN_ICON_HTML}聖炎`);
+  if ((attacker.suiryu || 0) > 0) parts.push(`${SUIRYU_ICON_HTML}水流`);
+  if ((attacker.chimyaku || 0) > 0) parts.push(`${CHIMYAKU_ICON_HTML}地脈`);
+  if ((attacker.kaze || 0) > 0) parts.push(`${KAZE_ICON_HTML}風息`);
+  consumeAllOwnMarks(attacker);
+  logFn(`${attacker.species.name}の${parts.join('と')}が　全て　${SUIRYU_ICON_HTML}水流に　変わった！`);
+  grantSuiryu(attacker, defender, n + (extra || 0), logFn);
+  return n;
+}
+
 // 技が「自分の能力が高い方」で攻撃する技の場合、物理／特殊を切り替えた技オブジェクトを返す（ランク補正込み、同値なら元の分類）
 function applyHigherStatCategory(attacker, move, logFn) {
   if (!move || !HIGHER_STAT_MOVE_IDS.includes(move.id)) return move;
@@ -3925,10 +4041,19 @@ function canUseRocketParty(attacker, defender) {
   return !!attacker && !!defender && (attacker.energyStacks || 0) >= 1 && (defender.kaze || 0) >= 1;
 }
 
+// 龍薙閃・蛟噛(539)：攻撃を受けたポケモンは、印を相手に付与できるわざ（変化技以外）が使えなくなる
+function isMarkGrantMoveSealed(poke, move) {
+  return !!poke && !!poke.kamikamiSealed && !!move && move.category !== 'status' && MARK_GRANT_MOVE_IDS.includes(move.id);
+}
+
 // 技が今の状況で選べるか（技メニュー／CPUの技選択用）。使えない時は理由の文を返す（使えるなら null）。
 function getMoveUnusableReason(attacker, defender, move) {
   if (move && move.id === KAZE_ROCKET_PARTY_ID && !canUseRocketParty(attacker, defender)) {
     return 'チャージ1以上＋相手に風息がある時のみ';
+  }
+  // 龍薙閃・蛟噛(539)を受けた：印を相手に付与できる攻撃技（変化技以外）が使えない
+  if (isMarkGrantMoveSealed(attacker, move)) {
+    return '蛟噛で封じられている';
   }
   return null;
 }
@@ -4235,6 +4360,17 @@ const battleField = {
   geoResonanceCpu: false,
   boostScanPlayer: false,
   boostScanCpu: false,
+  // 蛟龍の型(540)／引波の型(541)／滝斬の型(542)／漣撃の型(544)：このバトル中ずっと続く、サイドごとの効果
+  mizuchiStancePlayer: false,
+  mizuchiStanceCpu: false,
+  hikinamiStancePlayer: false,
+  hikinamiStanceCpu: false,
+  takigiriStancePlayer: false,
+  takigiriStanceCpu: false,
+  rengekiStancePlayer: false,
+  rengekiStanceCpu: false,
+  // 無窮水天(543)：真の間は天候があめで固定（書き換え不可・永続）。あめがゆきの効果も持つ
+  mukyuSuiten: false,
   // ふるえるとうし（味方の瀕死数を参照するため）・いちじんのかぜ（自分の場においかぜ）用に、
   // バトル中の手持ち全体への参照をここに保持する。ui.js側からresetField()呼び出し時に渡される。
   playerTeam: null,
@@ -4272,6 +4408,15 @@ function resetField(playerTeam, cpuTeam) {
   battleField.geoResonanceCpu = false;
   battleField.boostScanPlayer = false;
   battleField.boostScanCpu = false;
+  battleField.mizuchiStancePlayer = false;
+  battleField.mizuchiStanceCpu = false;
+  battleField.hikinamiStancePlayer = false;
+  battleField.hikinamiStanceCpu = false;
+  battleField.takigiriStancePlayer = false;
+  battleField.takigiriStanceCpu = false;
+  battleField.rengekiStancePlayer = false;
+  battleField.rengekiStanceCpu = false;
+  battleField.mukyuSuiten = false;
   battleField.playerTeam =Array.isArray(playerTeam) ? playerTeam : null;
   battleField.cpuTeam = Array.isArray(cpuTeam) ? cpuTeam : null;
 }
@@ -4285,6 +4430,11 @@ function countFaintedAllies(poke) {
 }
 
 function setWeather(key, turns, logFn) {
+  // 無窮水天(543)：天候があめで固定されている間は、特性や技を含めて一切書き換えられない
+  if (battleField.mukyuSuiten) {
+    if (key !== 'rain' && logFn) logFn('無窮水天の力で　あめは　書き換えられない！');
+    return;
+  }
   battleField.weather = key;
   battleField.weatherTurns = turns;
   const msg = {
@@ -4332,6 +4482,8 @@ function applyWeatherTerrainAbilityOnSwitchIn(poke, logFn, opponent) {
   poke.hengenjizaiType = null;
   // かげぬい：場に出るたびに縫い止めをリセットする（控えから戻った時に持ち越さない）
   poke.shadowTrappedBy = null;
+  // 龍薙閃・蛟噛(539)：封じは場にいる間だけ（交代で解除）
+  poke.kamikamiSealed = false;
   // ヨワシ：登場時、残りHPに応じて「むれたすがた」⇔「たんどくのすがた」を判定する。
   // 登場直後は直後のsetSpriteで既に正しい画像が出るため、演出（魚が集まる等）は再生しない。
   updateYowashiForm(poke, logFn, false);
@@ -4591,7 +4743,9 @@ function calcDamage(attacker, defender, move, logFn) {
   const effectiveCritRank = (attacker.critRank || 0)
     + (HIGH_CRIT_MOVES.has(move.id) ? 1 : 0)
     + (attacker.ability === ABILITY.KYOUUN ? 1 : 0)
-    + (fuanteiActive ? 2 : 0);
+    + (fuanteiActive ? 2 : 0)
+    // 龍薙閃(537)：自分か相手どちらかにチャージが1以上溜まっていれば確定で急所（かぶとアーマー等の無効化は従来どおり）
+    + (move.id === SUIRYU_RYUNAGISEN_ID && ((attacker.energyStacks || 0) >= 1 || (defender.energyStacks || 0) >= 1) ? 3 : 0);
   const CRIT_CHANCE_TABLE = [1 / 16, 1 / 8, 1 / 2, 1];
   const critChance = CRIT_CHANCE_TABLE[Math.min(effectiveCritRank, 3)];
   const isCrit = defender.ability === ABILITY.KABUTO_ARMOR ? false : Math.random() < critChance;
@@ -4615,7 +4769,7 @@ function calcDamage(attacker, defender, move, logFn) {
     }
   }
   if (effWeather === 'sand' && isDefSpd && defTypes.includes('rock')) effDef *= 1.5;
-  if (effWeather === 'snow' && isDefDef && defTypes.includes('ice')) effDef *= 1.5;
+  if (weatherHasSnowEffect(effWeather) && isDefDef && defTypes.includes('ice')) effDef *= 1.5;
   if (attacker.ability === ABILITY.KONJOU && attacker.status === STATUS.BURN && isAtkStat) {
     if (!battleField.chemicalGasActive || attacker.ability === ABILITY.KAGAKUHENKAGASU) {
       effAtk *= 1.5;
@@ -4628,7 +4782,7 @@ function calcDamage(attacker, defender, move, logFn) {
       if (logFn) logFn(`${attacker.species.name}の${abilityJp(attacker.ability)}が発動！特攻が1.5倍になった！`);
     }
   }
-  if (attacker.ability === ABILITY.ICE_BREAK && effWeather === 'snow' && (isAtkStat || isSpaStat)) {
+  if (attacker.ability === ABILITY.ICE_BREAK && weatherHasSnowEffect(effWeather) && (isAtkStat || isSpaStat)) {
     if (!battleField.chemicalGasActive || attacker.ability === ABILITY.KAGAKUHENKAGASU) {
       effAtk *= 2;
       if (logFn) logFn(`${attacker.species.name}の${abilityJp(attacker.ability)}が発動！${isAtkStat ? '攻撃' : '特攻'}が1.5倍になった！`);
@@ -4790,6 +4944,11 @@ function calcDamage(attacker, defender, move, logFn) {
       if (logFn) logFn(`${attacker.species.name}の${abilityJp(attacker.ability)}が発動！威力が${Math.floor(move.power * 1.5)}相当になった！`);
     }
   }
+  // 滝斬の型(542)：自分と味方の斬る技（きれあじ対象）の威力が1.5倍（きれあじ特性とは重複する）
+  if (KIRU_MOVE_IDS.includes(move.id) && hasTakigiriStance(attacker)) {
+    dmg = Math.floor(dmg * 1.5);
+    if (logFn) logFn(`滝斬の型の効果で　威力が${Math.floor(move.power * 1.5)}相当になった！`);
+  }
   if (attacker.ability === ABILITY.GANJOUAGO && KAMU_MOVE_IDS.includes(move.id)) {
     if (!gasActive || gasImmune(attacker)) {
       dmg = Math.floor(dmg * 1.5);
@@ -4849,6 +5008,12 @@ function calcDamage(attacker, defender, move, logFn) {
     dmg = Math.floor(dmg * seienMult);
     if (logFn) logFn(`${defender.species.name}は${SEIEN_ICON_HTML}聖炎の影響で受けるダメージが${seienMult}倍になった！`);
   }
+  // 水流：水流を付与されている相手に、みず／こおり／サウンドタイプのポケモン、またはそのタイプのわざが攻撃すると、数に応じてダメージが増える（1つ:1.5倍、以降+0.5倍ずつ・上限なし）
+  if ((defender.suiryu || 0) > 0 && isSuiryuSource(attacker, move.type)) {
+    const suiryuMult = suiryuDamageMult(defender.suiryu);
+    dmg = Math.floor(dmg * suiryuMult);
+    if (logFn) logFn(`${defender.species.name}は${SUIRYU_ICON_HTML}水流の影響で受けるダメージが${suiryuMult}倍になった！`);
+  }
   if (!ignoreWalls && attacker.ability !== ABILITY.KATAYABURI) {
     const side = defender.side === 'player' ? 'player' : 'cpu';
     const reflectTurns = side === 'player' ? battleField.playerReflect : battleField.cpuReflect;
@@ -4893,7 +5058,7 @@ function checkAccuracy(attacker, defender, move, logFn) {
   if (move.accuracy === undefined || move.accuracy === null || move.accuracy >= 999) return true;
   if (attacker.ability === ABILITY.NO_GUARD || defender.ability === ABILITY.NO_GUARD) return true;
   if (battleField.weather === 'rain' && RAIN_ALWAYS_HIT_MOVES.includes(move.id) && !isNotenkiActive(attacker, defender)) return true;
-  if (battleField.weather === 'snow' && SNOW_ALWAYS_HIT_MOVES.includes(move.id) && !isNotenkiActive(attacker, defender)) return true;
+  if (weatherHasSnowEffect(battleField.weather) && SNOW_ALWAYS_HIT_MOVES.includes(move.id) && !isNotenkiActive(attacker, defender)) return true;
   if (battleField.terrain === 'geomat' && GEOMAT_ALWAYS_HIT_MOVES.includes(move.id)) return true;
 
   // てんねん：自分が技を使う時は相手の回避率ランクを、自分が技を受ける時は相手の命中率ランクを無視する。
@@ -5489,11 +5654,13 @@ function executeMultiHit(attacker, defender, move, logFn) {
   // 途中で命中判定に外れた時点（または相手がひんしになった時点）でのみ打ち切られる。
   // 命中率95%の技なら、各打ごとに95%判定を行い、外れるまで最大回数分続ける。
   // （スキルリンクは命中判定自体を行わないので常に最大回数）
-  const hitCount = config.maxHits;
+  // 漣撃の型(544)：自分と味方の連続技は最大回数+1
+  const hitCount = config.maxHits + (hasRengekiStance(attacker) ? 1 : 0);
 
   let totalDamage = 0;
   let hitIndex = 0;
   let anyHit = false;
+  let landedHits = 0; // 当たった回数（連段滝のチャージ用）
 
   // テンポ改善：連続技は、1発ごとに「特性発動・威力上昇・ダメージ・急所・効果は抜群」を毎回すべて表示する。
   // ただし1行ずつ待たず、行間の待ちを短くして一気に流す（fast指定。実際の待ち時間はui.js側のMSG_FAST_MS）。
@@ -5558,6 +5725,9 @@ function executeMultiHit(attacker, defender, move, logFn) {
     else if (typeMult < 1) fastLog('効果は今ひとつのようだ…');
     if (survivedByGanjou) fastLog(`${defender.species.name}はがんじょうで持ちこたえた！`);
     if (survivedByEndure) fastLog(`${defender.species.name}はこらえた！`);
+    landedHits++;
+    // 滝斬の型(542)：斬る技が急所に当たると素早さと命中率が2段階上がる
+    applyTakigiriCritBonus(attacker, move, isCrit, logFn);
 
     // フリーダムペイント(523)：当たるたびに相手へ風息を1付与（ワイドブルームの追加+1は技を使って1発目が当たった時のみ）
     if (move.id === KAZE_FREEDOM_PAINT_ID && defender.currentHp > 0) {
@@ -5605,6 +5775,20 @@ function executeMultiHit(attacker, defender, move, logFn) {
     }
   }
 
+  // 連段滝(538)：攻撃後、当たった回数分のチャージを得る。さらに自分に印（聖炎・水流・地脈・風息）が着いていれば、全て消費して、消費した数×5のチャージを得る
+  if (move.id === SUIRYU_RENDANTAKI_ID && !attacker.fainted) {
+    if (landedHits > 0) addEnergyStacks(attacker, landedHits, logFn);
+    const consumed = consumeAllOwnMarks(attacker);
+    if (consumed > 0) {
+      logFn(`${attacker.species.name}は　印を${consumed}つ　全て　消費した！`);
+      addEnergyStacks(attacker, consumed * 5, logFn);
+    }
+  }
+  // 滝斬の型(542)：斬る技は水流を+1追加で付与する（技自体が水流を付与する漣・龍薙閃は技側で上乗せ済み）
+  if (KIRU_MOVE_IDS.includes(move.id) && hasTakigiriStance(attacker) && anyHit && !defender.fainted && !attacker.fainted) {
+    grantSuiryu(attacker, defender, 1, logFn);
+  }
+
   // ランク変化（selfRank/oppRank）は連続ヒットの回数分ではなく、技を出した時に1回だけ適用する。
   // 相手を倒した一撃であっても技自体は命中しているため、selfRank（自分の能力変化）は発動する。
   if (anyHit && !attacker.fainted) {
@@ -5624,7 +5808,7 @@ function executeMultiHit(attacker, defender, move, logFn) {
 function movePriorityWithWeather(move, poke, opp) {
   let p = move.priority || 0;
   if (isNotenkiActive(poke, opp)) return p;
-  if (move.id === 285 && battleField.weather === 'snow') p += 1;
+  if (move.id === 285 && weatherHasSnowEffect(battleField.weather)) p += 1;
   if (move.id === 57 && battleField.weather === 'starrysky') p += 1;
   return p;
 }
@@ -5692,6 +5876,11 @@ function effectivePriority(attacker, move, defenderFainted) {
   }
   if (attacker.ability === ABILITY.ITAZURA_GOKORO && move.category === 'status') {
     p = Math.max(1, p + 1);
+  }
+  // 引波の型(541)：相手側が引波の型を使っていて、自分に水流が付与されている間、自分の技は全て優先度-1
+  if ((attacker.suiryu || 0) > 0) {
+    const oppHikinami = attacker.side === 'player' ? battleField.hikinamiStanceCpu : battleField.hikinamiStancePlayer;
+    if (oppHikinami) p -= 1;
   }
   return p;
 }
@@ -5942,6 +6131,12 @@ function executeMoveCore(attacker, defender, move, logFn, turnCtx) {
     return;
   }
 
+  // ---- 龍薙閃・蛟噛(539)で封じられた技：印を相手に付与できる攻撃技は使えない（PPは消費しない） ----
+  if (isMarkGrantMoveSealed(attacker, move)) {
+    logFn(`しかし　${move.name}は　蛟噛に　封じられていて　使えなかった！`);
+    return;
+  }
+
 // 変更後
 move.pp--;
 logFn(`${attacker.species.name}の${move.name}！`, {
@@ -5956,6 +6151,10 @@ logFn(`${attacker.species.name}の${move.name}！`, {
   // ---- ひでり中：聖炎の技を使うと自分の攻撃と特攻が1段階上がる（メガソーラーのひでり扱い・ノーてんきも考慮） ----
   if (SEIEN_SUN_BOOST_MOVE_IDS.includes(move.id) && getAttackWeather(attacker, defender) === 'sun') {
     applyRankChange(attacker, [100, 1, 0, 1, 0, 0, 0, 0], logFn);
+  }
+  // ---- 水流の技：あめ→回避率+1／ゆき→素早さ+1／メロディーフィールド→攻撃・特攻+1 ----
+  if (SUIRYU_MOVE_IDS.includes(move.id)) {
+    applySuiryuMoveFieldBonus(attacker, defender, logFn);
   }
   // ---- 風息の攻撃技：自分の攻撃と特攻の高い方で攻撃する（物理／特殊が切り替わる） ----
   move = applyHigherStatCategory(attacker, move, logFn);
@@ -6064,6 +6263,45 @@ logFn(`${attacker.species.name}の${move.name}！`, {
       else battleField.skillWarmerCpu = true;
       logFn(`${attacker.species.name}は　スキルウォーマーで　場を　あたためた！　相手は　${SEIEN_ICON_HTML}聖炎を　付与されると　こうげきと　とくこうが　下がるようになった！`);
     }
+    return;
+  }
+  // 蛟龍の型(540)／引波の型(541)／滝斬の型(542)／漣撃の型(544)：このバトル中ずっと続く、自分と味方への効果（ターン無限）
+  if (move.id === SUIRYU_MIZUCHI_STANCE_ID || move.id === SUIRYU_HIKINAMI_STANCE_ID ||
+      move.id === SUIRYU_TAKIGIRI_STANCE_ID || move.id === SUIRYU_RENGEKI_STANCE_ID) {
+    const defs = {
+      [SUIRYU_MIZUCHI_STANCE_ID]: { key: 'mizuchiStance', name: '蛟龍の型',
+        msg: `${SUIRYU_ICON_HTML}水流を付与する時、さらに+1されるようになった！　あめの時は、さらに+1される！` },
+      [SUIRYU_HIKINAMI_STANCE_ID]: { key: 'hikinamiStance', name: '引波の型',
+        msg: `${SUIRYU_ICON_HTML}水流が付与されている相手は、使うわざの優先度が1下がるようになった！` },
+      [SUIRYU_TAKIGIRI_STANCE_ID]: { key: 'takigiriStance', name: '滝斬の型',
+        msg: `斬るわざが　${SUIRYU_ICON_HTML}水流を　さらに1付与し、威力が1.5倍になる！　急所に当たると、素早さと命中率が2段階上がる！` },
+      [SUIRYU_RENGEKI_STANCE_ID]: { key: 'rengekiStance', name: '漣撃の型',
+        msg: `連続わざの　最大回数が　+1されるようになった！` },
+    };
+    const d = defs[move.id];
+    const flagKey = d.key + (attacker.side === 'player' ? 'Player' : 'Cpu');
+    if (battleField[flagKey]) {
+      logFn(`しかし　${d.name}は　すでに　効いている！`);
+    } else {
+      battleField[flagKey] = true;
+      logFn(`${attacker.species.name}は　${d.name}の　かまえを　とった！　${d.msg}`);
+    }
+    return;
+  }
+  // 無窮水天(543)：天候をあめにして、このバトル中書き換え不可の永続にする。あめはゆきの効果も持つ。
+  // すでに天候があめの時に使うと、自分にチャージ（エナジースタック）を50溜める。
+  if (move.id === SUIRYU_MUKYU_SUITEN_ID) {
+    const alreadyRain = battleField.weather === 'rain';
+    if (!alreadyRain) setWeather('rain', 999, logFn);
+    if (!battleField.mukyuSuiten) {
+      battleField.mukyuSuiten = true;
+      battleField.weather = 'rain';
+      battleField.weatherTurns = 999;
+      logFn(`${attacker.species.name}の${move.name}！　あめが　永遠に　降りつづける！　あめは　ゆきの　力も　あわせ持った！`);
+    } else {
+      logFn(`しかし　あめは　すでに　永遠に　降りつづけている！`);
+    }
+    if (alreadyRain) addEnergyStacks(attacker, 50, logFn);
     return;
   }
   // キャンバス拡張(526)：このバトル中、チャージを1以上獲得した自分と味方は わざ が1つ増える（ターン無限）
@@ -6639,6 +6877,27 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     }
   }
 
+  // ---- 漣(536)／龍薙閃・蛟噛(539)：攻撃の前の処理 ----
+  //  536：自分に印（聖炎・水流・地脈・風息）が1つ以上着いていれば、先にそれを全て水流に変え、相手へ（通常の水流1と合わせて）付与してから攻撃する。
+  //  539：自分のチャージが1以上なら、全て消費して、1スタックにつき威力+20してから攻撃する。
+  //  無効（相性0）の相手には付与しない。
+  let suiryuPreGranted = false;
+  if (move.id === SUIRYU_SAZANAMI_ID && countOwnMarks(attacker) > 0) {
+    const szDefTypes = getEffectiveTypes(defender);
+    if (getTypeEffectiveness(move.type, szDefTypes[0], szDefTypes[1], move.id) !== 0) {
+      const szExtra = 1 + (hasTakigiriStance(attacker) ? 1 : 0); // 漣の通常の水流1（＋滝斬の型の追加1）も一緒に付与する
+      convertOwnMarksToSuiryuAndGrant(attacker, defender, szExtra, logFn);
+      suiryuPreGranted = true;
+    }
+  }
+  if (move.id === SUIRYU_MIZUCHIKAMI_ID && (attacker.energyStacks || 0) >= 1) {
+    const kmStacks = consumeEnergyStacks(attacker, logFn);
+    if (kmStacks > 0) {
+      modifiedPower += kmStacks * 20;
+      logFn(`${attacker.species.name}は<img src="./energy.png" class="inline-stat-icon" onerror="this.style.visibility='hidden'">を${kmStacks}消費！　${move.name}の威力は${modifiedPower}になった！`);
+    }
+  }
+
   const moveForCalc = { ...move, power: modifiedPower };
   const { damage: firstHitDamage, typeMult, isCrit: firstHitCrit } = calcDamage(attacker, defender, moveForCalc, logFn);
   if (typeMult === 0) {
@@ -6701,6 +6960,8 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     else if (typeMult < 1 && hitNum === 1) logFn('効果は今ひとつのようだ…');
     if (survivedByEndure) logFn(`${defender.species.name}はこらえた！`);
     if (survivedByGanjou) logFn(`${defender.species.name}はがんじょうで持ちこたえた！`);
+    // 滝斬の型(542)：斬る技が急所に当たると素早さと命中率が2段階上がる
+    applyTakigiriCritBonus(attacker, move, isCrit, logFn);
 
     // ---- はかいこうせん：命中して技が成立した場合、相手を倒したかどうかに関わらず
     // 次のターンは反動で動けなくなる（本家仕様）。 ----
@@ -6806,7 +7067,7 @@ logFn(`${attacker.species.name}の${move.name}！`, {
       if (attacker.currentHp <= 0) { attacker.fainted = true; logFn(`${attacker.species.name}は倒れた！`, { faint: attacker.side }); }
     }
   }
-  if (attacker.ability === ABILITY.ICE_BREAK && battleField.weather === 'snow' && !attacker.fainted && !isNotenkiActive(attacker, defender)) {
+  if (attacker.ability === ABILITY.ICE_BREAK && weatherHasSnowEffect(battleField.weather) && !attacker.fainted && !isNotenkiActive(attacker, defender)) {
     if (!battleField.chemicalGasActive || attacker.ability === ABILITY.KAGAKUHENKAGASU) {
       const selfDmg = Math.max(1, Math.floor(attacker.maxHp / 8));
       attacker.currentHp = Math.max(0, attacker.currentHp - selfDmg);
@@ -6875,6 +7136,24 @@ logFn(`${attacker.species.name}の${move.name}！`, {
     }
   }
 
+  // ---- 水流の攻撃技：攻撃後の処理（命中した場合のみここに来る） ----
+  if (!attacker.fainted) {
+    // 536（先に付与していなければ）・537：攻撃後に相手へ水流を1付与
+    if ((move.id === SUIRYU_SAZANAMI_ID && !suiryuPreGranted) || move.id === SUIRYU_RYUNAGISEN_ID) {
+      if (!defender.fainted && defender.currentHp > 0) {
+        grantSuiryu(attacker, defender, 1 + (hasTakigiriStance(attacker) ? 1 : 0), logFn);
+      }
+    } else if (KIRU_MOVE_IDS.includes(move.id) && move.id !== SUIRYU_SAZANAMI_ID && hasTakigiriStance(attacker)) {
+      // 滝斬の型(542)：水流を付与しない斬る技でも、水流を+1付与する
+      if (!defender.fainted && defender.currentHp > 0) grantSuiryu(attacker, defender, 1, logFn);
+    }
+    // 539：攻撃を受けた相手は、印を相手に付与できるわざ（変化技以外）が使えなくなる
+    if (move.id === SUIRYU_MIZUCHIKAMI_ID && !defender.fainted && !defender.kamikamiSealed) {
+      defender.kamikamiSealed = true;
+      logFn(`${defender.species.name}は　${SUIRYU_ICON_HTML}蛟噛で　印を付与する攻撃わざを　封じられた！`);
+    }
+  }
+
   // ---- かげぬい／ランチャーアーム：命中してもなお相手が場に残っていれば、逃げられなくする ----
   // ちからずく持ちでは追加効果として扱い、発動しない（ガス中は特性が無効なので通常どおり発動）。
   if (SHADOW_TRAP_MOVE_IDS.includes(move.id) && !defender.fainted && !suppressSecondary) {
@@ -6891,9 +7170,13 @@ logFn(`${attacker.species.name}の${move.name}！`, {
 
   // ---- むらくもばらい：天気をなしに ----
   if (move.id === 150 && battleField.weather === 'rain') {
-    battleField.weather = 'none';
-    battleField.weatherTurns = 0;
-    logFn(`天気が晴れになった！`);
+    if (battleField.mukyuSuiten) {
+      logFn('無窮水天の力で　あめは　書き換えられない！');
+    } else {
+      battleField.weather = 'none';
+      battleField.weatherTurns = 0;
+      logFn(`天気が晴れになった！`);
+    }
   }
 
   // ---- テラーバインド：ダメージを与えた上で、相手の技を1つ封じる ----
@@ -7268,7 +7551,7 @@ function applyEndOfTurnField(pokeList, logFn) {
     });
   }
 
-  if (battleField.weather !== 'none') {
+  if (battleField.weather !== 'none' && !battleField.mukyuSuiten) { // 無窮水天中はあめが永続（ターンを数えない）
     battleField.weatherTurns--;
     if (battleField.weatherTurns <= 0) {
       const endMsg = {
